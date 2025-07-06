@@ -96,16 +96,24 @@ def sync_trakt_history():
             del show_data["episode"]
         tmdb_show_id = show_data.get("ids", {}).get("tmdb")
         total_episodes = None
+        season_episode_counts = {}  # {season: number_of_episodes}
         if tmdb_show_id:
             try:
                 meta = get_metadata(tmdb_show_id, media_type="tv")
                 total_episodes = meta.get("number_of_episodes")
+                # Build season_episode_counts from TMDB metadata if available
+                if meta.get("seasons"):
+                    for season in meta["seasons"]:
+                        if season.get("season_number") is not None and season.get("episode_count") is not None:
+                            season_episode_counts[season["season_number"]] = season["episode_count"]
             except Exception as e:
                 logger.warning(f"Could not fetch TMDB metadata for show {show_id}: {e}")
         watched_episodes = len(show["episodes"])
         show_data["watched_episodes"] = watched_episodes
         show_data["total_episodes"] = total_episodes
-        show_data["completion_ratio"] = (watched_episodes / total_episodes) if total_episodes else None
+        # Calculate show completion ratio: unique episodes watched / total episodes
+        show_data["completion_ratio"] = watched_episodes / total_episodes if total_episodes else 0.0
+        # Calculate watch_count (number of times all episodes were watched)
         if total_episodes and watched_episodes == total_episodes:
             watch_count = min(show["episodes"].values())
         else:
@@ -114,6 +122,31 @@ def sync_trakt_history():
         show_data["episode_watch_count"] = show["episode_watch_total"]
         show_data["earliest_watched_at"] = show["earliest"]
         show_data["latest_watched_at"] = show["latest"]
+        # Calculate season completion counts
+        season_completion_count = {}
+        # Build a mapping: season -> [episode watch counts]
+        season_episode_watches = {}
+        for (season, episode), count in show["episodes"].items():
+            season_episode_watches.setdefault(str(season), []).append(count)
+        for season, episode_counts in season_episode_watches.items():
+            num_episodes = season_episode_counts.get(int(season))
+            if num_episodes:
+                episodes_watched = len(episode_counts)
+                min_watch_count = min(episode_counts) if episode_counts else 0
+                # Calculate completion ratio: unique episodes watched / total episodes
+                completion_ratio = episodes_watched / num_episodes if num_episodes else 0.0
+                # Calculate average watch count for the season
+                avg_watch_count = sum(episode_counts) / num_episodes if num_episodes else 0.0
+                entry = {
+                    "episodes_watched": episodes_watched,
+                    "total_episodes": num_episodes,
+                    "min_watch_count": min_watch_count,
+                    "completion_ratio": completion_ratio,
+                    "avg_watch_count": avg_watch_count
+                }
+                entry["partial"] = episodes_watched == num_episodes
+                season_completion_count[str(season)] = entry
+        show_data["season_completion_count"] = season_completion_count
         all_history.append(show_data)
 
     logger.info(f"Total unique movies: {len(seen_movies)}, unique shows: {len(seen_shows)}")
@@ -135,6 +168,15 @@ def sync_trakt_history():
                     item.get("latest_watched_at"),
                 )
             else:
+                # For shows, include season_completion_count as a sorted tuple for hash stability
+                season_completion = item.get("season_completion_count", {})
+                # Convert to sorted tuple of (season, tuple(sorted(entry.items())))
+                season_completion_tuple = tuple(
+                    sorted(
+                        (season, tuple(sorted(entry.items())))
+                        for season, entry in season_completion.items()
+                    )
+                )
                 return (
                     "show",
                     item.get("ids", {}).get("trakt"),
@@ -144,6 +186,7 @@ def sync_trakt_history():
                     item.get("total_episodes"),
                     item.get("earliest_watched_at"),
                     item.get("latest_watched_at"),
+                    season_completion_tuple,
                 )
         sorted_hist = sorted(hist, key=item_key)
         return hashlib.sha256(json.dumps([item_key(item) for item in sorted_hist], sort_keys=True).encode()).hexdigest()
