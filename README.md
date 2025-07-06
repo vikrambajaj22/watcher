@@ -23,17 +23,21 @@ gcloud run deploy watcher \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars TRAKT_ACCESS_TOKEN=xxx,TRAKT_CLIENT_ID=xxx,TMDB_API_KEY=xxx,MONGODB_URI=xxx,MONGODB_DB_NAME=watcher
+  --set-env-vars TRAKT_CLIENT_ID=xxx,TRAKT_CLIENT_SECRET=xxx,TRAKT_REDIRECT_URI=xxx,TMDB_API_KEY=xxx,TMDB_READ_ACCESS_TOKEN=xxx,MONGODB_URI=xxx,MONGODB_DB_NAME=watcher,OPENAI_CLIENT_ID=xxx,OPENAI_SECRET_KEY=xxx
 ```
 
 ## Environment Setup
 Create a `.env` file:
 ```env
-TRAKT_ACCESS_TOKEN=your-token
 TRAKT_CLIENT_ID=your-client-id
+TRAKT_CLIENT_SECRET=your-client-secret
+TRAKT_REDIRECT_URI=http://localhost:8080/auth/trakt/callback
 TMDB_API_KEY=your-tmdb-key
+TMDB_READ_ACCESS_TOKEN=your-tmdb-read-access-token
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=watcher
+OPENAI_CLIENT_ID=your-openai-client-id
+OPENAI_SECRET_KEY=your-openai-secret-key
 ```
 
 ## Logging
