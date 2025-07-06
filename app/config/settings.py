@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "watcher"
 
-    TRAKT_API_URL: str = "https://api.trakt.tv/sync/history"
+    TRAKT_HISTORY_API_URL: str = "https://api.trakt.tv/sync/history"
     TMDB_API_URL: str = "https://api.themoviedb.org/3"
 
     @property

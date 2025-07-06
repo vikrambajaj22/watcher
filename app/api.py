@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 
 from app.recommender import recommend
 from app.auth.trakt_auth import get_auth_url, exchange_code_for_token, save_token_data
+from app.trakt_sync import sync_trakt_history
 
 router = APIRouter()
 
@@ -12,6 +13,8 @@ def root():
 
 @router.get("/recommend")
 def get_recommendations():
+    # Sync Trakt history before recommending
+    sync_trakt_history()
     return {"recommendations": recommend()}
 
 @router.get("/auth/trakt/start")

@@ -4,7 +4,7 @@ import requests
 from app.config.settings import settings
 from app.utils.logger import get_logger
 
-logger = get_logger("trakt_auth")
+logger = get_logger(__name__)
 
 CLIENT_ID = settings.TRAKT_CLIENT_ID
 CLIENT_SECRET = settings.TRAKT_CLIENT_SECRET
