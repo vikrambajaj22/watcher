@@ -1,6 +1,8 @@
 import hashlib
 import json
+
 import requests
+
 from app.config.settings import settings
 from app.dao.history import get_watch_history, store_watch_history
 from app.tmdb_client import get_metadata

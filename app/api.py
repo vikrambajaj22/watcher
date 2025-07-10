@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
+from app.auth.trakt_auth import (exchange_code_for_token, get_auth_url,
+                                 save_token_data)
 from app.recommender import recommend
-from app.auth.trakt_auth import get_auth_url, exchange_code_for_token, save_token_data
 from app.trakt_sync import sync_trakt_history
 
 router = APIRouter()

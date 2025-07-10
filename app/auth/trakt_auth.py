@@ -1,6 +1,8 @@
 import json
 import os
+
 import requests
+
 from app.config.settings import settings
 from app.utils.logger import get_logger
 
