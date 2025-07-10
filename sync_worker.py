@@ -18,7 +18,7 @@ def start_scheduler(interval=300):
     scheduler.add_job(
         check_trakt_last_activities_and_sync,
         "interval",
-        seconds=300,
+        seconds=interval,
         next_run_time=datetime.datetime.now(),
         id="trakt_sync_job",
         replace_existing=True
@@ -30,4 +30,4 @@ def start_scheduler(interval=300):
         logger.info("Scheduler stopped.")
 
 if __name__ == "__main__":
-    start_scheduler()
+    start_scheduler(3600)
