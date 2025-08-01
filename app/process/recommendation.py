@@ -42,11 +42,11 @@ class MovieRecommender:
         ]
         try:
             response = get_openai_chat_completion(
-                "gpt-4.1",
+                "gpt-4.1-nano",
                 messages=messages,
                 response_format={"type": "json_object"}
             )
-            completion_text = response["choices"][0]["message"]["content"]
+            completion_text = response.choices[0].message.content
             recommendations = json.loads(
                 completion_text).get("recommendations", [])
         except Exception as e:
