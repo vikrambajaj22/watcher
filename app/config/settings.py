@@ -14,11 +14,13 @@ class Settings(BaseSettings):
     TRAKT_CLIENT_SECRET: str
     TRAKT_REDIRECT_URI: str
     TMDB_API_KEY: str
+    OPENAI_API_KEY: str
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "watcher"
     TRAKT_LAST_ACTIVITIES_API_URL: str = "https://api.trakt.tv/sync/last_activities"
     TRAKT_HISTORY_API_URL: str = "https://api.trakt.tv/sync/history"
     TMDB_API_URL: str = "https://api.themoviedb.org/3"
+    OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
 
     @property
     def TRAKT_ACCESS_TOKEN(self):

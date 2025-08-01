@@ -3,8 +3,9 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.auth.trakt_auth import (exchange_code_for_token, get_auth_url,
                                  save_token_data)
-from app.recommender import recommend
-from app.trakt_sync import sync_trakt_history
+from app.process.recommendation import MovieRecommender
+from app.scheduler import check_trakt_last_activities_and_sync
+from app.schemas.recommendations.movies import MovieRecommendationsResponse
 
 router = APIRouter()
 
@@ -12,11 +13,14 @@ router = APIRouter()
 def root():
     return {"message": "Watcher: watchu lookin at?"}
 
-@router.get("/recommend")
-def get_recommendations():
-    # Sync Trakt history before recommending
-    sync_trakt_history()
-    return {"recommendations": recommend()}
+@router.get("/recommend/movies")
+def get_movie_recommendations() -> MovieRecommendationsResponse:
+    try:
+        check_trakt_last_activities_and_sync()
+        recommender = MovieRecommender()
+        return recommender.generate_recommendations()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.get("/auth/trakt/start")
 def trakt_auth_start():

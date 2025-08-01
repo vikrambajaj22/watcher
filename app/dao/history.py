@@ -12,7 +12,8 @@ def store_watch_history(data):
         logger.error("Invalid data format for storing watch history. Expected a list.")
         raise ValueError("Data must be a list of watch history items.")
 
-def get_watch_history():
-    history = list(watch_history_collection.find({}, {"_id": 0}))
+def get_watch_history(type=None):
+    query = {"type": type} if type else {}
+    history = list(watch_history_collection.find(query, {"_id": 0}))
     logger.info("Watch history retrieved successfully.")
     return history

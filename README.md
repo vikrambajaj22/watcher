@@ -23,7 +23,7 @@ gcloud run deploy watcher \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars TRAKT_CLIENT_ID=xxx,TRAKT_CLIENT_SECRET=xxx,TRAKT_REDIRECT_URI=xxx,TMDB_API_KEY=xxx,TMDB_READ_ACCESS_TOKEN=xxx,MONGODB_URI=xxx,MONGODB_DB_NAME=watcher,OPENAI_CLIENT_ID=xxx,OPENAI_SECRET_KEY=xxx
+  --set-env-vars TRAKT_CLIENT_ID=xxx,TRAKT_CLIENT_SECRET=xxx,TRAKT_REDIRECT_URI=xxx,TMDB_API_KEY=xxx,TMDB_READ_ACCESS_TOKEN=xxx,MONGODB_URI=xxx,MONGODB_DB_NAME=watcher,OPENAI_CLIENT_ID=xxx,OPENAI_API_KEY=xxx
 ```
 
 ## Environment Setup
@@ -37,7 +37,7 @@ TMDB_READ_ACCESS_TOKEN=your-tmdb-read-access-token
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=watcher
 OPENAI_CLIENT_ID=your-openai-client-id
-OPENAI_SECRET_KEY=your-openai-secret-key
+OPENAI_API_KEY=your-openai-secret-key
 ```
 
 ## Logging
