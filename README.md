@@ -11,7 +11,7 @@ watcher is a personal movie/TV recommendation app powered by Trakt, TMDB, and Op
 
 ## To Run Locally
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8080
 ```
 
 ## To Deploy on GCP Cloud Run
@@ -31,7 +31,7 @@ Create a `.env` file:
 ```env
 TRAKT_CLIENT_ID=your-client-id
 TRAKT_CLIENT_SECRET=your-client-secret
-TRAKT_REDIRECT_URI=http://localhost:8080/auth/trakt/callback
+TRAKT_REDIRECT_URI=http://127.0.0.1:8080/auth/trakt/callback
 TMDB_API_KEY=your-tmdb-key
 TMDB_READ_ACCESS_TOKEN=your-tmdb-read-access-token
 MONGODB_URI=mongodb://localhost:27017
