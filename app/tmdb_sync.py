@@ -6,7 +6,7 @@ import concurrent.futures
 import requests
 
 from app.config.settings import settings
-from app.db import tmdb_metadata_collection, sync_meta_collection
+from app.db import tmdb_metadata_collection, sync_meta_collection, tmdb_failures_collection
 from app.utils.logger import get_logger
 
 from app.embeddings import embed_item_and_store
@@ -50,18 +50,69 @@ def _fetch_changes(media_type: str, start_time: Optional[int] = None, page: int 
     return resp.json()
 
 
+# failure threshold before marking as permanently failed
+FAILURE_THRESHOLD = 3
+
+
+def _is_failed(tmdb_id: int, media_type: str) -> bool:
+    """Return True if the tmdb_id+media_type is marked as permanently failed."""
+    doc = tmdb_failures_collection.find_one({"id": tmdb_id, "media_type": media_type, "permanent": True})
+    return bool(doc)
+
+
+def _mark_failure(tmdb_id: int, media_type: str, reason: str = ""):
+    """Increment failure count for an id. If threshold reached, mark as permanent.
+
+    Stored document shape:
+    {
+        "id": 12345,
+        "media_type": "movie",
+        "count": 1,
+        "last_failed_at": 1690000000,
+        "last_reason": "status_404",
+        "permanent": False
+    }
+    """
+    try:
+        now = int(time.time())
+        tmdb_failures_collection.update_one(
+            {"id": tmdb_id, "media_type": media_type},
+            {
+                "$set": {"last_failed_at": now, "last_reason": reason},
+                "$inc": {"count": 1}
+            },
+            upsert=True
+        )
+        doc = tmdb_failures_collection.find_one({"id": tmdb_id, "media_type": media_type})
+        if doc and doc.get("count", 0) >= FAILURE_THRESHOLD:
+            tmdb_failures_collection.update_one({"id": tmdb_id, "media_type": media_type}, {"$set": {"permanent": True}})
+            logger.info("Marking TMDB %s %s as permanently failed after %s attempts", media_type, tmdb_id, doc.get("count"))
+    except Exception as e:
+        logger.warning("Failed to mark failure for %s %s: %s", media_type, tmdb_id, repr(e), exc_info=True)
+
+
 def _fetch_details(media_type: str, tmdb_ids: list[int]):
     results = []
     for tmdb_id in tmdb_ids:
         try:
+            if _is_failed(tmdb_id, media_type):
+                logger.info("Skipping TMDB %s %s because it's marked as permanently failed", media_type, tmdb_id)
+                continue
             url = f"{settings.TMDB_API_URL}/{media_type}/{tmdb_id}?api_key={settings.TMDB_API_KEY}"
             r = requests.get(url)
             if r.status_code == 200:
                 results.append(r.json())
+                # on success, clear any previous failure records for this id
+                try:
+                    tmdb_failures_collection.delete_many({"id": tmdb_id, "media_type": media_type})
+                except Exception as e:
+                    logger.warning("Failed to clear failure records for %s %s: %s", media_type, tmdb_id, repr(e), exc_info=True)
             else:
                 logger.warning("Failed to fetch %s details for %s: %s", media_type, tmdb_id, r.status_code)
+                _mark_failure(tmdb_id, media_type, reason=f"status_{r.status_code}")
         except Exception as e:
             logger.warning("Error fetching details for %s: %s", tmdb_id, repr(e), exc_info=True)
+            _mark_failure(tmdb_id, media_type, reason=repr(e))
             continue
     return results
 
