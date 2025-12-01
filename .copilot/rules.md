@@ -9,7 +9,7 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
 - All logger messages must use **`%s` formatting**, _never_ f-strings or `.format()`.
   - **Good:** `logger.info("Loaded item %s", item_id)`
   - **Bad:** `logger.info(f"Loaded item {item_id}")`
-- For **error logs** involving an exception object `e`:
+- For logs involving an **exception**, use an exception object `e`:
   - Always log the exception using **`repr(e)`**
   - Always set **`exc_info=True`**
   - **Example:**
