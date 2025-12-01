@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
@@ -22,7 +23,7 @@ EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "multi-qa-mpnet-base-dot-v1")
 EMBED_DEVICE = os.getenv("EMBED_DEVICE")  # can be cuda, mps or cpu
 
 _model: Optional[Any] = None
-
+_embed_lock = threading.Lock()
 
 def _select_device() -> str:
     if EMBED_DEVICE:
@@ -41,7 +42,7 @@ def _get_model() -> SentenceTransformer:
         device = _select_device()
         logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
         _model = SentenceTransformer(EMBED_MODEL_NAME, device=device)
-        # IMPORTANT: run a dummy encode to force layer materialization
+        # IMPORTANT: run a dummy encode to force layer materialization and warmup before threaded use
         _model.encode(["dummy"], show_progress_bar=False)
     return _model
 
@@ -96,7 +97,8 @@ def build_text_for_item(item: Dict) -> str:
 def embed_text(texts: List[str]) -> np.ndarray:
     try:
         model = _get_model()
-        vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
+        with _embed_lock:
+            vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
         return np.array(vectors)
     except Exception as e:
         logger.error("Embedding error: %s", repr(e), exc_info=True)
