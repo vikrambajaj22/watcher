@@ -35,48 +35,13 @@ def _select_device() -> str:
     return "cpu"
 
 
-def _get_model() -> Any:
+def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         device = _select_device()
         logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
         _model = SentenceTransformer(EMBED_MODEL_NAME, device=device)
     return _model
-
-
-def update_genre_mapping_file(media_type: str="movie"):
-    """Update genre mapping file."""
-    assert media_type in {"movie", "tv"}, f"media_type {media_type} not supported for genre retrieval."
-    genre_mapping_file = os.path.join("static", f"{media_type}_genres.json")
-    url = f"{settings.TMDB_API_URL}/genre/{media_type}/list"
-    params = {"api_key": os.getenv("TMDB_API_KEY")}
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-
-    genres = response.json().get("genres", [])
-    with open(genre_mapping_file, "w") as f:
-        json.dump({g["id"]: g["name"] for g in genres}, f, indent=4)
-
-
-def get_or_load_genre_mapping(media_type: str = "movie") -> Dict[int, str]:
-    """Get or load genre mapping from TMDB."""
-    assert media_type in {"movie", "tv"}, f"media_type {media_type} not supported for genre retrieval."
-    genre_mapping_file = os.path.join("static", f"{media_type}_genres.json")
-    if not os.path.exists(genre_mapping_file):
-        logger.info("Genre mapping file %s does not exist, creating it.", genre_mapping_file)
-        update_genre_mapping_file(media_type)
-    with open(genre_mapping_file, "r") as f:
-        return json.load(f)
-
-
-def get_genres(genre_ids: List[int], media_type: str):
-    """Get genres if available."""
-    genre_mapping = get_or_load_genre_mapping(media_type)
-    if not all(i in genre_mapping for i in genre_ids):
-        # the ids might have been updated, repopulate the genre mapping file
-        update_genre_mapping_file(media_type)
-    genre_mapping = get_or_load_genre_mapping(media_type)
-    return [genre_mapping.get(g) for g in genre_ids if genre_mapping.get(g)]
 
 
 def build_text_for_item(item: Dict) -> str:
@@ -104,7 +69,7 @@ def build_text_for_item(item: Dict) -> str:
         # keep a reasonable limit to avoid huge inputs
         parts.append(f"Overview: {overview[:2000]}")
 
-    genres = get_genres(item.get("genre_ids", []), item.get("media_type"))
+    genres = list(set([g.get("name") for g in item.get("genres", []) if g.get("name")]))
     if genres:
         parts.append(f"Genres: {', '.join(genres)}")
 
@@ -127,9 +92,13 @@ def build_text_for_item(item: Dict) -> str:
 
 
 def embed_text(texts: List[str]) -> np.ndarray:
-    model = _get_model()
-    vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
-    return np.array(vectors)
+    try:
+        model = _get_model()
+        vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
+        return np.array(vectors)
+    except Exception as e:
+        logger.error("Embedding error: %s", repr(e), exc_info=True)
+        return np.array([])
 
 
 def embed_item_and_store(item: Dict) -> Dict:
