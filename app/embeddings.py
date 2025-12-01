@@ -41,6 +41,8 @@ def _get_model() -> SentenceTransformer:
         device = _select_device()
         logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
         _model = SentenceTransformer(EMBED_MODEL_NAME, device=device)
+        # IMPORTANT: run a dummy encode to force layer materialization
+        _model.encode(["dummy"], show_progress_bar=False)
     return _model
 
 
@@ -104,7 +106,8 @@ def embed_text(texts: List[str]) -> np.ndarray:
 def embed_item_and_store(item: Dict) -> Dict:
     """Compute embedding for a TMDB item dict and store it in mongo under `embedding` and `embedding_meta`."""
     text = build_text_for_item(item)
-    vec = embed_text([text])[0]
+    vec = embed_text([text])
+    vec = vec[0] if vec.size else np.array([])
     embed_list = vec.tolist()
     meta = {
         "embedding_model": EMBED_MODEL_NAME,
