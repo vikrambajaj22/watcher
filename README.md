@@ -64,18 +64,23 @@ python -m pip install -r requirements.txt
 ```
 
 ### Quick bootstrap (commands)
-1) Compute embeddings for TMDB items (bootstrap or after a sync):
+1) Sync Trakt and TMDB items into Mongo (movies and TV shows):
+```bash
+python sync_worker.py
+```
+
+2Compute embeddings for TMDB items (bootstrap or after a sync):
 ```bash
 python -c "from app.embeddings import index_all_items; print('processed', index_all_items(batch_size=128))"
 ```
 
-2) Build (rebuild) FAISS index from Mongo embeddings (saves CPU index and attempts GPU transfer):
+3) Build (rebuild) FAISS index from Mongo embeddings (saves CPU index and attempts GPU transfer):
 ```bash
 python -c "from app.vector_store import rebuild_index; rebuild_index(dim=768, factory='IDMAP,IVF100,Flat')"
 ```
 - Note: use `dim=384` for MiniLM models (e.g., `all-MiniLM-L6-v2`).
 
-3) Start the web app (FAISS index will be loaded into `app.state.faiss_index` at startup):
+4) Start the web app (FAISS index will be loaded into `app.state.faiss_index` at startup):
 ```bash
 uvicorn app.main:app --reload --port 8080
 ```

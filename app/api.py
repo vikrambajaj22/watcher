@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -11,8 +12,8 @@ from app.utils.logger import get_logger
 from app.db import tmdb_metadata_collection
 
 from app.embeddings import embed_item_and_store, index_all_items
-from app.vector_store import rebuild_index, query, load_index
-from app.utils.llm_orchestrator import resolve_query_vector, call_mcp_knn
+from app.vector_store import rebuild_index
+from app.utils.llm_orchestrator import call_mcp_knn
 
 logger = get_logger(__name__)
 
@@ -39,13 +40,13 @@ def root():
 
 
 @router.get("/recommend/movies")
-def get_movie_recommendations() -> MovieRecommendationsResponse | JSONResponse:
+def get_movie_recommendations() -> MovieRecommendationsResponse:
     try:
         check_trakt_last_activities_and_sync()
         recommender = MovieRecommender()
         return recommender.generate_recommendations()
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": repr(e)}, status_code=500)
 
 
 @router.get("/auth/trakt/start")

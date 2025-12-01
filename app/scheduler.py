@@ -17,7 +17,7 @@ def check_trakt_last_activities_and_sync():
             settings.TRAKT_LAST_ACTIVITIES_API_URL,
             headers=settings.trakt_headers
         )
-        logger.info("Trakt last_activities response s", resp.status_code)
+        logger.info("Trakt last_activities response %s", resp.status_code)
         if resp.status_code != 200:
             logger.warning(
                 "Failed to fetch Trakt last_activities: %s", resp.status_code)
