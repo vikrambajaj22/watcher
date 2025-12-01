@@ -9,7 +9,7 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def start_scheduler(trakt_interval_sec=300, tmdb_interval_hours=6):
+def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
     """ Start the scheduler to periodically check Trakt last activity and sync history.
     Runs every `trakt_interval_sec` seconds for Trakt (default 5 minutes) and every `tmdb_interval_hours` hours for TMDB.
     """
@@ -18,7 +18,7 @@ def start_scheduler(trakt_interval_sec=300, tmdb_interval_hours=6):
     scheduler.add_job(
         check_trakt_last_activities_and_sync,
         "interval",
-        seconds=trakt_interval_sec,
+        hours=trakt_interval_hours,
         next_run_time=datetime.datetime.now(),
         id="trakt_sync_job",
         replace_existing=True
@@ -34,7 +34,7 @@ def start_scheduler(trakt_interval_sec=300, tmdb_interval_hours=6):
         replace_existing=True
     )
 
-    logger.info("Starting sync scheduler (Trakt every %s seconds, TMDB every %s hours)...", trakt_interval_sec, tmdb_interval_hours)
+    logger.info("Starting sync scheduler (Trakt every %s hours, TMDB every %s hours)...", trakt_interval_hours, tmdb_interval_hours)
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
@@ -43,4 +43,4 @@ def start_scheduler(trakt_interval_sec=300, tmdb_interval_hours=6):
 
 if __name__ == "__main__":
     # Default: Trakt every hour (3600s) and TMDB every 6 hours
-    start_scheduler(trakt_interval_sec=3600, tmdb_interval_hours=6)
+    start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6)
