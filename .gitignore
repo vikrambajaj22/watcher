@@ -11,3 +11,8 @@ dist/
 *.egg-info/
 .vscode/
 .idea/
+.DS_Store
+*.pt
+./faiss_index
+*.index
+*.npy

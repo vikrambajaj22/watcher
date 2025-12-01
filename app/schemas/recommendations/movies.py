@@ -5,8 +5,8 @@ from pydantic import BaseModel
 
 
 class MovieRecommendation(BaseModel):
+    id: str
     title: str
-    overview: str
     reasoning: str
 
 class MovieRecommendationsResponse(BaseModel):

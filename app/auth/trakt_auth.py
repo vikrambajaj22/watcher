@@ -53,12 +53,12 @@ def exchange_code_for_token(code):
 def save_token_data(data):
     with open(TOKEN_FILE, "w") as f:
         json.dump(data, f, indent=2)
-    logger.info(f"Token saved to {TOKEN_FILE}")
+    logger.info("Token saved to %s", TOKEN_FILE)
 
 
 def load_token_data():
     if not os.path.exists(TOKEN_FILE):
-        logger.warning(f"{TOKEN_FILE} not found. Running initial authentication...")
+        logger.warning("%s not found. Running initial authentication...", TOKEN_FILE)
         main()  # Run the auth flow to create the token file
     with open(TOKEN_FILE) as f:
         return json.load(f)

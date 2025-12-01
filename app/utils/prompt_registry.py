@@ -12,7 +12,7 @@ class PromptRegistry:
     def __init__(self, registry_path='app/prompts'):
         self.registry_path = registry_path
 
-    def load_prompt_template(self, template_name, template_version):
+    def load_prompt_template(self, template_name: str, template_version: int):
         """Load a prompt template from the registry."""
         try:
             env = Environment(loader=FileSystemLoader(self.registry_path))
@@ -20,5 +20,5 @@ class PromptRegistry:
             logger.info(f"Loaded template: {template_name}, version: {template_version}")
             return template
         except Exception as e:
-            logger.error(f"Error loading template {template_name}: {e}")
+            logger.error("Error loading template %s: %s", template_name, repr(e), exc_info=True)
             raise

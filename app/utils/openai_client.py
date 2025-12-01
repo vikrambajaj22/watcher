@@ -26,14 +26,14 @@ def get_openai_chat_completion(model, messages, **kwargs):
                 **kwargs
             )
             return response
+        except openai.RateLimitError as e:
+            logger.warning(
+                "Rate limited by OpenAI API (429). Retrying in %s seconds...", backoff)
+            time.sleep(backoff)
+            backoff *= 2
+            continue
         except Exception as e:
-            if hasattr(e, "status_code") and e.status_code == 429:
-                logger.warning(
-                    f"Rate limited by OpenAI API (429). Retrying in {backoff} seconds...")
-                time.sleep(backoff)
-                backoff *= 2
-                continue
-            logger.error(f"OpenAI API request failed: {e}")
+            logger.error("OpenAI API request failed: %s", repr(e), exc_info=True)
             raise
     logger.error("Max retries exceeded for OpenAI API request.")
     raise Exception("Max retries exceeded for OpenAI API request.")

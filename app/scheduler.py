@@ -4,6 +4,7 @@ from app.config.settings import settings
 from app.dao.history import get_watch_history
 from app.trakt_sync import sync_trakt_history
 from app.utils.logger import get_logger
+from app.tmdb_sync import sync_tmdb_changes
 
 logger = get_logger(__name__)
 
@@ -16,10 +17,10 @@ def check_trakt_last_activities_and_sync():
             settings.TRAKT_LAST_ACTIVITIES_API_URL,
             headers=settings.trakt_headers
         )
-        logger.info(f"Trakt last_activities response: {resp.status_code}")
+        logger.info("Trakt last_activities response s", resp.status_code)
         if resp.status_code != 200:
             logger.warning(
-                f"Failed to fetch Trakt last_activities: {resp.status_code}")
+                "Failed to fetch Trakt last_activities: %s", resp.status_code)
             return
 
         activity = resp.json()
@@ -35,8 +36,8 @@ def check_trakt_last_activities_and_sync():
              for item in db_history if item.get("latest_watched_at")),
             default=None
         )
-        logger.info(f"Trakt latest activity: {trakt_latest}")
-        logger.info(f"DB latest activity: {db_latest}")
+        logger.info("Trakt latest activity: %s", trakt_latest)
+        logger.info("DB latest activity: %s", db_latest)
         if db_latest and trakt_latest and trakt_latest <= db_latest:
             logger.info("No new Trakt activity since last DB update.")
             return
@@ -45,4 +46,18 @@ def check_trakt_last_activities_and_sync():
         sync_trakt_history()
 
     except Exception as e:
-        logger.error(f"Error during Trakt last_activities check: {e}")
+        logger.error("Error during Trakt last_activities check: %s", repr(e), exc_info=True)
+
+
+def run_tmdb_periodic_sync():
+    """Run TMDB sync for both movies and TV shows. Designed to be scheduled infrequently (e.g., every 6 hours)."""
+    try:
+        logger.info("Starting TMDB changes sync (movie)")
+        sync_tmdb_changes(media_type="movie")
+    except Exception as e:
+        logger.error("TMDB movie sync failed: %s", repr(e), exc_info=True)
+    try:
+        logger.info("Starting TMDB changes sync (tv)")
+        sync_tmdb_changes(media_type="tv")
+    except Exception as e:
+        logger.error("TMDB tv sync failed: %s", repr(e), exc_info=True)

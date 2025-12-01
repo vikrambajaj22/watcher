@@ -1,5 +1,6 @@
 import hashlib
 import json
+from csv import excel
 
 import requests
 
@@ -20,11 +21,11 @@ def sync_trakt_history():
     while True:
         params = {"page": page, "limit": per_page}
         response = requests.get(settings.TRAKT_HISTORY_API_URL, headers=settings.trakt_headers, params=params)
-        logger.info(f"Syncing Trakt history: {response.status_code} (page {page})")
+        logger.info("Syncing Trakt history: %s (page %s)", response.status_code, page)
         if response.status_code != 200:
             break
         page_data = response.json()
-        logger.info(f"Fetched {len(page_data)} items on page {page}")
+        logger.info("Fetched %s items on page %s", len(page_data), page)
         if not page_data:
             break
         for item in page_data:
@@ -88,7 +89,7 @@ def sync_trakt_history():
     for show_id, show in seen_shows.items():
         item = show["item"]
         show_data = item.copy()
-        show_data["type"] = "show"
+        show_data["type"] = "tv"
         if "show" in show_data and isinstance(show_data["show"], dict):
             for k, v in show_data["show"].items():
                 if k not in show_data:
@@ -109,7 +110,7 @@ def sync_trakt_history():
                         if season.get("season_number") is not None and season.get("episode_count") is not None:
                             season_episode_counts[season["season_number"]] = season["episode_count"]
             except Exception as e:
-                logger.warning(f"Could not fetch TMDB metadata for show {show_id}: {e}")
+                logger.warning("Could not fetch TMDB metadata for show %s: %s", show_id, repr(e), exc_info=True)
         watched_episodes = len(show["episodes"])
         show_data["watched_episodes"] = watched_episodes
         show_data["total_episodes"] = total_episodes
@@ -151,7 +152,7 @@ def sync_trakt_history():
         show_data["season_completion_count"] = season_completion_count
         all_history.append(show_data)
 
-    logger.info(f"Total unique movies: {len(seen_movies)}, unique shows: {len(seen_shows)}")
+    logger.info("Total unique movies: %s, unique shows: %s", len(seen_movies), len(seen_shows))
     if not all_history:
         return
     current_history = get_watch_history()
@@ -180,7 +181,7 @@ def sync_trakt_history():
                     )
                 )
                 return (
-                    "show",
+                    "tv",
                     item.get("ids", {}).get("trakt"),
                     item.get("watch_count"),
                     item.get("episode_watch_count"),

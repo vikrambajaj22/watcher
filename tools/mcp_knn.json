@@ -1,0 +1,19 @@
+{
+  "name": "mcp_knn",
+  "description": "Find top-k nearest TMDB items for a tmdb_id, text query, or embedding vector.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "tmdb_id": { "type": "integer" },
+      "text": { "type": "string" },
+      "vector": { "type": "array", "items": { "type": "number" } },
+      "k": { "type": "integer", "minimum": 1 }
+    },
+    "oneOf": [
+      { "required": ["tmdb_id"] },
+      { "required": ["text"] },
+      { "required": ["vector"] }
+    ]
+  }
+}
+
