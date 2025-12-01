@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
@@ -8,14 +7,14 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 
 import numpy as np
-import requests
 import torch
 from sentence_transformers import SentenceTransformer
 
-from app.config.settings import settings
 from app.db import tmdb_metadata_collection
 from app.utils.logger import get_logger
 
+
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 logger = get_logger(__name__)
 
 # retrieval-optimized bi-encoder recommended for semantic search/recommendation
@@ -23,7 +22,6 @@ EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "multi-qa-mpnet-base-dot-v1")
 EMBED_DEVICE = os.getenv("EMBED_DEVICE")  # can be cuda, mps or cpu
 
 _model: Optional[Any] = None
-_embed_lock = threading.Lock()
 
 def _select_device() -> str:
     if EMBED_DEVICE:
@@ -41,9 +39,13 @@ def _get_model() -> SentenceTransformer:
     if _model is None:
         device = _select_device()
         logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
-        _model = SentenceTransformer(EMBED_MODEL_NAME, device=device)
+        # first load on CPU (no meta tensor issues)
+        _model = SentenceTransformer(EMBED_MODEL_NAME, device='cpu')
         # IMPORTANT: run a dummy encode to force layer materialization and warmup before threaded use
         _model.encode(["dummy"], show_progress_bar=False)
+        # now move safely to GPU device if needed
+        if device != "cpu":
+            _model.to(device)
     return _model
 
 
@@ -97,8 +99,7 @@ def build_text_for_item(item: Dict) -> str:
 def embed_text(texts: List[str]) -> np.ndarray:
     try:
         model = _get_model()
-        with _embed_lock:
-            vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
+        vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
         return np.array(vectors)
     except Exception as e:
         logger.error("Embedding error: %s", repr(e), exc_info=True)
