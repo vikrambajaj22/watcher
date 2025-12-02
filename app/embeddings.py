@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
@@ -21,6 +22,7 @@ EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "multi-qa-mpnet-base-dot-v1")
 EMBED_DEVICE = os.getenv("EMBED_DEVICE")  # can be cuda, mps or cpu
 
 _model: Optional[Any] = None
+_embed_lock = threading.Lock()
 
 def _select_device() -> str:
     if EMBED_DEVICE:
@@ -35,16 +37,17 @@ def _select_device() -> str:
 
 def _get_model() -> SentenceTransformer:
     global _model
-    if _model is None:
-        device = _select_device()
-        logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
-        # first load on CPU (no meta tensor issues)
-        _model = SentenceTransformer(EMBED_MODEL_NAME, device='cpu')
-        # IMPORTANT: run a dummy encode to force layer materialization and warmup before threaded use
-        _model.encode(["dummy"], show_progress_bar=False)
-        # now move safely to GPU device if needed
-        if device != "cpu":
-            _model.to(device)
+    with _embed_lock:
+        if _model is None:
+            device = _select_device()
+            logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
+            # first load on CPU (no meta tensor issues)
+            _model = SentenceTransformer(EMBED_MODEL_NAME, device='cpu')
+            # IMPORTANT: run a dummy encode to force layer materialization and warmup before threaded use
+            _model.encode(["dummy"], show_progress_bar=False)
+            # now move safely to GPU device if needed
+            if device != "cpu":
+                _model.to(device)
     return _model
 
 
