@@ -177,24 +177,55 @@ def sync_tmdb_changes(media_type: str = "movie", window_seconds: int = 60 * 60 *
         logger.info("No %s changes processed.", media_type)
 
     # process embeddings for updated items in a small thread pool to avoid blocking the sync too long
+    summary = {
+        "total_processed": total_processed,
+        "embed_submitted": 0,
+        "embed_succeeded": 0,
+        "embed_failed": 0,
+        "embed_timed_out": 0,
+    }
+
     if embed_updated and to_embed:
         try:
             futures = []
+            future_to_id = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 for item in to_embed:
                     try:
-                        futures.append(executor.submit(embed_item_and_store, item))
+                        fut = executor.submit(embed_item_and_store, item)
+                        futures.append(fut)
+                        future_to_id[fut] = item.get("id")
                     except Exception as e:
                         logger.warning("Failed to submit embedding job for %s: %s", item.get("id"), repr(e), exc_info=True)
-                # wait a short while for tasks to complete; don't block forever
-                for f in futures:
+                summary["embed_submitted"] = len(futures)
+
+                # wait for a bounded total time: 30s per task up to a 10-minute cap
+                total_timeout = min(30 * max(1, len(futures)), 600)
+                done, not_done = concurrent.futures.wait(futures, timeout=total_timeout, return_when=concurrent.futures.ALL_COMPLETED)
+
+                # inspect completed futures
+                for f in done:
+                    item_id = future_to_id.get(f)
                     try:
-                        f.result(timeout=30)
+                        res = f.result()
+                        summary["embed_succeeded"] += 1
                     except Exception as e:
-                        logger.warning("Embedding job error or timeout: %s", repr(e), exc_info=True)
-            logger.info("Submitted and waited for %s embedding tasks", len(futures))
+                        summary["embed_failed"] += 1
+                        logger.warning("Embedding job failed for %s: %s", item_id, repr(e), exc_info=True)
+
+                # for any futures not completed in time, attempt cancel and mark timed out
+                for f in not_done:
+                    item_id = future_to_id.get(f)
+                    try:
+                        canceled = f.cancel()
+                        logger.warning("Embedding task for %s did not complete in time (canceled=%s)", item_id, canceled)
+                    except Exception as e:
+                        logger.warning("Failed to cancel embedding task for %s: %s", item_id, repr(e), exc_info=True)
+                    summary["embed_timed_out"] += 1
+            logger.info("Submitted and processed %s embedding tasks (submitted=%s, succeeded=%s, failed=%s, timed_out=%s)", len(to_embed), summary["embed_submitted"], summary["embed_succeeded"], summary["embed_failed"], summary["embed_timed_out"])
         except Exception as e:
             logger.warning("Embedding step failed: %s", repr(e), exc_info=True)
+    return summary
 
 
 def full_tmdb_popular_sync(media_type: str = "movie", pages: int = 5):
@@ -215,7 +246,7 @@ def full_tmdb_popular_sync(media_type: str = "movie", pages: int = 5):
             item["media_type"] = media_type
             tmdb_metadata_collection.update_one({"id": item.get("id"), "media_type": media_type}, {"$set": item}, upsert=True)
             # mark as popular and set timestamp
-            tmdb_metadata_collection.update_one({"id": item.get("id"), "media_type": media_type}, {"$set": {"is_popular": True, "popular_updated_at": datetime.utcnow().isoformat()}}, upsert=True)
+            tmdb_metadata_collection.update_one({"id": item.get("id"), "media_type": media_type}, {"$set": {"is_popular": True, "popular_updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
             seen_ids.add(item.get("id"))
             total += 1
 

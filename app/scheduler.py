@@ -53,11 +53,13 @@ def run_tmdb_periodic_sync():
     """Run TMDB sync for both movies and TV shows. Designed to be scheduled infrequently (e.g., every 6 hours)."""
     try:
         logger.info("Starting TMDB changes sync (movie)")
-        sync_tmdb_changes(media_type="movie")
+        summary = sync_tmdb_changes(media_type="movie")
+        logger.info("TMDB movie sync finished: %s", summary)
     except Exception as e:
         logger.error("TMDB movie sync failed: %s", repr(e), exc_info=True)
     try:
         logger.info("Starting TMDB changes sync (tv)")
-        sync_tmdb_changes(media_type="tv")
+        summary = sync_tmdb_changes(media_type="tv")
+        logger.info("TMDB tv sync finished: %s", summary)
     except Exception as e:
         logger.error("TMDB tv sync failed: %s", repr(e), exc_info=True)
