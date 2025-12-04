@@ -1,5 +1,6 @@
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 
 from app.api import router
 from app.faiss_index import load_faiss_index
@@ -20,10 +21,13 @@ async def lifespan(app: FastAPI):
             logger.info("FAISS index not found on disk or failed to load")
         yield
     except Exception as e:
-        logger.warning("Failed to load FAISS index at startup: %s", repr(e), exc_info=True)
+        logger.warning(
+            "Failed to load FAISS index at startup: %s", repr(e), exc_info=True
+        )
         yield
     finally:
         pass
+
 
 app = FastAPI(title="Watcher", lifespan=lifespan)
 app.include_router(router)

@@ -1,16 +1,19 @@
-from datetime import datetime, timezone
-import time
-from typing import Optional
 import concurrent.futures
+import time
+from datetime import datetime, timezone
+from typing import Optional
 
 import requests
+from dateutil import parser as _dateutil_parser
 
 from app.config.settings import settings
-from app.db import tmdb_metadata_collection, sync_meta_collection, tmdb_failures_collection
-from app.utils.logger import get_logger
-
+from app.db import (
+    sync_meta_collection,
+    tmdb_failures_collection,
+    tmdb_metadata_collection,
+)
 from app.embeddings import embed_item_and_store
-from dateutil import parser as _dateutil_parser
+from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -31,7 +34,7 @@ def _set_last_sync_timestamp(media_type: str, ts: int):
     sync_meta_collection.update_one(
         {"_id": f"tmdb_{media_type}_last_sync"},
         {"$set": {"last_sync": ts}},
-        upsert=True
+        upsert=True,
     )
 
 
@@ -41,7 +44,9 @@ def _fetch_changes(media_type: str, start_time: Optional[int] = None, page: int 
     if start_time:
         # TMDB changes endpoint expects a date string (YYYY-MM-DD). Convert epoch to UTC date.
         try:
-            date_str = datetime.fromtimestamp(start_time, tz=timezone.utc).strftime("%Y-%m-%d")
+            date_str = datetime.fromtimestamp(start_time, tz=timezone.utc).strftime(
+                "%Y-%m-%d"
+            )
             params["start_date"] = date_str
         except Exception:
             params["start_date"] = start_time
@@ -56,7 +61,9 @@ FAILURE_THRESHOLD = 3
 
 def _is_failed(tmdb_id: int, media_type: str) -> bool:
     """Return True if the tmdb_id+media_type is marked as permanently failed."""
-    doc = tmdb_failures_collection.find_one({"id": tmdb_id, "media_type": media_type, "permanent": True})
+    doc = tmdb_failures_collection.find_one(
+        {"id": tmdb_id, "media_type": media_type, "permanent": True}
+    )
     return bool(doc)
 
 
@@ -79,16 +86,31 @@ def _mark_failure(tmdb_id: int, media_type: str, reason: str = ""):
             {"id": tmdb_id, "media_type": media_type},
             {
                 "$set": {"last_failed_at": now, "last_reason": reason},
-                "$inc": {"count": 1}
+                "$inc": {"count": 1},
             },
-            upsert=True
+            upsert=True,
         )
-        doc = tmdb_failures_collection.find_one({"id": tmdb_id, "media_type": media_type})
+        doc = tmdb_failures_collection.find_one(
+            {"id": tmdb_id, "media_type": media_type}
+        )
         if doc and doc.get("count", 0) >= FAILURE_THRESHOLD:
-            tmdb_failures_collection.update_one({"id": tmdb_id, "media_type": media_type}, {"$set": {"permanent": True}})
-            logger.info("Marking TMDB %s %s as permanently failed after %s attempts", media_type, tmdb_id, doc.get("count"))
+            tmdb_failures_collection.update_one(
+                {"id": tmdb_id, "media_type": media_type}, {"$set": {"permanent": True}}
+            )
+            logger.info(
+                "Marking TMDB %s %s as permanently failed after %s attempts",
+                media_type,
+                tmdb_id,
+                doc.get("count"),
+            )
     except Exception as e:
-        logger.warning("Failed to mark failure for %s %s: %s", media_type, tmdb_id, repr(e), exc_info=True)
+        logger.warning(
+            "Failed to mark failure for %s %s: %s",
+            media_type,
+            tmdb_id,
+            repr(e),
+            exc_info=True,
+        )
 
 
 def _fetch_details(media_type: str, tmdb_ids: list[int]):
@@ -96,7 +118,11 @@ def _fetch_details(media_type: str, tmdb_ids: list[int]):
     for tmdb_id in tmdb_ids:
         try:
             if _is_failed(tmdb_id, media_type):
-                logger.info("Skipping TMDB %s %s because it's marked as permanently failed", media_type, tmdb_id)
+                logger.info(
+                    "Skipping TMDB %s %s because it's marked as permanently failed",
+                    media_type,
+                    tmdb_id,
+                )
                 continue
             url = f"{settings.TMDB_API_URL}/{media_type}/{tmdb_id}?api_key={settings.TMDB_API_KEY}"
             r = requests.get(url)
@@ -104,27 +130,48 @@ def _fetch_details(media_type: str, tmdb_ids: list[int]):
                 results.append(r.json())
                 # on success, clear any previous failure records for this id
                 try:
-                    tmdb_failures_collection.delete_many({"id": tmdb_id, "media_type": media_type})
+                    tmdb_failures_collection.delete_many(
+                        {"id": tmdb_id, "media_type": media_type}
+                    )
                 except Exception as e:
-                    logger.warning("Failed to clear failure records for %s %s: %s", media_type, tmdb_id, repr(e), exc_info=True)
+                    logger.warning(
+                        "Failed to clear failure records for %s %s: %s",
+                        media_type,
+                        tmdb_id,
+                        repr(e),
+                        exc_info=True,
+                    )
             else:
-                logger.warning("Failed to fetch %s details for %s: %s", media_type, tmdb_id, r.status_code)
+                logger.warning(
+                    "Failed to fetch %s details for %s: %s",
+                    media_type,
+                    tmdb_id,
+                    r.status_code,
+                )
                 _mark_failure(tmdb_id, media_type, reason=f"status_{r.status_code}")
         except Exception as e:
-            logger.warning("Error fetching details for %s: %s", tmdb_id, repr(e), exc_info=True)
+            logger.warning(
+                "Error fetching details for %s: %s", tmdb_id, repr(e), exc_info=True
+            )
             _mark_failure(tmdb_id, media_type, reason=repr(e))
             continue
     return results
 
 
-def sync_tmdb_changes(media_type: str = "movie", window_seconds: int = 60 * 60 * 24 * 7, embed_updated: bool = True):
+def sync_tmdb_changes(
+    media_type: str = "movie",
+    window_seconds: int = 60 * 60 * 24 * 7,
+    embed_updated: bool = True,
+):
     """Sync TMDB changes using the /changes endpoint.
 
     - media_type: "movie" or "tv"
     - window_seconds: how far back to check changes if there's no stored last sync (default 7 days)
     - embed_updated: if True and embeddings are available, compute embeddings for updated items (background threads)
     """
-    assert media_type in ("movie", "tv"), f"media_type {media_type} not supported for syncing TMDB changes."
+    assert media_type in ("movie", "tv"), (
+        f"media_type {media_type} not supported for syncing TMDB changes."
+    )
     start_ts = _get_last_sync_timestamp(media_type)
     if not start_ts:
         # default to now - window_seconds
@@ -142,7 +189,7 @@ def sync_tmdb_changes(media_type: str = "movie", window_seconds: int = 60 * 60 *
         ids = [item.get("id") for item in data["results"] if item.get("id")]
         # fetch details in chunks
         for i in range(0, len(ids), CHUNK_SIZE):
-            chunk = ids[i:i + CHUNK_SIZE]
+            chunk = ids[i : i + CHUNK_SIZE]
             details = _fetch_details(media_type, chunk)
             for det in details:
                 if not det:
@@ -151,7 +198,7 @@ def sync_tmdb_changes(media_type: str = "movie", window_seconds: int = 60 * 60 *
                 tmdb_metadata_collection.update_one(
                     {"id": det.get("id"), "media_type": media_type},
                     {"$set": dict(det, media_type=media_type)},
-                    upsert=True
+                    upsert=True,
                 )
                 total_processed += 1
                 updated_at = det.get("updated_at")
@@ -172,7 +219,12 @@ def sync_tmdb_changes(media_type: str = "movie", window_seconds: int = 60 * 60 *
 
     if total_processed:
         _set_last_sync_timestamp(media_type, max_ts)
-        logger.info("Processed %s %s items from TMDB changes; set last_sync=%s", total_processed, media_type, max_ts)
+        logger.info(
+            "Processed %s %s items from TMDB changes; set last_sync=%s",
+            total_processed,
+            media_type,
+            max_ts,
+        )
     else:
         logger.info("No %s changes processed.", media_type)
 
@@ -196,33 +248,63 @@ def sync_tmdb_changes(media_type: str = "movie", window_seconds: int = 60 * 60 *
                         futures.append(fut)
                         future_to_id[fut] = item.get("id")
                     except Exception as e:
-                        logger.warning("Failed to submit embedding job for %s: %s", item.get("id"), repr(e), exc_info=True)
+                        logger.warning(
+                            "Failed to submit embedding job for %s: %s",
+                            item.get("id"),
+                            repr(e),
+                            exc_info=True,
+                        )
                 summary["embed_submitted"] = len(futures)
 
                 # wait for a bounded total time: 30s per task up to a 10-minute cap
                 total_timeout = min(30 * max(1, len(futures)), 600)
-                done, not_done = concurrent.futures.wait(futures, timeout=total_timeout, return_when=concurrent.futures.ALL_COMPLETED)
+                done, not_done = concurrent.futures.wait(
+                    futures,
+                    timeout=total_timeout,
+                    return_when=concurrent.futures.ALL_COMPLETED,
+                )
 
                 # inspect completed futures
                 for f in done:
                     item_id = future_to_id.get(f)
                     try:
-                        res = f.result()
+                        f.result()
                         summary["embed_succeeded"] += 1
                     except Exception as e:
                         summary["embed_failed"] += 1
-                        logger.warning("Embedding job failed for %s: %s", item_id, repr(e), exc_info=True)
+                        logger.warning(
+                            "Embedding job failed for %s: %s",
+                            item_id,
+                            repr(e),
+                            exc_info=True,
+                        )
 
                 # for any futures not completed in time, attempt cancel and mark timed out
                 for f in not_done:
                     item_id = future_to_id.get(f)
                     try:
                         canceled = f.cancel()
-                        logger.warning("Embedding task for %s did not complete in time (canceled=%s)", item_id, canceled)
+                        logger.warning(
+                            "Embedding task for %s did not complete in time (canceled=%s)",
+                            item_id,
+                            canceled,
+                        )
                     except Exception as e:
-                        logger.warning("Failed to cancel embedding task for %s: %s", item_id, repr(e), exc_info=True)
+                        logger.warning(
+                            "Failed to cancel embedding task for %s: %s",
+                            item_id,
+                            repr(e),
+                            exc_info=True,
+                        )
                     summary["embed_timed_out"] += 1
-            logger.info("Submitted and processed %s embedding tasks (submitted=%s, succeeded=%s, failed=%s, timed_out=%s)", len(to_embed), summary["embed_submitted"], summary["embed_succeeded"], summary["embed_failed"], summary["embed_timed_out"])
+            logger.info(
+                "Submitted and processed %s embedding tasks (submitted=%s, succeeded=%s, failed=%s, timed_out=%s)",
+                len(to_embed),
+                summary["embed_submitted"],
+                summary["embed_succeeded"],
+                summary["embed_failed"],
+                summary["embed_timed_out"],
+            )
         except Exception as e:
             logger.warning("Embedding step failed: %s", repr(e), exc_info=True)
     return summary
@@ -244,17 +326,39 @@ def full_tmdb_popular_sync(media_type: str = "movie", pages: int = 5):
         data = r.json()
         for item in data.get("results", []):
             item["media_type"] = media_type
-            tmdb_metadata_collection.update_one({"id": item.get("id"), "media_type": media_type}, {"$set": item}, upsert=True)
+            tmdb_metadata_collection.update_one(
+                {"id": item.get("id"), "media_type": media_type},
+                {"$set": item},
+                upsert=True,
+            )
             # mark as popular and set timestamp
-            tmdb_metadata_collection.update_one({"id": item.get("id"), "media_type": media_type}, {"$set": {"is_popular": True, "popular_updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+            tmdb_metadata_collection.update_one(
+                {"id": item.get("id"), "media_type": media_type},
+                {
+                    "$set": {
+                        "is_popular": True,
+                        "popular_updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
+                upsert=True,
+            )
             seen_ids.add(item.get("id"))
             total += 1
 
     # unset is_popular for items not seen in this run (but that were previously marked popular)
     if seen_ids:
-        cursor = tmdb_metadata_collection.find({"media_type": media_type, "is_popular": True}, {"_id": 0, "id": 1})
+        cursor = tmdb_metadata_collection.find(
+            {"media_type": media_type, "is_popular": True}, {"_id": 0, "id": 1}
+        )
         for doc in cursor:
             if doc.get("id") not in seen_ids:
-                tmdb_metadata_collection.update_one({"id": doc.get("id"), "media_type": media_type}, {"$set": {"is_popular": False}})
+                tmdb_metadata_collection.update_one(
+                    {"id": doc.get("id"), "media_type": media_type},
+                    {"$set": {"is_popular": False}},
+                )
 
-    logger.info("Inserted/updated %s popular %s items and updated popularity flags", total, media_type)
+    logger.info(
+        "Inserted/updated %s popular %s items and updated popularity flags",
+        total,
+        media_type,
+    )

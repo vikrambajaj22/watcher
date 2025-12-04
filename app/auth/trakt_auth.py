@@ -19,7 +19,7 @@ TOKEN_URL = "https://api.trakt.tv/oauth/token"
 HEADERS = {
     "Content-Type": "application/json",
     "trakt-api-version": "2",
-    "trakt-api-key": CLIENT_ID
+    "trakt-api-key": CLIENT_ID,
 }
 
 
@@ -27,9 +27,10 @@ def get_auth_url():
     params = {
         "response_type": "code",
         "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI
+        "redirect_uri": REDIRECT_URI,
     }
     import urllib.parse
+
     url = f"{AUTH_URL}?" + urllib.parse.urlencode(params)
     return url
 
@@ -42,9 +43,9 @@ def exchange_code_for_token(code):
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
             "redirect_uri": REDIRECT_URI,
-            "grant_type": "authorization_code"
+            "grant_type": "authorization_code",
         },
-        headers=HEADERS
+        headers=HEADERS,
     )
     resp.raise_for_status()
     return resp.json()
@@ -74,9 +75,9 @@ def refresh_token():
             "refresh_token": refresh_token,
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "grant_type": "refresh_token"
+            "grant_type": "refresh_token",
         },
-        headers=HEADERS
+        headers=HEADERS,
     )
     resp.raise_for_status()
     new_token_data = resp.json()
@@ -99,6 +100,7 @@ def main():
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--refresh", action="store_true", help="Refresh existing token")
     args = parser.parse_args()

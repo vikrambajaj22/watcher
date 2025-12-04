@@ -1,18 +1,16 @@
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.auth.trakt_auth import (exchange_code_for_token, get_auth_url,
-                                 save_token_data)
+from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
+from app.db import tmdb_metadata_collection
+from app.embeddings import embed_item_and_store, index_all_items
 from app.process.recommendation import MovieRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
+from app.schemas.api import AdminReindexPayload, MCPPayload
 from app.schemas.recommendations.movies import MovieRecommendationsResponse
-from app.schemas.api import MCPPayload, AdminReindexPayload
-from app.utils.logger import get_logger
-from app.db import tmdb_metadata_collection
-
-from app.embeddings import embed_item_and_store, index_all_items
-from app.vector_store import rebuild_index
 from app.utils.llm_orchestrator import call_mcp_knn
+from app.utils.logger import get_logger
+from app.vector_store import rebuild_index
 
 logger = get_logger(__name__)
 
@@ -75,22 +73,32 @@ def admin_reindex(background_tasks: BackgroundTasks, payload: AdminReindexPayloa
         if payload.id:
             tmdb_id = payload.id
             media_type = payload.media_type or "movie"
-            doc = tmdb_metadata_collection.find_one({"id": tmdb_id, "media_type": media_type}, {"_id": 0})
+            doc = tmdb_metadata_collection.find_one(
+                {"id": tmdb_id, "media_type": media_type}, {"_id": 0}
+            )
             if not doc:
                 return JSONResponse({"error": "item not found"}, status_code=404)
             background_tasks.add_task(embed_item_and_store, doc)
-            return JSONResponse({"status": "accepted", "message": "embedding started"}, status_code=202)
+            return JSONResponse(
+                {"status": "accepted", "message": "embedding started"}, status_code=202
+            )
 
         if payload.full:
             batch_size = int(payload.batch_size or 256)
             background_tasks.add_task(index_all_items, batch_size)
-            return JSONResponse({"status": "accepted", "message": "full indexing started"}, status_code=202)
+            return JSONResponse(
+                {"status": "accepted", "message": "full indexing started"},
+                status_code=202,
+            )
 
         if payload.build_faiss:
             dims = int(payload.dim or 768)
             factory = payload.factory or "IDMAP,IVF100,Flat"
             background_tasks.add_task(rebuild_index, dims, factory)
-            return JSONResponse({"status": "accepted", "message": "faiss build started"}, status_code=202)
+            return JSONResponse(
+                {"status": "accepted", "message": "faiss build started"},
+                status_code=202,
+            )
 
         return JSONResponse({"error": "invalid payload"}, status_code=400)
     except Exception as e:
@@ -98,7 +106,11 @@ def admin_reindex(background_tasks: BackgroundTasks, payload: AdminReindexPayloa
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-@router.post("/mcp/knn", summary="Find top-k nearest neighbors", description="Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector. Provide exactly one of tmdb_id, text, or vector.")
+@router.post(
+    "/mcp/knn",
+    summary="Find top-k nearest neighbors",
+    description="Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector. Provide exactly one of tmdb_id, text, or vector.",
+)
 def mcp_knn(payload: MCPPayload):
     try:
         # delegate to consolidated MCP handler

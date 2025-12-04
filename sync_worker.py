@@ -1,5 +1,4 @@
 import datetime
-import time
 
 from apscheduler.schedulers.background import BlockingScheduler
 
@@ -10,7 +9,7 @@ logger = get_logger(__name__)
 
 
 def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
-    """ Start the scheduler to periodically check Trakt last activity and sync history.
+    """Start the scheduler to periodically check Trakt last activity and sync history.
     Runs every `trakt_interval_sec` seconds for Trakt (default 5 minutes) and every `tmdb_interval_hours` hours for TMDB.
     """
     logger.info("Initializing sync scheduler...")
@@ -21,7 +20,7 @@ def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
         hours=trakt_interval_hours,
         next_run_time=datetime.datetime.now(),
         id="trakt_sync_job",
-        replace_existing=True
+        replace_existing=True,
     )
 
     # schedule TMDB sync (less frequent)
@@ -31,10 +30,14 @@ def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
         hours=tmdb_interval_hours,
         next_run_time=datetime.datetime.now(),
         id="tmdb_sync_job",
-        replace_existing=True
+        replace_existing=True,
     )
 
-    logger.info("Starting sync scheduler (Trakt every %s hours, TMDB every %s hours)...", trakt_interval_hours, tmdb_interval_hours)
+    logger.info(
+        "Starting sync scheduler (Trakt every %s hours, TMDB every %s hours)...",
+        trakt_interval_hours,
+        tmdb_interval_hours,
+    )
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):

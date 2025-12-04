@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import List, Optional
 
 from pydantic import BaseModel, model_validator
 
@@ -7,6 +7,7 @@ class MCPPayload(BaseModel):
     """Payload for the /mcp/knn endpoint.
     Provide exactly one of: tmdb_id, text, or vector. k controls number of neighbors.
     """
+
     tmdb_id: Optional[int] = None
     text: Optional[str] = None
     vector: Optional[List[float]] = None
@@ -27,6 +28,7 @@ class AdminReindexPayload(BaseModel):
     """Payload for /admin/reindex to trigger indexing operations.
     Fields are optional and interpreted as commands.
     """
+
     id: Optional[int] = None
     media_type: Optional[str] = "movie"
     full: Optional[bool] = False

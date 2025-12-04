@@ -3,6 +3,7 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
 def store_watch_history(data):
     if isinstance(data, list):
         watch_history_collection.delete_many({})
@@ -11,6 +12,7 @@ def store_watch_history(data):
     else:
         logger.error("Invalid data format for storing watch history. Expected a list.")
         raise ValueError("Data must be a list of watch history items.")
+
 
 def get_watch_history(media_type=None):
     query = {"media_type": media_type} if media_type else {}

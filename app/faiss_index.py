@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
-import numpy as np
 import faiss
+import numpy as np
 
 from app.db import tmdb_metadata_collection
 from app.utils.logger import get_logger
@@ -20,18 +20,25 @@ FAISS_USE_GPU = os.getenv("FAISS_USE_GPU", "false").lower() == "true"
 FAISS_GPU_ID = int(os.getenv("FAISS_GPU_ID", "0"))
 
 
-def _to_gpu_index(index: faiss.Index, gpu_id: int = 0) -> faiss.Index:
+def _to_gpu_index(index: "faiss.Index", gpu_id: int = 0) -> "faiss.Index":
     # create GPU resources and transfer index to GPU (requires faiss-gpu installation)
     res = faiss.StandardGpuResources()
     gpu_index = faiss.index_cpu_to_gpu(res, gpu_id, index)
     return gpu_index
 
 
-def build_faiss_index(dim: int, index_factory: str = "IDMAP,IVF100,Flat") -> Optional[faiss.Index]:
+def build_faiss_index(
+    dim: int, index_factory: str = "IDMAP,IVF100,Flat"
+) -> Optional["faiss.Index"]:
     """Build FAISS index from embeddings stored in Mongo and persist CPU index; optionally return GPU index."""
     os.makedirs(INDEX_DIR, exist_ok=True)
 
-    docs = list(tmdb_metadata_collection.find({"embedding": {"$exists": True}}, {"_id": 0, "embedding": 1, "id": 1, "media_type": 1}))
+    docs = list(
+        tmdb_metadata_collection.find(
+            {"embedding": {"$exists": True}},
+            {"_id": 0, "embedding": 1, "id": 1, "media_type": 1},
+        )
+    )
     if not docs:
         logger.info("No items with embeddings found to build FAISS index")
         return None
@@ -53,7 +60,9 @@ def build_faiss_index(dim: int, index_factory: str = "IDMAP,IVF100,Flat") -> Opt
     # save CPU index and ids
     faiss.write_index(index, INDEX_FILE)
     np.save(META_FILE, ids)
-    logger.info("Built and saved FAISS index with %s vectors at %s", len(ids), INDEX_FILE)
+    logger.info(
+        "Built and saved FAISS index with %s vectors at %s", len(ids), INDEX_FILE
+    )
 
     if FAISS_USE_GPU:
         try:
@@ -61,12 +70,16 @@ def build_faiss_index(dim: int, index_factory: str = "IDMAP,IVF100,Flat") -> Opt
             logger.info("Transferred FAISS index to GPU")
             return gpu_index
         except Exception as e:
-            logger.warning("Failed to transfer FAISS index to GPU, continuing with CPU index: %s", repr(e), exc_info=True)
+            logger.warning(
+                "Failed to transfer FAISS index to GPU, continuing with CPU index: %s",
+                repr(e),
+                exc_info=True,
+            )
             return index
     return index
 
 
-def load_faiss_index() -> Optional[faiss.Index]:
+def load_faiss_index() -> Optional["faiss.Index"]:
     if not os.path.exists(INDEX_FILE) or not os.path.exists(META_FILE):
         logger.info("FAISS index files missing")
         return None
@@ -78,7 +91,11 @@ def load_faiss_index() -> Optional[faiss.Index]:
                 logger.info("Loaded FAISS index and moved to GPU")
                 return gpu_index
             except Exception as e:
-                logger.warning("Failed to move FAISS index to GPU, using CPU index: %s", repr(e), exc_info=True)
+                logger.warning(
+                    "Failed to move FAISS index to GPU, using CPU index: %s",
+                    repr(e),
+                    exc_info=True,
+                )
                 return cpu_index
         return cpu_index
     except Exception as e:
@@ -86,14 +103,16 @@ def load_faiss_index() -> Optional[faiss.Index]:
         return None
 
 
-def query_faiss(index: faiss.Index, query_vec: np.ndarray, k: int = 10) -> List[Tuple[int, float]]:
+def query_faiss(
+    index: "faiss.Index", query_vec: np.ndarray, k: int = 10
+) -> List[Tuple[int, float]]:
     q = np.array(query_vec, dtype=np.float32)
     if q.ndim == 1:
         q = q.reshape(1, -1)
-    D, I = index.search(q, k)
+    D, idxs = index.search(q, k)
     ids = np.load(META_FILE)
     results = []
-    for score_arr, idx_arr in zip(D, I):
+    for score_arr, idx_arr in zip(D, idxs):
         for score, idx in zip(score_arr, idx_arr):
             if idx < 0:
                 continue

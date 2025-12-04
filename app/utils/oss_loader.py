@@ -18,7 +18,9 @@ def load_oss_model(model_name="openai/gpt-oss-20b"):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     device = get_device()
     if device == "mps":
-        model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float16, low_cpu_mem_usage=True).to(device)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name, dtype=torch.float16, low_cpu_mem_usage=True
+        ).to(device)
     else:
         model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
     return model, tokenizer

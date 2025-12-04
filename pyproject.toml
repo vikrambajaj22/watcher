@@ -1,0 +1,9 @@
+# Project configuration
+# Enables ruff linting and enables import-related rules/fixes so ruff can auto-sort imports
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+exclude = ["**/.venv", "**/venv", "**/__pycache__", "build", "dist", ".git", ".tox"]
+
+[tool.ruff.lint]
+extend-select = ["I"]

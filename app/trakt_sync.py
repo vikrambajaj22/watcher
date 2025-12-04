@@ -1,6 +1,5 @@
 import hashlib
 import json
-from csv import excel
 
 import requests
 
@@ -20,7 +19,11 @@ def sync_trakt_history():
     per_page = 100  # trakt's max limit per page is 100
     while True:
         params = {"page": page, "limit": per_page}
-        response = requests.get(settings.TRAKT_HISTORY_API_URL, headers=settings.trakt_headers, params=params)
+        response = requests.get(
+            settings.TRAKT_HISTORY_API_URL,
+            headers=settings.trakt_headers,
+            params=params,
+        )
         logger.info("Syncing Trakt history: %s (page %s)", response.status_code, page)
         if response.status_code != 200:
             break
@@ -38,12 +41,20 @@ def sync_trakt_history():
                     continue
                 movie_entry = seen_movies.setdefault(
                     movie_id,
-                    {"item": item, "count": 0, "earliest": watched_at, "latest": watched_at}
+                    {
+                        "item": item,
+                        "count": 0,
+                        "earliest": watched_at,
+                        "latest": watched_at,
+                    },
                 )
                 movie_entry["count"] += 1
                 # update earliest and latest watched_at
                 if watched_at:
-                    if not movie_entry["earliest"] or watched_at < movie_entry["earliest"]:
+                    if (
+                        not movie_entry["earliest"]
+                        or watched_at < movie_entry["earliest"]
+                    ):
                         movie_entry["earliest"] = watched_at
                     if not movie_entry["latest"] or watched_at > movie_entry["latest"]:
                         movie_entry["latest"] = watched_at
@@ -51,19 +62,33 @@ def sync_trakt_history():
                 show = item.get("show")
                 show_id = show["ids"]["trakt"] if show and show.get("ids") else None
                 episode = item.get("episode")
-                if not (show_id and episode and episode.get("season") is not None and episode.get("number") is not None):
+                if not (
+                    show_id
+                    and episode
+                    and episode.get("season") is not None
+                    and episode.get("number") is not None
+                ):
                     continue
                 ep_key = (episode["season"], episode["number"])
                 show_entry = seen_shows.setdefault(
                     show_id,
-                    {"item": item, "episodes": {}, "episode_watch_total": 0, "earliest": watched_at, "latest": watched_at}
+                    {
+                        "item": item,
+                        "episodes": {},
+                        "episode_watch_total": 0,
+                        "earliest": watched_at,
+                        "latest": watched_at,
+                    },
                 )
                 show_entry["episodes"].setdefault(ep_key, 0)
                 show_entry["episodes"][ep_key] += 1
                 show_entry["episode_watch_total"] += 1
                 # update earliest and latest watched_at
                 if watched_at:
-                    if not show_entry["earliest"] or watched_at < show_entry["earliest"]:
+                    if (
+                        not show_entry["earliest"]
+                        or watched_at < show_entry["earliest"]
+                    ):
                         show_entry["earliest"] = watched_at
                     if not show_entry["latest"] or watched_at > show_entry["latest"]:
                         show_entry["latest"] = watched_at
@@ -109,15 +134,27 @@ def sync_trakt_history():
                 # build season_episode_counts from TMDB metadata if available
                 if meta.get("seasons"):
                     for season in meta["seasons"]:
-                        if season.get("season_number") is not None and season.get("episode_count") is not None:
-                            season_episode_counts[season["season_number"]] = season["episode_count"]
+                        if (
+                            season.get("season_number") is not None
+                            and season.get("episode_count") is not None
+                        ):
+                            season_episode_counts[season["season_number"]] = season[
+                                "episode_count"
+                            ]
             except Exception as e:
-                logger.warning("Could not fetch TMDB metadata for show %s: %s", show_id, repr(e), exc_info=True)
+                logger.warning(
+                    "Could not fetch TMDB metadata for show %s: %s",
+                    show_id,
+                    repr(e),
+                    exc_info=True,
+                )
         watched_episodes = len(show["episodes"])
         show_data["watched_episodes"] = watched_episodes
         show_data["total_episodes"] = total_episodes
         # calculate show completion ratio: unique episodes watched / total episodes
-        show_data["completion_ratio"] = watched_episodes / total_episodes if total_episodes else 0.0
+        show_data["completion_ratio"] = (
+            watched_episodes / total_episodes if total_episodes else 0.0
+        )
         # calculate watch_count (number of times all episodes were watched)
         if total_episodes and watched_episodes == total_episodes:
             watch_count = min(show["episodes"].values())
@@ -139,15 +176,19 @@ def sync_trakt_history():
                 episodes_watched = len(episode_counts)
                 min_watch_count = min(episode_counts) if episode_counts else 0
                 # calculate completion ratio: unique episodes watched / total episodes
-                completion_ratio = episodes_watched / num_episodes if num_episodes else 0.0
+                completion_ratio = (
+                    episodes_watched / num_episodes if num_episodes else 0.0
+                )
                 # calculate average watch count for the season
-                avg_watch_count = sum(episode_counts) / num_episodes if num_episodes else 0.0
+                avg_watch_count = (
+                    sum(episode_counts) / num_episodes if num_episodes else 0.0
+                )
                 entry = {
                     "episodes_watched": episodes_watched,
                     "total_episodes": num_episodes,
                     "min_watch_count": min_watch_count,
                     "completion_ratio": completion_ratio,
-                    "avg_watch_count": avg_watch_count
+                    "avg_watch_count": avg_watch_count,
                 }
                 entry["partial"] = episodes_watched == num_episodes
                 season_completion_count[str(season)] = entry
@@ -156,7 +197,9 @@ def sync_trakt_history():
         show_data["season_completion_count"] = season_completion_count
         all_history.append(show_data)
 
-    logger.info("Total unique movies: %s, unique shows: %s", len(seen_movies), len(seen_shows))
+    logger.info(
+        "Total unique movies: %s, unique shows: %s", len(seen_movies), len(seen_shows)
+    )
     if not all_history:
         return
     current_history = get_watch_history()
@@ -164,6 +207,7 @@ def sync_trakt_history():
         logger.info("No existing watch history found, updating database.")
         store_watch_history(all_history)
         return
+
     def hash_history(hist):
         def item_key(item):
             if item.get("media_type") == "movie":
@@ -195,8 +239,13 @@ def sync_trakt_history():
                     item.get("latest_watched_at"),
                     season_completion_tuple,
                 )
+
         sorted_hist = sorted(hist, key=item_key)
-        return hashlib.sha256(json.dumps([item_key(item) for item in sorted_hist], sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(
+            json.dumps(
+                [item_key(item) for item in sorted_hist], sort_keys=True
+            ).encode()
+        ).hexdigest()
 
     if hash_history(all_history) != hash_history(current_history):
         logger.info("Watch history changed, updating database.")

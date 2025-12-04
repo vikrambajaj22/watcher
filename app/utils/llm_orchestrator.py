@@ -4,6 +4,7 @@ This file centralizes the production mcp handler (resolve_query_vector, call_mcp
 and the model orchestration (call_model_with_mcp_function). Combining them keeps
 the call flow colocated and reduces indirection.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,19 +13,21 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from app.utils.openai_client import get_openai_client
-from app.utils.logger import get_logger
-from app.schemas.api import MCPPayload
-from app.vector_store import load_index, query
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_text
+from app.schemas.api import MCPPayload
+from app.utils.logger import get_logger
+from app.utils.openai_client import get_openai_client
+from app.vector_store import load_index, query
 
 logger = get_logger(__name__)
 
 
 def load_tool(tool_name: str) -> Dict[str, Any] | None:
     """Load tool schema from JSON file with name <tool_name>.json in tools/."""
-    schema_path = os.path.join(os.path.dirname(__file__), "..", "tools", tool_name + ".json")
+    schema_path = os.path.join(
+        os.path.dirname(__file__), "..", "tools", tool_name + ".json"
+    )
     try:
         with open(schema_path, "r") as f:
             mcp_function_schema = json.load(f)
@@ -76,12 +79,14 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     for tid, score in vs_res:
         doc = docs_by_id.get(tid, {})
         title = doc.get("title") or doc.get("name")
-        results.append({
-            "id": int(tid),
-            "title": title,
-            "media_type": doc.get("media_type"),
-            "score": float(score),
-        })
+        results.append(
+            {
+                "id": int(tid),
+                "title": title,
+                "media_type": doc.get("media_type"),
+                "score": float(score),
+            }
+        )
 
     return {"results": results}
 
@@ -93,6 +98,7 @@ def get_payload_type(tool_name):
             return MCPPayload
     return None
 
+
 def get_tool_function(tool_name: str):
     """Get the local function to execute for the given tool_name."""
     match tool_name:
@@ -101,7 +107,9 @@ def get_tool_function(tool_name: str):
     return None
 
 
-def call_model_with_mcp_function(tool_name: str, messages: List[Dict[str, Any]], model: str, max_tokens: int) -> Dict[str, Any]:
+def call_model_with_mcp_function(
+    tool_name: str, messages: List[Dict[str, Any]], model: str, max_tokens: int
+) -> Dict[str, Any]:
     """Send messages to the model, handle a tool_name function_call, and return a dict with:
     - `final_content`: assistant natural text reply
     - `function_result`: structured result returned from the function (if any)
@@ -137,7 +145,9 @@ def call_model_with_mcp_function(tool_name: str, messages: List[Dict[str, Any]],
         try:
             args = json.loads(args_text)
         except Exception as e:
-            logger.error("Failed to parse function arguments JSON: %s", repr(e), exc_info=True)
+            logger.error(
+                "Failed to parse function arguments JSON: %s", repr(e), exc_info=True
+            )
             # return the model's reply as-is and indicate failure
             return {"final_content": None, "function_result": None, "raw": resp}
 
@@ -145,7 +155,9 @@ def call_model_with_mcp_function(tool_name: str, messages: List[Dict[str, Any]],
         try:
             payload = payload_type.model_validate(args)
         except Exception as e:
-            logger.error("%s validation failed: %s", payload_type, repr(e), exc_info=True)
+            logger.error(
+                "%s validation failed: %s", payload_type, repr(e), exc_info=True
+            )
             return {"final_content": None, "function_result": None, "raw": resp}
 
         # execute the mcp function (local call)
@@ -153,13 +165,19 @@ def call_model_with_mcp_function(tool_name: str, messages: List[Dict[str, Any]],
             tool_function = get_tool_function(fn_name)
             fn_result = tool_function(payload)
         except Exception as e:
-            logger.error("MCP handler failed for tool call for %s: %s", fn_name, repr(e), exc_info=True)
+            logger.error(
+                "MCP handler failed for tool call for %s: %s",
+                fn_name,
+                repr(e),
+                exc_info=True,
+            )
             return {"final_content": None, "function_result": None, "raw": resp}
 
         # send function result back to the model so it can produce a final assistant reply
         followup = client.chat.completions.create(
             model=model,
-            messages=messages + [
+            messages=messages
+            + [
                 {"role": "assistant", "content": "", "function_call": fn_call},
                 {"role": "function", "name": fn_name, "content": json.dumps(fn_result)},
             ],
@@ -168,7 +186,11 @@ def call_model_with_mcp_function(tool_name: str, messages: List[Dict[str, Any]],
         )
 
         final_msg = followup.choices[0].message
-        return {"final_content": final_msg.get("content"), "function_result": fn_result, "raw": {"initial": resp, "followup": followup}}
+        return {
+            "final_content": final_msg.get("content"),
+            "function_result": fn_result,
+            "raw": {"initial": resp, "followup": followup},
+        }
 
     # no function call, return assistant content
     return {"final_content": msg.get("content"), "function_result": None, "raw": resp}

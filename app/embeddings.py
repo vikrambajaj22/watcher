@@ -4,7 +4,7 @@ import os
 import threading
 import time
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -12,7 +12,6 @@ from sentence_transformers import SentenceTransformer
 
 from app.db import tmdb_metadata_collection
 from app.utils.logger import get_logger
-
 
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 logger = get_logger(__name__)
@@ -23,6 +22,7 @@ EMBED_DEVICE = os.getenv("EMBED_DEVICE")  # can be cuda, mps or cpu
 
 _model: Optional[Any] = None
 _embed_lock = threading.Lock()
+
 
 def _select_device() -> str:
     if EMBED_DEVICE:
@@ -40,9 +40,13 @@ def _get_model() -> SentenceTransformer:
     with _embed_lock:
         if _model is None:
             device = _select_device()
-            logger.info("Loading sentence-transformers model: %s on device %s", EMBED_MODEL_NAME, device)
+            logger.info(
+                "Loading sentence-transformers model: %s on device %s",
+                EMBED_MODEL_NAME,
+                device,
+            )
             # first load on CPU (no meta tensor issues)
-            _model = SentenceTransformer(EMBED_MODEL_NAME, device='cpu')
+            _model = SentenceTransformer(EMBED_MODEL_NAME, device="cpu")
             # IMPORTANT: run a dummy encode to force layer materialization and warmup before threaded use
             _model.encode(["dummy"], show_progress_bar=False)
             # now move safely to GPU device if needed
@@ -57,7 +61,10 @@ def build_text_for_item(item: Dict) -> str:
     title = item.get("title") or ""
     year = None
     # try multiple fields for release year (different for movie and tv shows)
-    for date_field in ("release_date", "first_air_date",):
+    for date_field in (
+        "release_date",
+        "first_air_date",
+    ):
         if item.get(date_field):
             year = str(item.get(date_field))[:4]
             break
@@ -80,9 +87,13 @@ def build_text_for_item(item: Dict) -> str:
     if genres:
         parts.append(f"Genres: {', '.join(genres)}")
 
-    cast = item.get("credits", {}).get("cast") if item.get("credits") else item.get("cast")
+    cast = (
+        item.get("credits", {}).get("cast") if item.get("credits") else item.get("cast")
+    )
     if isinstance(cast, list):
-        top_cast = ", ".join([c.get("name") if isinstance(c, dict) else str(c) for c in cast][:6])
+        top_cast = ", ".join(
+            [c.get("name") if isinstance(c, dict) else str(c) for c in cast][:6]
+        )
         if top_cast:
             parts.append(f"Cast: {top_cast}")
 
@@ -101,7 +112,12 @@ def build_text_for_item(item: Dict) -> str:
 def embed_text(texts: List[str]) -> np.ndarray:
     try:
         model = _get_model()
-        vectors = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=True)
+        vectors = model.encode(
+            texts,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )
         return np.array(vectors)
     except Exception as e:
         logger.error("Embedding error: %s", repr(e), exc_info=True)
@@ -117,13 +133,13 @@ def embed_item_and_store(item: Dict) -> Dict:
     meta = {
         "embedding_model": EMBED_MODEL_NAME,
         "embedding_ts": int(time.time()),
-        "embedding_dims": len(embed_list)
+        "embedding_dims": len(embed_list),
     }
     # update document in mongo
     tmdb_metadata_collection.update_one(
         {"id": item.get("id"), "media_type": item.get("media_type")},
         {"$set": {"embedding": embed_list, "embedding_meta": meta}},
-        upsert=False
+        upsert=False,
     )
     item_copy = dict(item)
     item_copy["embedding"] = embed_list
@@ -157,15 +173,21 @@ def _process_batch(batch: List[Dict]):
     now_ts = int(time.time())
     for it, vec in zip(batch, vecs):
         embed_list = vec.tolist()
-        meta = {"embedding_model": EMBED_MODEL_NAME, "embedding_ts": now_ts, "embedding_dims": len(embed_list)}
+        meta = {
+            "embedding_model": EMBED_MODEL_NAME,
+            "embedding_ts": now_ts,
+            "embedding_dims": len(embed_list),
+        }
         tmdb_metadata_collection.update_one(
             {"id": it.get("id"), "media_type": it.get("media_type")},
             {"$set": {"embedding": embed_list, "embedding_meta": meta}},
-            upsert=False
+            upsert=False,
         )
 
 
-def build_user_vector_from_history(history_items: List[Dict], decay_days: float = 30.0) -> Optional[np.ndarray]:
+def build_user_vector_from_history(
+    history_items: List[Dict], decay_days: float = 30.0
+) -> Optional[np.ndarray]:
     """Build a user embedding by weighted average of item embeddings. Weights decay by recency.
     history_items: list of TMDB item docs (must include 'embedding' and 'latest_watched_at' or 'watched_at')
     decay_days: decay factor in days (larger = slower decay) (default: 30.0)
@@ -188,7 +210,9 @@ def build_user_vector_from_history(history_items: List[Dict], decay_days: float 
         age_days = 0.0
         if ts_str:
             try:
-                age_ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+                age_ts = datetime.fromisoformat(
+                    ts_str.replace("Z", "+00:00")
+                ).timestamp()
                 age_days = (now_ts - age_ts) / 86400.0
             except Exception:
                 age_days = 0.0

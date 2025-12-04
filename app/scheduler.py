@@ -2,9 +2,9 @@ import requests
 
 from app.config.settings import settings
 from app.dao.history import get_watch_history
+from app.tmdb_sync import sync_tmdb_changes
 from app.trakt_sync import sync_trakt_history
 from app.utils.logger import get_logger
-from app.tmdb_sync import sync_tmdb_changes
 
 logger = get_logger(__name__)
 
@@ -14,27 +14,32 @@ def check_trakt_last_activities_and_sync():
     logger.info("Checking Trakt last_activities and syncing changes...")
     try:
         resp = requests.get(
-            settings.TRAKT_LAST_ACTIVITIES_API_URL,
-            headers=settings.trakt_headers
+            settings.TRAKT_LAST_ACTIVITIES_API_URL, headers=settings.trakt_headers
         )
         logger.info("Trakt last_activities response %s", resp.status_code)
         if resp.status_code != 200:
             logger.warning(
-                "Failed to fetch Trakt last_activities: %s", resp.status_code)
+                "Failed to fetch Trakt last_activities: %s", resp.status_code
+            )
             return
 
         activity = resp.json()
         relevant = {
-            k: activity[k] for k in ("all", "movies", "episodes", "shows") if isinstance(activity.get(k), str)
+            k: activity[k]
+            for k in ("all", "movies", "episodes", "shows")
+            if isinstance(activity.get(k), str)
         }
 
         trakt_latest = max(relevant.values(), default=None)
 
         db_history = get_watch_history()
         db_latest = max(
-            (item.get("latest_watched_at")
-             for item in db_history if item.get("latest_watched_at")),
-            default=None
+            (
+                item.get("latest_watched_at")
+                for item in db_history
+                if item.get("latest_watched_at")
+            ),
+            default=None,
         )
         logger.info("Trakt latest activity: %s", trakt_latest)
         logger.info("DB latest activity: %s", db_latest)
@@ -46,7 +51,9 @@ def check_trakt_last_activities_and_sync():
         sync_trakt_history()
 
     except Exception as e:
-        logger.error("Error during Trakt last_activities check: %s", repr(e), exc_info=True)
+        logger.error(
+            "Error during Trakt last_activities check: %s", repr(e), exc_info=True
+        )
 
 
 def run_tmdb_periodic_sync():

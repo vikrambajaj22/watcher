@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.env")),
-        extra="allow"
+        extra="allow",
     )
 
     TRAKT_CLIENT_ID: str
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.TRAKT_ACCESS_TOKEN}",
             "trakt-api-version": "2",
-            "trakt-api-key": self.TRAKT_CLIENT_ID
+            "trakt-api-key": self.TRAKT_CLIENT_ID,
         }
 
 
