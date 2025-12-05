@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 INDEX_DIR = os.getenv("FAISS_INDEX_DIR", "./faiss_index")
 INDEX_FILE = os.path.join(INDEX_DIR, "tmdb.index")
-META_FILE = os.path.join(INDEX_DIR, "tmdb_meta.npy")
+# No separate metadata file: TMDB ids are stored as labels inside the FAISS index
 
 # GPU config
 FAISS_USE_GPU = os.getenv("FAISS_USE_GPU", "false").lower() == "true"
@@ -27,8 +27,24 @@ def _to_gpu_index(index: "faiss.Index", gpu_id: int = 0) -> "faiss.Index":
     return gpu_index
 
 
+def _normalize_factory(factory: str) -> str:
+    """Normalize common FAISS factory tokens in a case-insensitive way.
+
+    Currently, normalizes 'idmap' -> 'IDMap' which is a common user error.
+    Preserves other tokens as-is (stripped).
+    """
+    parts = [p.strip() for p in factory.split(",") if p.strip()]
+    normalized = []
+    for p in parts:
+        if p.lower() == "idmap":
+            normalized.append("IDMap")
+        else:
+            normalized.append(p)
+    return ",".join(normalized)
+
+
 def build_faiss_index(
-    dim: int, index_factory: str = "IDMAP,IVF100,Flat"
+    dim: int, index_factory: str = "IDMap,IVF100,Flat"
 ) -> Optional["faiss.Index"]:
     """Build FAISS index from embeddings stored in Mongo and persist CPU index; optionally return GPU index."""
     os.makedirs(INDEX_DIR, exist_ok=True)
@@ -46,6 +62,9 @@ def build_faiss_index(
     ids = np.array([d["id"] for d in docs], dtype=np.int64)
     vecs = np.array([d["embedding"] for d in docs], dtype=np.float32)
 
+    # normalize factory string to avoid user-provided casing issues (e.g., IDMAP vs IDMap)
+    index_factory = _normalize_factory(index_factory)
+
     if "," in index_factory:
         index = faiss.index_factory(vecs.shape[1], index_factory)
     else:
@@ -55,11 +74,23 @@ def build_faiss_index(
         logger.info("Training FAISS index...")
         index.train(vecs)
     logger.info("Adding vectors to FAISS index...")
-    index.add(vecs)
 
-    # save CPU index and ids
+    # ensure the index stores explicit labels (TMDB ids); wrap with IndexIDMap if needed
+    if not hasattr(index, "add_with_ids"):
+        # wrap the base index so we can add vectors with explicit ids
+        index = faiss.IndexIDMap(index)
+
+    # add_with_ids expects ids as int64 array; ensure dtype
+    try:
+        index.add_with_ids(vecs, np.array(ids, dtype=np.int64))
+    except Exception as e:
+        logger.error(
+            "Failed to add vectors with ids to FAISS index: %s", repr(e), exc_info=True
+        )
+        raise
+
+    # save CPU index (labels inside index) -- no separate meta file
     faiss.write_index(index, INDEX_FILE)
-    np.save(META_FILE, ids)
     logger.info(
         "Built and saved FAISS index with %s vectors at %s", len(ids), INDEX_FILE
     )
@@ -80,11 +111,12 @@ def build_faiss_index(
 
 
 def load_faiss_index() -> Optional["faiss.Index"]:
-    if not os.path.exists(INDEX_FILE) or not os.path.exists(META_FILE):
-        logger.info("FAISS index files missing")
+    if not os.path.exists(INDEX_FILE):
+        logger.info("FAISS index file missing")
         return None
     try:
         cpu_index = faiss.read_index(INDEX_FILE)
+        logger.info("Loaded FAISS index from %s", INDEX_FILE)
         if FAISS_USE_GPU:
             try:
                 gpu_index = _to_gpu_index(cpu_index, FAISS_GPU_ID)
@@ -106,16 +138,83 @@ def load_faiss_index() -> Optional["faiss.Index"]:
 def query_faiss(
     index: "faiss.Index", query_vec: np.ndarray, k: int = 10
 ) -> List[Tuple[int, float]]:
-    q = np.array(query_vec, dtype=np.float32)
-    if q.ndim == 1:
-        q = q.reshape(1, -1)
-    D, idxs = index.search(q, k)
-    ids = np.load(META_FILE)
-    results = []
-    for score_arr, idx_arr in zip(D, idxs):
-        for score, idx in zip(score_arr, idx_arr):
-            if idx < 0:
-                continue
-            tmdb_id = int(ids[idx])
-            results.append((tmdb_id, float(score)))
-    return results
+    """Query FAISS index with the given vector and return list of (tmdb_id, score) tuples."""
+    try:
+        q = np.array(query_vec, dtype=np.float32)
+        logger.info("Querying FAISS index using vector with shape: %s", q.shape)
+        if q.ndim == 1:
+            q = q.reshape(1, -1)
+
+        # ensure contiguous C-order float32 array for FAISS
+        if not q.flags["C_CONTIGUOUS"]:
+            q = np.ascontiguousarray(q, dtype=np.float32)
+
+        # ensure k is reasonable
+        k = int(k) if k is not None else 10
+        if k <= 0:
+            k = 10
+
+        # call search and normalize outputs
+        try:
+            res = index.search(q, k)
+        except Exception as e:
+            logger.exception(
+                "FAISS index.search raised exception: %s", repr(e), exc_info=True
+            )
+            raise
+
+        if isinstance(res, tuple) or isinstance(res, list):
+            if len(res) >= 2:
+                D, idxs = res[0], res[1]
+            else:
+                logger.error(
+                    "Unexpected FAISS search return shape (len==1); res=%s", type(res)
+                )
+                return []
+        else:
+            # some SWIG wrappers may return objects; attempt to unpack
+            try:
+                D = np.array(res.distances)
+                idxs = np.array(res.labels)
+            except Exception as e:
+                logger.error(
+                    "Could not interpret FAISS search return type %s: %s",
+                    type(res),
+                    repr(e),
+                    exc_info=True,
+                )
+                return []
+
+        # convert to numpy arrays
+        D = np.asarray(D)
+        idxs = np.asarray(idxs)
+
+        # Some GPU indexes return float labels; coerce to int64 safely
+        try:
+            idxs = idxs.astype(np.int64)
+        except Exception:
+            # fallback element-wise cast
+            idxs = np.vectorize(lambda x: int(x))(idxs)
+            idxs = np.asarray(idxs, dtype=np.int64)
+
+        # now build results: idxs shape (nq, k), D shape (nq, k)
+        if D.ndim == 1:
+            D = D.reshape(1, -1)
+        if idxs.ndim == 1:
+            idxs = idxs.reshape(1, -1)
+
+        nq = idxs.shape[0]
+        results: List[Tuple[int, float]] = []
+        for i in range(nq):
+            for j in range(min(k, idxs.shape[1])):
+                idx = int(idxs[i, j])
+                if idx < 0:
+                    continue
+                score = float(D[i, j])
+                tmdb_id = idx  # labels are TMDB ids
+                results.append((tmdb_id, score))
+        logger.info("FAISS query returning %s total hits", len(results))
+        return results
+    except Exception as e:
+        logger.error("FAISS query failed: %s", repr(e), exc_info=True)
+        return []

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
+import faiss
 import numpy as np
 
 from app.faiss_index import build_faiss_index, load_faiss_index, query_faiss
@@ -27,7 +28,7 @@ _index = None
 
 
 def rebuild_index(
-    dim: int = 768, factory: str = "IDMAP,IVF100,Flat"
+    dim: int = 768, factory: str = "IDMap,IVF100,Flat"
 ) -> Optional[object]:
     """Rebuilds the FAISS index from Mongo embeddings by calling the FAISS builder.
     Returns the in-memory index (maybe a GPU index if FAISS was configured to use GPU).
@@ -39,7 +40,7 @@ def rebuild_index(
     return _index
 
 
-def load_index() -> Optional[object]:
+def load_index() -> Optional["faiss.Index"]:
     """Load persisted FAISS index into memory (returns GPU/CPU index depending on config)."""
     global _index
     if _index is None:

@@ -4,13 +4,17 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_item_and_store, index_all_items
+from app.faiss_index import INDEX_DIR
 from app.process.recommendation import MovieRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
 from app.schemas.api import AdminReindexPayload, MCPPayload
 from app.schemas.recommendations.movies import MovieRecommendationsResponse
 from app.utils.llm_orchestrator import call_mcp_knn
 from app.utils.logger import get_logger
-from app.vector_store import rebuild_index
+
+import subprocess
+import sys
+import os
 
 logger = get_logger(__name__)
 
@@ -67,42 +71,100 @@ def trakt_auth_callback(request: Request):
         return RedirectResponse("/auth/trakt/start")
 
 
-@router.post("/admin/reindex")
-def admin_reindex(background_tasks: BackgroundTasks, payload: AdminReindexPayload):
+@router.post("/admin/reindex/item")
+def admin_reindex_item(background_tasks: BackgroundTasks, payload: dict):
+    """Trigger embedding of a single TMDB item in background. Expects JSON: {"id": <int>, "media_type": "movie"}"""
     try:
-        if payload.id:
-            tmdb_id = payload.id
-            media_type = payload.media_type or "movie"
-            doc = tmdb_metadata_collection.find_one(
-                {"id": tmdb_id, "media_type": media_type}, {"_id": 0}
-            )
-            if not doc:
-                return JSONResponse({"error": "item not found"}, status_code=404)
-            background_tasks.add_task(embed_item_and_store, doc)
-            return JSONResponse(
-                {"status": "accepted", "message": "embedding started"}, status_code=202
-            )
-
-        if payload.full:
-            batch_size = int(payload.batch_size or 256)
-            background_tasks.add_task(index_all_items, batch_size)
-            return JSONResponse(
-                {"status": "accepted", "message": "full indexing started"},
-                status_code=202,
-            )
-
-        if payload.build_faiss:
-            dims = int(payload.dim or 768)
-            factory = payload.factory or "IDMAP,IVF100,Flat"
-            background_tasks.add_task(rebuild_index, dims, factory)
-            return JSONResponse(
-                {"status": "accepted", "message": "faiss build started"},
-                status_code=202,
-            )
-
-        return JSONResponse({"error": "invalid payload"}, status_code=400)
+        tmdb_id = payload.get("id")
+        if not tmdb_id:
+            return JSONResponse({"error": "id is required"}, status_code=400)
+        media_type = payload.get("media_type") or "movie"
+        doc = tmdb_metadata_collection.find_one(
+            {"id": tmdb_id, "media_type": media_type}, {"_id": 0}
+        )
+        if not doc:
+            return JSONResponse({"error": "item not found"}, status_code=404)
+        background_tasks.add_task(embed_item_and_store, doc)
+        return JSONResponse(
+            {"status": "accepted", "message": "embedding started"}, status_code=202
+        )
     except Exception as e:
-        logger.error("admin_reindex error: %s", repr(e), exc_info=True)
+        logger.error("admin_reindex_item error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/admin/reindex/full")
+def admin_reindex_full(background_tasks: BackgroundTasks, payload: dict):
+    """Trigger full indexing (background). Expects JSON: {"batch_size": <int>}"""
+    try:
+        batch_size = int(payload.get("batch_size", 256))
+        background_tasks.add_task(index_all_items, batch_size)
+        return JSONResponse(
+            {"status": "accepted", "message": "full indexing started"}, status_code=202
+        )
+    except Exception as e:
+        logger.error("admin_reindex_full error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/admin/faiss/rebuild")
+def admin_faiss_rebuild(payload: dict):
+    """Trigger FAISS rebuild in a detached process. Expects JSON: {"dim": <int>, "factory": "..."}"""
+    try:
+        dims = int(payload.get("dim", 768))
+        factory = payload.get("factory") or "IDMap,IVF100,Flat"
+
+        python_exe = sys.executable or "python"
+        cmd = [
+            python_exe,
+            "-m",
+            "app.faiss_rebuild_cli",
+            "--dim",
+            str(dims),
+            "--factory",
+            factory,
+        ]
+
+        from app.faiss_index import INDEX_DIR
+
+        os.makedirs(INDEX_DIR, exist_ok=True)
+        log_path = os.path.join(INDEX_DIR, "rebuild.log")
+        log_file = open(log_path, "a")
+
+        if os.name == "nt":
+            creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            p = subprocess.Popen(
+                cmd, creationflags=creation_flags, stdout=log_file, stderr=log_file
+            )
+        else:
+            p = subprocess.Popen(
+                cmd, start_new_session=True, stdout=log_file, stderr=log_file
+            )
+
+        try:
+            log_file.close()
+        except Exception as e:
+            logger.error(
+                "error closing log file after fais rebuild: %s", repr(e), exc_info=True
+            )
+            pass
+
+        logger.info(
+            "Spawned FAISS rebuild process pid=%s (logs at %s)",
+            getattr(p, "pid", None),
+            log_path,
+        )
+        return JSONResponse(
+            {
+                "status": "accepted",
+                "message": "faiss rebuild started",
+                "pid": getattr(p, "pid", None),
+                "log": log_path,
+            },
+            status_code=202,
+        )
+    except Exception as e:
+        logger.error("admin_faiss_rebuild error: %s", repr(e), exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 

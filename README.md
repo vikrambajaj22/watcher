@@ -76,7 +76,7 @@ python -c "from app.embeddings import index_all_items; print('processed', index_
 
 3) Build (rebuild) FAISS index from Mongo embeddings (saves CPU index and attempts GPU transfer):
 ```bash
-python -c "from app.vector_store import rebuild_index; rebuild_index(dim=768, factory='IDMAP,IVF100,Flat')"
+python -c "from app.vector_store import rebuild_index; rebuild_index(dim=768, factory='IDMap,IVF100,Flat')"
 ```
 - Note: use `dim=384` for MiniLM models (e.g., `all-MiniLM-L6-v2`).
 

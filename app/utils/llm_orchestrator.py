@@ -67,11 +67,9 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     k = int(payload.k)
     qvec = resolve_query_vector(payload)
 
-    # ensure index loaded
-    load_index()
     vs_res = query(qvec, k)
-
-    ids = [r[0] for r in vs_res]
+    logger.info("Found %s results", len(vs_res))
+    ids = [int(r[0]) for r in vs_res]
     docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0}))
     docs_by_id = {d.get("id"): d for d in docs}
 

@@ -13,6 +13,7 @@ dist/
 .idea/
 .DS_Store
 *.pt
-./faiss_index
+./faiss_index/*
 *.index
 *.npy
+/faiss_index/rebuild.log

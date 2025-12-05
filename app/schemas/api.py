@@ -35,4 +35,4 @@ class AdminReindexPayload(BaseModel):
     batch_size: Optional[int] = 256
     build_faiss: Optional[bool] = False
     dim: Optional[int] = 768
-    factory: Optional[str] = "IDMAP,IVF100,Flat"
+    factory: Optional[str] = "IDMap,IVF100,Flat"

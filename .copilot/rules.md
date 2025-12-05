@@ -5,6 +5,12 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
 
 ---
 
+## Chat Style
+- Use **concise and clear language**.
+- Don't be excessively verbose; prefer brevity while maintaining clarity.
+
+---
+
 ## Logging Rules
 - All logger messages must use **`%s` formatting**, _never_ f-strings or `.format()`.
   - **Good:** `logger.info("Loaded item %s", item_id)`
@@ -21,7 +27,8 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
 ---
 
 ## Comments and Docstrings
-- **Comments must be lowercase**, unless referencing a function, class, constant, or variable that is intentionally uppercase or CamelCase.
+- **Comments must be fully lowercase, don't start with uppercase**
+  - Use the appropriate case while referencing a function, class, constant, or variable name
 - Docstrings (module, class, function, method):
   - Must be **succinct**
   - Should describe only **purpose** and **key arguments / return values**

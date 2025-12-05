@@ -1,5 +1,13 @@
 from contextlib import asynccontextmanager
 
+import os
+
+# limit OpenMP/MKL threads to avoid thread contention/hangs when using MPS/GPU
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
+import faiss
+
 from fastapi import FastAPI
 
 from app.api import router
@@ -7,6 +15,7 @@ from app.faiss_index import load_faiss_index
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+faiss.omp_set_num_threads(1)
 
 
 @asynccontextmanager
