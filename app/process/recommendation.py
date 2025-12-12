@@ -9,7 +9,6 @@ from app.faiss_index import load_faiss_index, query_faiss
 from app.schemas.recommendations.movies import MovieRecommendationsResponse
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_chat_completion
-from app.utils.oss_loader import load_oss_model
 from app.utils.prompt_registry import PromptRegistry
 
 logger = get_logger(__name__)
@@ -20,10 +19,6 @@ class MovieRecommender:
 
     def __init__(self):
         self.prompt_registry = PromptRegistry("app/prompts/recommend")
-
-    def _load_oss_model(self):
-        """Load OSS model."""
-        self.oss_model, self.oss_tokenizer = load_oss_model()
 
     def format_watch_history(self, watch_history: list[dict], type: str = "movie"):
         """Format watch history."""
@@ -138,33 +133,3 @@ class MovieRecommender:
             )
             raise
         return MovieRecommendationsResponse(recommendations=recommendations)
-
-    def generate_recommendations_oss(
-        self, type: str = "movie", recommend_count: int = 5
-    ):
-        watch_history = self.load_watch_history("movie")
-        self._load_oss_model()
-        prompt = self.get_recommendation_prompt(
-            watch_history=watch_history, type=type, recommend_count=recommend_count
-        )
-        logger.info("Generated %s recommendation prompt: %s ...", type, prompt[:2000])
-        messages = [
-            {"role": "user", "content": prompt},
-        ]
-        try:
-            inputs = self.oss_tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
-                return_tensors="pt",
-            ).to(self.oss_model.device)
-
-            outputs = self.oss_model.generate(**inputs, max_new_tokens=4096)
-            recommendations = self.oss_tokenizer.decode(
-                outputs[0][inputs["input_ids"].shape[-1] :]
-            ).get("recommendations", [])
-            return MovieRecommendationsResponse(recommendations=recommendations)
-        except Exception as e:
-            logger.error("Failed to parse OSS response: %s", repr(e), exc_info=True)
-            raise
