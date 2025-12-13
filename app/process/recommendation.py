@@ -168,4 +168,33 @@ class MediaRecommender:
                 "Failed to parse structured OpenAI response: %s", repr(e), exc_info=True
             )
             raise
-        return RecommendationsResponse(recommendations=recommendations)
+
+        # validate LLM-returned ids against the candidate docs fetched earlier
+        candidate_ids = {c["id"] for c in top_candidates}
+        docs_by_id = {d.get("id"): d for d in docs} if "docs" in locals() else {}
+
+        valid_recs = []
+        unknown_ids = []
+        for r in recommendations:
+            rid = r.get("id")
+            if rid in docs_by_id:
+                # enrich with title/score from docs_by_id if available
+                doc = docs_by_id[rid]
+                valid_recs.append({"id": rid, "title": doc.get("title"), "score": r.get("score")})
+            else:
+                unknown_ids.append(rid)
+
+        if unknown_ids:
+            logger.warning("LLM returned unknown recommendation ids (hallucination?): %s", unknown_ids)
+
+        # if LLM didn't provide enough valid recommendations, fill from top_candidates (deterministic fallback)
+        already = {r["id"] for r in valid_recs}
+        for c in top_candidates:
+            cid = c.get("id")
+            if cid not in already:
+                valid_recs.append({"id": cid, "title": c.get("title"), "score": c.get("score")})
+            if len(valid_recs) >= recommend_count:
+                break
+
+        final_recs = valid_recs[:recommend_count]
+        return RecommendationsResponse(recommendations=final_recs)

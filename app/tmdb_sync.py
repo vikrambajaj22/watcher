@@ -200,6 +200,42 @@ def sync_tmdb_changes(
             for det in details:
                 if not det:
                     continue
+
+                # check existing document's updated_at to avoid unnecessary upserts/embeds
+                try:
+                    existing = tmdb_metadata_collection.find_one(
+                        {"id": det.get("id")}, {"_id": 0, "updated_at": 1}
+                    )
+                except Exception:
+                    existing = None
+
+                skip_due_to_unchanged = False
+                det_updated_at = det.get("updated_at")
+                if existing and existing.get("updated_at") and det_updated_at:
+                    try:
+                        existing_ts = int(
+                            _dateutil_parser.isoparse(existing.get("updated_at")).timestamp()
+                        )
+                        det_ts = int(_dateutil_parser.isoparse(det_updated_at).timestamp())
+                        if existing_ts == det_ts:
+                            skip_due_to_unchanged = True
+                    except Exception:
+                        # parsing error -> fall back to upsert
+                        skip_due_to_unchanged = False
+
+                if skip_due_to_unchanged:
+                    # nothing changed for this id since last stored copy
+                    total_processed += 1
+                    # still try to update max_ts if present
+                    try:
+                        if det_updated_at:
+                            ts = int(_dateutil_parser.isoparse(det_updated_at).timestamp())
+                            if ts > max_ts:
+                                max_ts = ts
+                    except Exception:
+                        pass
+                    continue
+
                 # upsert into collection by tmdb id
                 tmdb_metadata_collection.update_one(
                     {"id": det.get("id"), "media_type": media_type},
