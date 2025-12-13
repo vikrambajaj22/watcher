@@ -7,7 +7,8 @@
       "tmdb_id": { "type": "integer" },
       "text": { "type": "string" },
       "vector": { "type": "array", "items": { "type": "number" } },
-      "k": { "type": "integer", "minimum": 1 }
+      "k": { "type": "integer", "minimum": 1 },
+      "media_type": { "type": "string", "enum": ["movie", "tv", "all"] }
     },
     "oneOf": [
       { "required": ["tmdb_id"] },
@@ -16,4 +17,3 @@
     ]
   }
 }
-

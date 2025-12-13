@@ -73,10 +73,20 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0}))
     docs_by_id = {d.get("id"): d for d in docs}
 
+    # optional media_type filtering
+    requested_media = None
+    if getattr(payload, "media_type", None):
+        requested_media = str(payload.media_type).lower()
+        if requested_media not in {"movie", "tv", "all"}:
+            raise ValueError("media_type must be one of: 'movie', 'tv', 'all'")
+
     results: List[Dict[str, Any]] = []
     for tid, score in vs_res:
         doc = docs_by_id.get(tid, {})
         title = doc.get("title") or doc.get("name")
+        media = (doc.get("media_type") or "").lower() if doc else ""
+        if requested_media and requested_media != "all" and media != requested_media:
+            continue
         results.append(
             {
                 "id": int(tid),

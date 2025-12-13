@@ -1,14 +1,17 @@
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_item_and_store, index_all_items
 from app.faiss_index import INDEX_DIR
-from app.process.recommendation import MovieRecommender
+from app.process.recommendation import MediaRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
-from app.schemas.api import AdminReindexPayload, MCPPayload
-from app.schemas.recommendations.movies import MovieRecommendationsResponse
+from app.schemas.api import MCPPayload
+from app.schemas.recommendations.recommendations import (
+    RecommendationsResponse,
+    RecommendRequest,
+)
 from app.utils.llm_orchestrator import call_mcp_knn
 from app.utils.logger import get_logger
 
@@ -40,14 +43,26 @@ def root():
     """
 
 
-@router.get("/recommend/movies")
-def get_movie_recommendations() -> MovieRecommendationsResponse:
+@router.post("/recommend/{media_type}", response_model=RecommendationsResponse)
+def recommend(media_type: str, payload: RecommendRequest):
+    """Generate recommendations for the given media_type (movie|tv).
+
+    Expects JSON body of type RecommendRequest.
+    """
     try:
+        if media_type not in ("movie", "tv"):
+            raise HTTPException(status_code=400, detail="media_type must be 'movie' or 'tv'")
+
+        recommend_count = payload.recommend_count
+
         check_trakt_last_activities_and_sync()
-        recommender = MovieRecommender()
-        return recommender.generate_recommendations()
+        recommender = MediaRecommender()
+        return recommender.generate_recommendations(media_type=media_type, recommend_count=recommend_count)
+    except HTTPException:
+        raise
     except Exception as e:
-        return JSONResponse({"error": repr(e)}, status_code=500)
+        logger.error("recommend error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/auth/trakt/start")
@@ -124,8 +139,6 @@ def admin_faiss_rebuild(payload: dict):
             "--factory",
             factory,
         ]
-
-        from app.faiss_index import INDEX_DIR
 
         os.makedirs(INDEX_DIR, exist_ok=True)
         log_path = os.path.join(INDEX_DIR, "rebuild.log")
