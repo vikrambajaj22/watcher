@@ -1,7 +1,9 @@
 import requests
+from dateutil import parser as _dateutil_parser
 
 from app.config.settings import settings
 from app.dao.history import get_watch_history
+from app.db import sync_meta_collection
 from app.tmdb_sync import sync_tmdb_changes
 from app.trakt_sync import sync_trakt_history
 from app.utils.logger import get_logger
@@ -43,12 +45,73 @@ def check_trakt_last_activities_and_sync():
         )
         logger.info("Trakt latest activity: %s", trakt_latest)
         logger.info("DB latest activity: %s", db_latest)
-        if db_latest and trakt_latest and trakt_latest <= db_latest:
-            logger.info("No new Trakt activity since last DB update.")
+
+        def _parse_iso(s):
+            if not s:
+                return None
+            try:
+                return _dateutil_parser.isoparse(s)
+            except Exception:
+                logger.debug("Failed to parse ISO timestamp: %s", s)
+                return None
+
+        t_trakt = _parse_iso(trakt_latest)
+        t_db = _parse_iso(db_latest)
+
+        # check stored last-seen trakt timestamp to avoid unnecessary full fetches
+        try:
+            meta = sync_meta_collection.find_one({"_id": "trakt_last_activity"})
+            stored_trakt = meta.get("last_activity") if meta else None
+            t_stored = _parse_iso(stored_trakt)
+        except Exception:
+            t_stored = None
+
+        # if trakt reported time is <= stored remote time, nothing new since our last check
+        if t_stored and t_trakt and t_trakt <= t_stored:
+            logger.info("No new Trakt activity since last checked timestamp.")
             return
+
+        if t_db and t_trakt:
+            if t_trakt <= t_db:
+                logger.info("No new Trakt activity since last DB update (by datetime).")
+                try:
+                    if trakt_latest:
+                        sync_meta_collection.update_one(
+                            {"_id": "trakt_last_activity"},
+                            {"$set": {"last_activity": trakt_latest}},
+                            upsert=True,
+                        )
+                except Exception:
+                    pass
+                return
+        else:
+            # fallback to string compare if parsing failed
+            if db_latest and trakt_latest and trakt_latest <= db_latest:
+                logger.info("No new Trakt activity since last DB update (by string).")
+                try:
+                    if trakt_latest:
+                        sync_meta_collection.update_one(
+                            {"_id": "trakt_last_activity"},
+                            {"$set": {"last_activity": trakt_latest}},
+                            upsert=True,
+                        )
+                except Exception:
+                    pass
+                return
 
         logger.info("New Trakt activity detected. Syncing history...")
         sync_trakt_history()
+
+        # after syncing (even if history unchanged), persist the trakt_latest timestamp so we don't re-fetch repeatedly
+        try:
+            if trakt_latest:
+                sync_meta_collection.update_one(
+                    {"_id": "trakt_last_activity"},
+                    {"$set": {"last_activity": trakt_latest}},
+                    upsert=True,
+                )
+        except Exception:
+            pass
 
     except Exception as e:
         logger.error(
