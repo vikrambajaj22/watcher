@@ -145,6 +145,7 @@ class MediaRecommender:
             {"id": c.get("id"), "title": c.get("title"), "score": c.get("_score")}
             for c in top_candidates
         ]
+        logger.info("Generated %s candidates for recommendation: %s", len(top_candidates), top_candidates)
 
         prompt = self.get_recommendation_prompt(
             watch_history=watch_history,
