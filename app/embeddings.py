@@ -334,7 +334,7 @@ def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None
             logger.warning("Failed to update embedding for %s: %s", it.get("id"), repr(e), exc_info=True)
 
 
-def index_all_items(batch_size: int = 256) -> int:
+def embed_all_items(batch_size: int = 256) -> int:
     """Iterate over all items in tmdb_metadata_collection and compute embeddings for those missing them.
     Returns number of items processed."""
     cursor = tmdb_metadata_collection.find({}, {"_id": 0})
@@ -350,7 +350,7 @@ def index_all_items(batch_size: int = 256) -> int:
     if batch:
         _process_batch(batch)
         processed += len(batch)
-    logger.info("Indexed %s items with embeddings", processed)
+    logger.info("Embedded %s items", processed)
     return processed
 
 

@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.db import tmdb_metadata_collection
-from app.embeddings import embed_item_and_store, index_all_items
+from app.embeddings import embed_item_and_store, embed_all_items
 from app.faiss_index import INDEX_DIR
 from app.process.recommendation import MediaRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
@@ -86,8 +86,8 @@ def trakt_auth_callback(request: Request):
         return RedirectResponse("/auth/trakt/start")
 
 
-@router.post("/admin/reindex/item")
-def admin_reindex_item(background_tasks: BackgroundTasks, payload: dict):
+@router.post("/admin/embed/item")
+def admin_embed_item(background_tasks: BackgroundTasks, payload: dict):
     """Trigger embedding of a single TMDB item in background. Expects JSON: {"id": <int>, "media_type": "movie"}"""
     try:
         tmdb_id = payload.get("id")
@@ -104,21 +104,21 @@ def admin_reindex_item(background_tasks: BackgroundTasks, payload: dict):
             {"status": "accepted", "message": "embedding started"}, status_code=202
         )
     except Exception as e:
-        logger.error("admin_reindex_item error: %s", repr(e), exc_info=True)
+        logger.error("admin_embed_item error: %s", repr(e), exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-@router.post("/admin/reindex/full")
-def admin_reindex_full(background_tasks: BackgroundTasks, payload: dict):
-    """Trigger full indexing (background). Expects JSON: {"batch_size": <int>}"""
+@router.post("/admin/embed/full")
+def admin_embed_full(background_tasks: BackgroundTasks, payload: dict):
+    """Trigger full embedding generation (background). Expects JSON: {"batch_size": <int>}"""
     try:
         batch_size = int(payload.get("batch_size", 256))
-        background_tasks.add_task(index_all_items, batch_size)
+        background_tasks.add_task(embed_all_items, batch_size)
         return JSONResponse(
-            {"status": "accepted", "message": "full indexing started"}, status_code=202
+            {"status": "accepted", "message": "full embedding generation started"}, status_code=202
         )
     except Exception as e:
-        logger.error("admin_reindex_full error: %s", repr(e), exc_info=True)
+        logger.error("admin_embed_full error: %s", repr(e), exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
