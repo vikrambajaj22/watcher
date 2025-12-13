@@ -217,7 +217,8 @@ def sync_tmdb_changes(
                     except Exception:
                         pass
                 if embed_updated:
-                    to_embed.append(det)
+                    # ensure media_type is present on the queued item so embed writer can match the DB doc
+                    to_embed.append(dict(det, media_type=media_type))
         # paging
         if data.get("page") >= data.get("total_pages"):
             break

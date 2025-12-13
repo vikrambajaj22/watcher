@@ -50,7 +50,7 @@ def recommend(media_type: str, payload: RecommendRequest):
     Expects JSON body of type RecommendRequest.
     """
     try:
-        if media_type not in ("movie", "tv"):
+        if media_type not in ("movie", "tv", "all"):
             raise HTTPException(status_code=400, detail="media_type must be 'movie' or 'tv'")
 
         recommend_count = payload.recommend_count

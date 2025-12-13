@@ -254,10 +254,14 @@ def embed_item_and_store(item: Dict, weights: Optional[Dict[str, float]] = None)
         "embedding_ts": int(time.time()),
         "embedding_dims": len(embed_list),
     }
+    # robust selector: prefer media_type when present, but always match on id
+    selector = {"id": item.get("id")}
+    if item.get("media_type"):
+        selector["media_type"] = item.get("media_type")
     tmdb_metadata_collection.update_one(
-        {"id": item.get("id"), "media_type": item.get("media_type")},
+        selector,
         {"$set": {"embedding": embed_list, "embedding_meta": meta}},
-        upsert=False,
+        upsert=True,
     )
     item_copy = dict(item)
     item_copy["embedding"] = embed_list
@@ -325,10 +329,13 @@ def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None
             "embedding_dims": len(embed_list),
         }
         try:
+            selector = {"id": it.get("id")}
+            if it.get("media_type"):
+                selector["media_type"] = it.get("media_type")
             tmdb_metadata_collection.update_one(
-                {"id": it.get("id"), "media_type": it.get("media_type")},
+                selector,
                 {"$set": {"embedding": embed_list, "embedding_meta": meta}},
-                upsert=False,
+                upsert=True,
             )
         except Exception as e:
             logger.warning("Failed to update embedding for %s: %s", it.get("id"), repr(e), exc_info=True)
