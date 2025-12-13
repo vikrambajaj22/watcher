@@ -34,6 +34,7 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
   - Should describe only **purpose** and **key arguments / return values**
   - Avoid long paragraphs unless essential
 - Inline comments should be short and avoid restating obvious behavior.
+- Only add comments when strictly necessary - do not add comments for easily understood code.
 
 ---
 
