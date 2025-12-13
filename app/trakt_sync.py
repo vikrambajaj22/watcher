@@ -36,11 +36,13 @@ def sync_trakt_history():
             watched_at = item.get("watched_at")
             if item_type == "movie":
                 movie = item.get("movie")
-                movie_id = movie["ids"]["trakt"] if movie and movie.get("ids") else None
-                if not movie_id:
+                tmdb_movie_id = None
+                if movie and movie.get("ids"):
+                    tmdb_movie_id = movie.get("ids", {}).get("tmdb")
+                if not tmdb_movie_id:
                     continue
                 movie_entry = seen_movies.setdefault(
-                    movie_id,
+                    tmdb_movie_id,
                     {
                         "item": item,
                         "count": 0,
@@ -60,10 +62,12 @@ def sync_trakt_history():
                         movie_entry["latest"] = watched_at
             elif item_type == "episode":
                 show = item.get("show")
-                show_id = show["ids"]["trakt"] if show and show.get("ids") else None
                 episode = item.get("episode")
+                tmdb_show_id = None
+                if show and show.get("ids"):
+                    tmdb_show_id = show.get("ids", {}).get("tmdb")
                 if not (
-                    show_id
+                    tmdb_show_id
                     and episode
                     and episode.get("season") is not None
                     and episode.get("number") is not None
@@ -71,7 +75,7 @@ def sync_trakt_history():
                     continue
                 ep_key = (episode["season"], episode["number"])
                 show_entry = seen_shows.setdefault(
-                    show_id,
+                    tmdb_show_id,
                     {
                         "item": item,
                         "episodes": {},
@@ -96,8 +100,7 @@ def sync_trakt_history():
             break
         page += 1
 
-    # process movies
-    for movie in seen_movies.values():
+    for tmdb_id, movie in seen_movies.items():
         item = movie["item"]
         movie_data = item.copy()
         if "movie" in movie_data and isinstance(movie_data["movie"], dict):
@@ -106,14 +109,15 @@ def sync_trakt_history():
                     movie_data[k] = v
             del movie_data["movie"]
         movie_data["media_type"] = "movie"
-        del movie_data["type"]
+        movie_data["id"] = tmdb_id
+        if "type" in movie_data:
+            del movie_data["type"]
         movie_data["watch_count"] = movie["count"]
         movie_data["earliest_watched_at"] = movie["earliest"]
         movie_data["latest_watched_at"] = movie["latest"]
         all_history.append(movie_data)
 
-    # process shows
-    for show_id, show in seen_shows.items():
+    for tmdb_id, show in seen_shows.items():
         item = show["item"]
         show_data = item.copy()
         show_data["media_type"] = "tv"
@@ -124,6 +128,8 @@ def sync_trakt_history():
             del show_data["show"]
         if "episode" in show_data:
             del show_data["episode"]
+        show_data["id"] = tmdb_id
+
         tmdb_show_id = show_data.get("ids", {}).get("tmdb")
         total_episodes = None
         season_episode_counts = {}  # {season: number_of_episodes}
@@ -144,7 +150,7 @@ def sync_trakt_history():
             except Exception as e:
                 logger.warning(
                     "Could not fetch TMDB metadata for show %s: %s",
-                    show_id,
+                    tmdb_id,
                     repr(e),
                     exc_info=True,
                 )
@@ -193,7 +199,8 @@ def sync_trakt_history():
                 entry["partial"] = episodes_watched == num_episodes
                 season_completion_count[str(season)] = entry
         show_data["media_type"] = "tv"
-        del show_data["type"]
+        if "type" in show_data:
+            del show_data["type"]
         show_data["season_completion_count"] = season_completion_count
         all_history.append(show_data)
 
@@ -213,7 +220,7 @@ def sync_trakt_history():
             if item.get("media_type") == "movie":
                 return (
                     "movie",
-                    item.get("ids", {}).get("trakt"),
+                    item.get("id"),
                     item.get("watch_count"),
                     item.get("earliest_watched_at"),
                     item.get("latest_watched_at"),
@@ -230,7 +237,7 @@ def sync_trakt_history():
                 )
                 return (
                     "tv",
-                    item.get("ids", {}).get("trakt"),
+                    item.get("id"),
                     item.get("watch_count"),
                     item.get("episode_watch_count"),
                     item.get("watched_episodes"),
