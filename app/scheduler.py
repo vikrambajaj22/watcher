@@ -67,7 +67,8 @@ def check_trakt_last_activities_and_sync():
             t_stored = None
 
         # if trakt reported time is <= stored remote time, nothing new since our last check
-        if t_stored and t_trakt and t_trakt <= t_stored:
+        # only skip if we already have watch history in DB; if DB is empty, force initial sync
+        if db_history and t_stored and t_trakt and t_trakt <= t_stored:
             logger.info("No new Trakt activity since last checked timestamp.")
             return
 
