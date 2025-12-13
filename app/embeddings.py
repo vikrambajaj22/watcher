@@ -87,20 +87,43 @@ def build_text_for_item(item: Dict) -> str:
     if genres:
         parts.append(f"Genres: {', '.join(genres)}")
 
-    cast = (
-        item.get("credits", {}).get("cast") if item.get("credits") else item.get("cast")
-    )
-    if isinstance(cast, list):
-        top_cast = ", ".join(
-            [c.get("name") if isinstance(c, dict) else str(c) for c in cast][:6]
-        )
-        if top_cast:
-            parts.append(f"Cast: {top_cast}")
+    credits = item.get("credits") or {}
+    cast_list = credits.get("cast") or item.get("cast") or []
+    crew_list = credits.get("crew") or item.get("crew") or []
+
+    actors = []
+    if isinstance(cast_list, list):
+        try:
+            sorted_cast = sorted(
+                (c for c in cast_list if isinstance(c, dict)), key=lambda c: c.get("order", 9999)
+            )
+        except Exception:
+            sorted_cast = [c for c in cast_list if isinstance(c, dict)]
+        actors = [c.get("name") for c in sorted_cast if c.get("name")]
+    actors = actors[:5]
+    if actors:
+        parts.append(f"Actors: {', '.join(actors)}")
+
+    directors = []
+    if isinstance(crew_list, list):
+        directors = [
+            c.get("name")
+            for c in crew_list
+            if isinstance(c, dict)
+            and (c.get("job") == "Director" or c.get("department") == "Directing")
+            and c.get("name")
+        ]
+    directors = directors[:3]
+    if directors:
+        parts.append(f"Directors: {', '.join(directors)}")
 
     keywords = item.get("keywords") or item.get("keywords_list")
+    if isinstance(keywords, dict) and keywords.get("keywords"):
+        keywords = keywords.get("keywords")
     if isinstance(keywords, list):
         keyword_list = list(map(str, keywords))[:12]
-        parts.append(f"Keywords: {', '.join(keyword_list)}")
+        keywords = ", ".join(keyword_list)
+    parts.append(f"Keywords: {keywords}")
 
     popularity = item.get("popularity")
     if popularity is not None:

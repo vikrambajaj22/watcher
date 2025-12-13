@@ -124,8 +124,14 @@ def _fetch_details(media_type: str, tmdb_ids: list[int]):
                     tmdb_id,
                 )
                 continue
-            url = f"{settings.TMDB_API_URL}/{media_type}/{tmdb_id}?api_key={settings.TMDB_API_KEY}"
-            r = requests.get(url)
+
+            url = f"{settings.TMDB_API_URL}/{media_type}/{tmdb_id}"
+            params = {
+                "api_key": settings.TMDB_API_KEY,
+                "append_to_response": "credits,keywords",
+            }
+            r = requests.get(url, params=params, timeout=10)
+
             if r.status_code == 200:
                 results.append(r.json())
                 # on success, clear any previous failure records for this id
