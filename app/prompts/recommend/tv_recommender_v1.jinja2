@@ -8,7 +8,9 @@ Use the watch history to recommend TV shows that the user might enjoy next.
 Do not recommend any shows that are already in the watch history.
 Focus on series-level recommendations; if a recommendation benefits from calling out seasons or episodes, include that in the `metadata` field of the JSON response.
 
-IMPORTANT: The Candidate shows list below is numbered (1..N). You MUST select recommendations only by referring to the candidate numbers (1-indexed). Do NOT return TMDB ids or invent any ids/titles. If there are fewer available candidates than the requested recommend_count, return at most the available candidates — do NOT fabricate additional items.
+IMPORTANT (Evidence rule): The candidate shows list is ONLY a set of possible outputs — it is NOT evidence of the user's tastes. When you write reasoning for a recommended candidate, you MUST rely on and explicitly cite items from the watch history as your evidence (for example: exact titles, years, genres, actors, directors, or other attributes that appear in Watch history). Do NOT use other candidate items as part of the justification. In other words, the Watch history is the only source of user-preference evidence; the candidate list is only the set of options you may choose from.
+
+If the watch history is non-empty, each recommendation's `reasoning` MUST reference at least one item from the Watch history (by title or other attribute) to justify why the candidate matches the user's taste. If the watch history is empty, you may justify using general popularity/genre signals but still must not reference other candidates as evidence.
 
 Your response must be in the following JSON format (exactly):
 
@@ -24,6 +26,7 @@ Your response must be in the following JSON format (exactly):
 
 Strict rules:
 - Each recommendation `index` must be an integer between 1 and the number of candidates provided.
+- Each `reasoning` must cite at least one watch history item (title/actor/genre) when watch history is available. Do NOT cite or compare other candidate items as evidence.
 - Do NOT include TMDB ids, titles, or any candidates not present in the numbered list.
 - Do not include any additional text outside the exact JSON object.
 
