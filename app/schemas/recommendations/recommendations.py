@@ -20,6 +20,7 @@ class Recommendation(BaseModel):
     id: str
     title: str
     reasoning: str
+    media_type: Optional[str] = None
     metadata: Optional[dict] = None
 
 

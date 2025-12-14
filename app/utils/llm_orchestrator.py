@@ -67,7 +67,12 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     k = int(payload.k)
     qvec = resolve_query_vector(payload)
 
-    vs_res = query(qvec, k)
+    # get the input ID to exclude it from results (if searching by tmdb_id)
+    exclude_id = payload.tmdb_id if payload.tmdb_id is not None else None
+
+    # query with k+1 to account for excluding the input item
+    query_k = k + 1 if exclude_id is not None else k
+    vs_res = query(qvec, query_k)
     logger.info("Found %s results", len(vs_res))
     ids = [int(r[0]) for r in vs_res]
     docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0}))
@@ -82,6 +87,9 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
 
     results: List[Dict[str, Any]] = []
     for tid, score in vs_res:
+        if exclude_id is not None and int(tid) == int(exclude_id):
+            continue
+
         doc = docs_by_id.get(tid, {})
         title = doc.get("title") or doc.get("name")
         media = (doc.get("media_type") or "").lower() if doc else ""
@@ -95,6 +103,9 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
                 "score": float(score),
             }
         )
+
+        if len(results) >= k:
+            break
 
     return {"results": results}
 

@@ -189,7 +189,12 @@ class MediaRecommender:
         )
         # ensure titles are resolved for any candidates (in case some lacked title in-memory)
         top_candidates = [
-            {"id": c.get("id"), "title": (c.get("title") or _resolve_title(c.get("id"))), "score": c.get("_score")}
+            {
+                "id": c.get("id"),
+                "title": (c.get("title") or _resolve_title(c.get("id"))),
+                "score": c.get("_score"),
+                "media_type": c.get("media_type")
+            }
             for c in top_candidates
         ]
         logger.info("Generated %s candidates for recommendation: %s", len(top_candidates), top_candidates)
@@ -222,11 +227,12 @@ class MediaRecommender:
         valid_recs = []
         unknown_ids = []
 
-        def _build_rec_obj(rid, title, reasoning=None, metadata=None):
+        def _build_rec_obj(rid, title, reasoning=None, metadata=None, media_type=None):
             return {
                 "id": str(rid) if rid is not None else "",
                 "title": title or "",
                 "reasoning": reasoning or "",
+                "media_type": media_type or None,
                 "metadata": metadata or None,
             }
 
@@ -247,7 +253,13 @@ class MediaRecommender:
             # accept LLM-provided reasoning and metadata fields if present
             reasoning = r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
             metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else None
-            valid_recs.append(_build_rec_obj(cand.get("id"), cand.get("title"), reasoning=reasoning, metadata=metadata))
+            valid_recs.append(_build_rec_obj(
+                cand.get("id"),
+                cand.get("title"),
+                reasoning=reasoning,
+                metadata=metadata,
+                media_type=cand.get("media_type")
+            ))
 
         if unknown_ids:
             logger.warning("LLM returned unknown recommendation ids (hallucination?): %s", unknown_ids)
@@ -261,7 +273,12 @@ class MediaRecommender:
                 continue
             score = c.get("score")
             reasoning = f"Fallback recommendation (score={score}) based on candidate ranking."
-            valid_recs.append(_build_rec_obj(cid, c.get("title"), reasoning=reasoning))
+            valid_recs.append(_build_rec_obj(
+                cid,
+                c.get("title"),
+                reasoning=reasoning,
+                media_type=c.get("media_type")
+            ))
             if len(valid_recs) >= recommend_count:
                 break
 
