@@ -87,6 +87,33 @@ class MediaRecommender:
         # build a set of watched ids to exclude from recommendations
         watched_ids = {item.get("id") for item in watch_history if item.get("id") is not None}
 
+        def _resolve_title(candidate_id, doc=None):
+            # prefer doc-provided title/name fields, else fetch from DB as a last resort
+            if doc:
+                t = (
+                    doc.get("title")
+                    or doc.get("name")
+                    or doc.get("original_title")
+                    or doc.get("original_name")
+                )
+                if t:
+                    return t
+            try:
+                d = tmdb_metadata_collection.find_one(
+                    {"id": candidate_id}, {"_id": 0, "title": 1, "name": 1, "original_title": 1, "original_name": 1}
+                )
+                if d:
+                    return (
+                        d.get("title")
+                        or d.get("name")
+                        or d.get("original_title")
+                        or d.get("original_name")
+                        or ""
+                    )
+            except Exception:
+                pass
+            return ""
+
         candidates_filtered = []
         try:
             user_vec = build_user_vector_from_history(watch_history)
@@ -102,6 +129,15 @@ class MediaRecommender:
                     docs = list(
                         tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0})
                     )
+                    # normalize title fields on the fetched docs so TV 'name' fields become 'title'
+                    for d in docs:
+                        title = (
+                            d.get("title")
+                            or d.get("name")
+                            or d.get("original_title")
+                            or d.get("original_name")
+                        )
+                        d["title"] = title
                     docs_by_id = {d.get("id"): d for d in docs}
 
                     # iterate in FAISS order and filter by media_type + watched ids
@@ -116,6 +152,10 @@ class MediaRecommender:
                             continue
                         # include score and keep the doc shape
                         doc_copy = dict(doc)
+                        # resolve title robustly
+                        doc_copy["title"] = _resolve_title(iid, doc)
+                        if not doc_copy["title"]:
+                            logger.warning("Resolved empty title for candidate id=%s media_type=%s", iid, doc.get("media_type"))
                         doc_copy["_score"] = score
                         candidates_filtered.append(doc_copy)
                         if len(candidates_filtered) >= target_pool:
@@ -140,8 +180,9 @@ class MediaRecommender:
         top_candidates = (
             candidates_filtered[: max(recommend_count * 5, 20)] if candidates_filtered else []
         )
+        # ensure titles are resolved for any candidates (in case some lacked title in-memory)
         top_candidates = [
-            {"id": c.get("id"), "title": c.get("title"), "score": c.get("_score")}
+            {"id": c.get("id"), "title": (c.get("title") or _resolve_title(c.get("id"))), "score": c.get("_score")}
             for c in top_candidates
         ]
         logger.info("Generated %s candidates for recommendation: %s", len(top_candidates), top_candidates)
@@ -169,10 +210,8 @@ class MediaRecommender:
             )
             raise
 
+        logger.info("Generated %s recommendations: %s", len(recommendations), recommendations)
         # validate LLM-returned ids against the candidate docs fetched earlier
-        candidate_ids = {c["id"] for c in top_candidates}
-        docs_by_id = {d.get("id"): d for d in docs} if "docs" in locals() else {}
-
         valid_recs = []
         unknown_ids = []
 
@@ -186,9 +225,10 @@ class MediaRecommender:
 
         for r in recommendations:
             rid = r.get("id")
-            # prefer to validate against docs_by_id so we only return items present in metadata
-            if rid in docs_by_id:
-                doc = docs_by_id[rid]
+            if str(rid) in {str(c.get("id")) for c in top_candidates}:
+                # find the matching candidate doc and use its title (alleviates LLM title hallucinations)
+                match = next((c for c in top_candidates if str(c.get("id")) == str(rid)), None)
+                doc = match if match else {}
                 # accept LLM-provided reasoning fields if present
                 reasoning = r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
                 metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else None
