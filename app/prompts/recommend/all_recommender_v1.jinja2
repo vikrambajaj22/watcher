@@ -33,11 +33,10 @@ Requirements:
 - Do not include any text before or after the JSON blob.
 - Use only candidates provided; do not invent or hallucinate ids or titles.
 
-Context passed to the prompt:
-Watch history:
-{{ watch_history }}
+Context:
 
 Candidates (numbered):
 {{ candidates_enumerated }}
 
-Provide your reasoning (one paragraph per candidate) and then output the final JSON structure described above.
+Watch history:
+{{ watch_history }}
