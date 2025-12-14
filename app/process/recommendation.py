@@ -81,7 +81,6 @@ class MediaRecommender:
         by media_type (unless media_type == 'all'). Excludes items already
         present in the user's watch history.
         """
-        # load history; if media_type == 'all' we want history across all types
         history_media_type = None if media_type == "all" else media_type
         watch_history = self.load_watch_history(media_type=history_media_type)
 
@@ -176,12 +175,24 @@ class MediaRecommender:
 
         valid_recs = []
         unknown_ids = []
+
+        def _build_rec_obj(rid, title, reasoning=None, metadata=None):
+            return {
+                "id": str(rid) if rid is not None else "",
+                "title": title or "",
+                "reasoning": reasoning or "",
+                "metadata": metadata or None,
+            }
+
         for r in recommendations:
             rid = r.get("id")
+            # prefer to validate against docs_by_id so we only return items present in metadata
             if rid in docs_by_id:
-                # enrich with title/score from docs_by_id if available
                 doc = docs_by_id[rid]
-                valid_recs.append({"id": rid, "title": doc.get("title"), "score": r.get("score")})
+                # accept LLM-provided reasoning fields if present
+                reasoning = r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
+                metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else None
+                valid_recs.append(_build_rec_obj(rid, doc.get("title"), reasoning=reasoning, metadata=metadata))
             else:
                 unknown_ids.append(rid)
 
@@ -192,8 +203,12 @@ class MediaRecommender:
         already = {r["id"] for r in valid_recs}
         for c in top_candidates:
             cid = c.get("id")
-            if cid not in already:
-                valid_recs.append({"id": cid, "title": c.get("title"), "score": c.get("score")})
+            cid_str = str(cid)
+            if cid_str in already:
+                continue
+            score = c.get("score")
+            reasoning = f"Fallback recommendation (score={score}) based on candidate ranking."
+            valid_recs.append(_build_rec_obj(cid, c.get("title"), reasoning=reasoning))
             if len(valid_recs) >= recommend_count:
                 break
 

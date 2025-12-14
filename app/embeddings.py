@@ -368,7 +368,8 @@ def build_user_vector_from_history(
     history_items: list of TMDB item docs (must include 'embedding' and 'latest_watched_at' or 'watched_at')
     decay_days: decay factor in days (larger = slower decay) (default: 30.0)
     """
-
+    # history_items are watch-history records (no embeddings). Fetch embeddings
+    # from tmdb_metadata_collection using the TMDB ids in the history.
     if not history_items:
         return None
 
@@ -377,26 +378,46 @@ def build_user_vector_from_history(
     embs = []
     age_days_list = []
 
+    # gather ids referenced in history and fetch embeddings in bulk
+    ids = [it.get("id") for it in history_items if it.get("id") is not None]
+    if not ids:
+        return None
+
+    docs_cursor = tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "embedding": 1})
+    docs_by_id = {d.get("id"): d for d in docs_cursor}
+
     for it in history_items:
-        emb = it.get("embedding")
-        if emb is None:
+        tid = it.get("id")
+        if tid is None:
             continue
-        embs.append(np.asarray(emb, dtype=np.float32))
+        doc = docs_by_id.get(tid)
+        if not doc:
+            # no metadata/embedding stored for this id
+            continue
+        emb = doc.get("embedding")
+        if not emb:
+            continue
+        try:
+            embs.append(np.asarray(emb, dtype=np.float32))
+        except Exception:
+            # malformed embedding
+            continue
+
         ts_str = it.get("latest_watched_at") or it.get("watched_at")
         age_days = 0.0
         if ts_str:
             try:
-                age_ts = datetime.fromisoformat(
-                    ts_str.replace("Z", "+00:00")
-                ).timestamp()
+                age_ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
                 age_days = (now_ts - age_ts) / 86400.0
             except Exception:
                 age_days = 0.0
         age_days_list.append(age_days)
 
     if not embs:
+        logger.warning("No embeddings found for user history items (after fetching deom tmdb_metadata_collection)")
         return None
 
+    logger.info("Loaded %d embeddings from user history for user vector computation", len(embs))
     embs_arr = np.stack(embs)  # shape: (n_items, embedding_dim)
     ages_arr = np.array(age_days_list, dtype=np.float32)
 

@@ -213,7 +213,7 @@ def query_faiss(
                 score = float(D[i, j])
                 tmdb_id = idx  # labels are TMDB ids
                 results.append((tmdb_id, score))
-        logger.info("FAISS query returning %s total hits", len(results))
+        logger.info("FAISS query returned %s total hits", len(results))
         return results
     except Exception as e:
         logger.error("FAISS query failed: %s", repr(e), exc_info=True)
