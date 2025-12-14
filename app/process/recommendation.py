@@ -66,9 +66,14 @@ class MediaRecommender:
         prompt_template = self.prompt_registry.load_prompt_template(
             f"{media_type}_recommender", prompt_version
         )
+        # render candidates as a numbered (1-indexed) list for the prompt
+        candidates_enumerated = []
+        for i, c in enumerate(candidates, start=1):
+            candidates_enumerated.append({"index": i, "id": c.get("id"), "title": c.get("title"), "score": c.get("score")})
         return prompt_template.render(
             watch_history=watch_history,
             candidates=candidates,
+            candidates_enumerated=candidates_enumerated,
             recommend_count=recommend_count,
         )
 
@@ -85,7 +90,7 @@ class MediaRecommender:
         watch_history = self.load_watch_history(media_type=history_media_type)
 
         # build a set of watched ids to exclude from recommendations
-        watched_ids = {item.get("id") for item in watch_history if item.get("id") is not None}
+        watched_ids = {str(item.get("id")) for item in watch_history if item.get("id") is not None}
 
         def _resolve_title(candidate_id, doc=None):
             # prefer doc-provided title/name fields, else fetch from DB as a last resort
@@ -138,14 +143,16 @@ class MediaRecommender:
                             or d.get("original_name")
                         )
                         d["title"] = title
-                    docs_by_id = {d.get("id"): d for d in docs}
+                    # normalize doc ids to strings for stable lookups
+                    docs_by_id = {str(d.get("id")): d for d in docs}
 
                     # iterate in FAISS order and filter by media_type + watched ids
                     target_pool = max(recommend_count * 5, 20)
                     for iid, score in res:
-                        if iid in watched_ids:
+                        key = str(iid)
+                        if key in watched_ids:
                             continue
-                        doc = docs_by_id.get(iid)
+                        doc = docs_by_id.get(key)
                         if not doc:
                             continue
                         if media_type != "all" and doc.get("media_type") != media_type:
@@ -155,7 +162,7 @@ class MediaRecommender:
                         # resolve title robustly
                         doc_copy["title"] = _resolve_title(iid, doc)
                         if not doc_copy["title"]:
-                            logger.warning("Resolved empty title for candidate id=%s media_type=%s", iid, doc.get("media_type"))
+                            logger.warning("Resolved empty title for candidate id=%s media_type=%s", key, doc.get("media_type"))
                         doc_copy["_score"] = score
                         candidates_filtered.append(doc_copy)
                         if len(candidates_filtered) >= target_pool:
@@ -223,18 +230,24 @@ class MediaRecommender:
                 "metadata": metadata or None,
             }
 
+        # LLM returns indices (1-indexed) into candidates_enumerated - map them back to top_candidates
+        # build a mapping index -> candidate
+        index_to_candidate = {i + 1: c for i, c in enumerate(top_candidates)}
         for r in recommendations:
-            rid = r.get("id")
-            if str(rid) in {str(c.get("id")) for c in top_candidates}:
-                # find the matching candidate doc and use its title (alleviates LLM title hallucinations)
-                match = next((c for c in top_candidates if str(c.get("id")) == str(rid)), None)
-                doc = match if match else {}
-                # accept LLM-provided reasoning fields if present
-                reasoning = r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
-                metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else None
-                valid_recs.append(_build_rec_obj(rid, doc.get("title"), reasoning=reasoning, metadata=metadata))
-            else:
-                unknown_ids.append(rid)
+            idx = r.get("index")
+            try:
+                idx_int = int(idx)
+            except Exception:
+                unknown_ids.append(idx)
+                continue
+            cand = index_to_candidate.get(idx_int)
+            if not cand:
+                unknown_ids.append(idx_int)
+                continue
+            # accept LLM-provided reasoning and metadata fields if present
+            reasoning = r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
+            metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else None
+            valid_recs.append(_build_rec_obj(cand.get("id"), cand.get("title"), reasoning=reasoning, metadata=metadata))
 
         if unknown_ids:
             logger.warning("LLM returned unknown recommendation ids (hallucination?): %s", unknown_ids)
