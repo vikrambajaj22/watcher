@@ -22,7 +22,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Rebuild FAISS index (isolated process)"
     )
-    parser.add_argument("--dim", type=int, default=768, help="Embedding dimension")
+    parser.add_argument("--dim", type=int, default=384, help="Embedding dimension")
     parser.add_argument(
         "--factory",
         type=str,

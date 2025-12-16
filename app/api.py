@@ -171,7 +171,7 @@ def admin_embed_full(background_tasks: BackgroundTasks, payload: dict):
 def admin_faiss_rebuild(payload: dict):
     """Trigger FAISS rebuild in a detached process. Expects JSON: {"dim": <int>, "factory": "..."}"""
     try:
-        dims = int(payload.get("dim", 768))
+        dims = int(payload.get("dim", 384))
         factory = payload.get("factory") or "IDMap,IVF100,Flat"
 
         python_exe = sys.executable or "python"

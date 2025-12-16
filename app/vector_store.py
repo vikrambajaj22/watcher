@@ -28,7 +28,7 @@ _index = None
 
 
 def rebuild_index(
-    dim: int = 768, factory: str = "IDMap,IVF100,Flat"
+    dim: int = 384, factory: str = "IDMap,IVF100,Flat"
 ) -> Optional[object]:
     """Rebuilds the FAISS index from Mongo embeddings by calling the FAISS builder.
     Returns the in-memory index (maybe a GPU index if FAISS was configured to use GPU).

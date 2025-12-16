@@ -664,7 +664,7 @@ def show_admin_page():
 
         col1, col2 = st.columns(2)
         with col1:
-            dim = st.number_input("Embedding Dimensions", min_value=1, value=768, key="faiss_dim")
+            dim = st.number_input("Embedding Dimensions", min_value=1, value=384, key="faiss_dim")
         with col2:
             factory = st.text_input("Factory String", value="IDMap,IVF100,Flat", key="faiss_factory")
 

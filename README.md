@@ -89,6 +89,7 @@ python sync_worker.py
 ```
 
 ### 3. Generate Embeddings
+Before generating embeddings, check the section on TMDB sync behavior below to understand how initial sync works.
 ```bash
 python -c "from app.embeddings import index_all_items; index_all_items(batch_size=128)"
 ```
@@ -102,6 +103,66 @@ python -c "from app.vector_store import rebuild_index; rebuild_index(dim=768, fa
 ```bash
 ./start.sh
 ```
+
+## TMDB sync behavior
+### Export-first initial sync, then incremental changes
+
+The sync flow prefers TMDB's official daily export files (complete ID dumps) for the initial full ingest and falls back to the `/discover/{movie|tv}` endpoint if an export isn't available. After the initial ingest, the service uses the `/movie/changes` and `/tv/changes` endpoints for incremental updates.
+
+Why exports?
+- TMDB provides daily gzipped ID exports for movies and TV series which contain every TMDB ID (millions of titles) and are updated daily. Using the exports:
+  - avoids the 500-page limit on the `/discover` API
+  - provides full coverage of IDs
+  - is faster and more reliable for initial population
+
+Export URLs (example):
+```
+http://files.tmdb.org/p/exports/movie_ids_MM_DD_YYYY.json.gz
+http://files.tmdb.org/p/exports/tv_series_ids_MM_DD_YYYY.json.gz
+```
+Each line in the gz file is JSON, e.g.:
+```
+{"id":550,"original_title":"Fight Club","popularity":61.4}
+```
+
+How the sync works:
+1. On the first run (no stored `last_sync`), the app attempts an export-based initial ingest:
+   - Try today's export; if not present, try previous days (configurable lookback, default 7 days).
+   - Stream the gz file; extract IDs; batch IDs into CHUNK_SIZE; fetch full metadata per ID via `/movie/{id}` or `/tv/{id}` (append credits, keywords) and upsert.
+   - Optionally queue embeddings for each item (recommended to disable for the initial bulk ingest).
+   - Set the `tmdb_<media_type>_last_sync` meta to the max `updated_at` observed so later runs can use `/changes`.
+2. If no suitable export is found within the lookback window, fall back to the `/discover/{movie|tv}` path (with a safety cap on pages to avoid TMDB page errors).
+3. On subsequent runs, use `/movie/changes` and `/tv/changes` to fetch incremental updates only.
+
+Operational notes & recommendations
+- Initial ingest can be very large. For safety/cost control: run the initial ingest with `embed_updated=False` (metadata-only), then run embeddings separately with throttling.
+- Exports avoid the discover 500-page limit, but large runs may still hit TMDB rate limits when fetching per-ID details — consider adding rate-limiting/backoff.
+- The export streaming handles gz files and processes IDs in batches to bound memory usage.
+
+How to force a re-run of the initial ingest
+- Delete the stored last-sync marker(s) and re-run the sync. Example (from repo root):
+
+```bash
+from app.db import sync_meta_collection
+# delete movie and tv last sync markers
+sync_meta_collection.delete_one({"_id":"tmdb_movie_last_sync"})
+sync_meta_collection.delete_one({"_id":"tmdb_tv_last_sync"})
+print('deleted last_sync markers')
+```
+
+Then trigger an export-preferred initial metadata-only sync (no embeddings):
+
+```bash
+from app.tmdb_sync import sync_tmdb_changes
+```
+
+Or run the sync worker script (with embedding creation):
+
+```bash
+python sync_worker.py
+````
+
+**Location**: the sync logic is implemented in `app/tmdb_sync.py` (see `_sync_from_export`, `_fetch_all_ids_by_discover`, and `sync_tmdb_changes`).
 
 ## API Endpoints
 

@@ -17,7 +17,8 @@ os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 logger = get_logger(__name__)
 
 # retrieval-optimized bi-encoder recommended for semantic search/recommendation
-EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "multi-qa-mpnet-base-dot-v1")
+# Use a 384-dim MiniLM model by default for compact embeddings
+EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "all-MiniLM-L6-v2")
 EMBED_DEVICE = os.getenv("EMBED_DEVICE")  # can be cuda, mps or cpu
 
 DEFAULT_WEIGHTS = {
@@ -184,7 +185,7 @@ def _combine_features(feature_vecs: Dict[str, Optional[np.ndarray]], weights: Di
             dummy = _get_model().encode(["dummy"], convert_to_numpy=True)
             dim = dummy.shape[-1]
         except Exception:
-            dim = 768
+            dim = 384
     combined = np.zeros(dim, dtype=np.float32)
     for name, vec in feature_vecs.items():
         w = float(weights.get(name, 0.0))
@@ -297,7 +298,7 @@ def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None
         try:
             dim = _get_model().encode(["dummy"]).shape[-1]
         except Exception:
-            dim = 768
+            dim = 384
 
     now_ts = int(time.time())
 
