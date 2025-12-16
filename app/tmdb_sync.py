@@ -514,10 +514,11 @@ def sync_tmdb_changes(
     """Sync TMDB changes using the /changes endpoint.
 
     - media_type: "movie" or "tv"
-    - window_seconds: how far back to check changes if there's no stored last sync (default 7 days)
+    - window_seconds: how far back to check changes when running an incremental /changes sync
+      (only used when a stored last-sync timestamp exists). Default: 7 days.
     - embed_updated: if True and embeddings are available, compute embeddings for updated items (background threads)
 
-    If there's no last sync timestamp stored, performs an initial full sync via the /discover endpoint.
+    If there's no last sync timestamp stored, performs an initial full sync via TMDB exports or the /discover endpoint.
     """
     assert media_type in ("movie", "tv"), (
         f"media_type {media_type} not supported for syncing TMDB changes."
@@ -525,13 +526,15 @@ def sync_tmdb_changes(
     start_ts = _get_last_sync_timestamp(media_type)
 
     if not start_ts:
-        logger.info("No last sync timestamp found; attempting initial full sync via TMDB export for %s", media_type)
-        # prefer the official TMDB daily exports (complete IDs) to get full coverage
+        logger.info(
+            "No last sync timestamp found; attempting initial full sync via TMDB export for %s",
+            media_type,
+        )
         export_summary = None
         try:
             export_summary = _sync_from_export(media_type, days_back_limit=7, embed_updated=embed_updated)
         except Exception:
-            logger.exception("Export-based initial sync failed; falling back to /discover")
+            logger.exception("Export-based initial sync failed; falling back to discover full sync")
 
         if export_summary is not None:
             return export_summary
@@ -549,6 +552,8 @@ def sync_tmdb_changes(
             details = _fetch_details(media_type, chunk)
             processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
             total_processed += processed
+            if queued:
+                to_embed.extend(queued)
             chunks_processed += 1
             if max_seen and max_seen > max_ts:
                 max_ts = max_seen
@@ -572,23 +577,36 @@ def sync_tmdb_changes(
         )
 
         # process embeddings if requested
-        summary = {"total_processed": total_processed, "embed_queued": len(to_embed), "embed_submitted": 0, "embed_succeeded": 0, "embed_failed": 0, "embed_timed_out": 0}
+        summary = {
+            "total_processed": total_processed,
+            "embed_queued": len(to_embed),
+            "embed_submitted": 0,
+            "embed_succeeded": 0,
+            "embed_failed": 0,
+            "embed_timed_out": 0,
+        }
         if embed_updated and to_embed:
             emb_summary = _submit_embedding_tasks(to_embed)
-            # map emb_summary keys into the expected summary fields
             summary["embed_submitted"] = emb_summary.get("submitted", 0)
             summary["embed_succeeded"] = emb_summary.get("succeeded", 0)
             summary["embed_failed"] = emb_summary.get("failed", 0)
             summary["embed_timed_out"] = emb_summary.get("timed_out", 0)
         return summary
 
+    # at this point we have a stored last-sync timestamp -> run incremental /changes.
+    # use window_seconds as a safety buffer: start the /changes query from (last_sync - window_seconds)
+    try:
+        changes_start_ts = int(start_ts) - int(window_seconds)
+    except Exception:
+        changes_start_ts = int(start_ts)
     page = 1
     total_processed = 0
     max_ts = start_ts
     to_embed = []
 
     while True:
-        data = _fetch_changes(media_type, start_time=start_ts, page=page)
+        # use the changes_start_ts (last_sync - window_seconds) to ensure we pick up any lagging updates
+        data = _fetch_changes(media_type, start_time=changes_start_ts, page=page)
         if not data or not data.get("results"):
             break
         ids = [item.get("id") for item in data["results"] if item.get("id")]
@@ -650,6 +668,8 @@ def sync_tmdb_changes(
             # process the filtered list using helper
             processed, max_seen, queued = _process_details_batch(details_to_process, media_type, embed_updated)
             total_processed += processed
+            if queued:
+                to_embed.extend(queued)
             chunks_processed += 1
             # periodic progress log for changes processing
             if chunks_processed % CHUNK_LOG_EVERY == 0:
