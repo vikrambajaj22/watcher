@@ -7,7 +7,7 @@ Features:
 - Admin Panel (Embeddings & FAISS)
 - Similar Items via KNN
 """
-
+import numpy as np
 import streamlit as st
 import requests
 import json
@@ -153,6 +153,24 @@ def api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None)
     except Exception as e:
         st.error(f"Request failed: {e}")
         return None
+
+
+def _set_similar_item(tmdb_id: Optional[int], title: Optional[str], media_type: Optional[str]):
+    """Helper to set the similar_item in session_state from button callbacks."""
+    try:
+        st.session_state.similar_item = {
+            'tmdb_id': tmdb_id,
+            'title': title,
+            'media_type': media_type,
+        }
+        st.session_state.active_tab = 3
+    except Exception:
+        st.session_state['similar_item'] = {
+            'tmdb_id': tmdb_id,
+            'title': title,
+            'media_type': media_type,
+        }
+        st.session_state['active_tab'] = 3
 
 
 def show_auth_page():
@@ -383,18 +401,15 @@ def show_history_page():
                     st.write(f"Last: {item.get('latest_watched_at', 'N/A')[:10]}")
 
                 with col5:
-                    def switch_to_similar_hist():
-                        st.session_state.similar_item = {
-                            'tmdb_id': item.get('tmdb_id') or item.get('id'),
-                            'title': item.get('title'),
-                            'media_type': item.get('media_type')
-                        }
-                        st.session_state.active_tab = 3
-
+                    # avoid closure capture by binding current item values into the button args
+                    _tmdb_id = item.get('tmdb_id') or item.get('id')
+                    _title = item.get('title')
+                    _mtype = item.get('media_type')
                     st.button(
                         "🔍 Find Similar",
                         key=f"similar_hist_{idx}",
-                        on_click=switch_to_similar_hist
+                        on_click=_set_similar_item,
+                        args=(_tmdb_id, _title, _mtype),
                     )
                 st.markdown("---")
 
@@ -460,18 +475,15 @@ def show_recommendations_page():
 
                             col_a, col_b = st.columns(2)
                             with col_a:
-                                def switch_to_similar_rec():
-                                    st.session_state.similar_item = {
-                                        'tmdb_id': rec.get('id'),
-                                        'title': rec.get('title', 'Unknown Title'),
-                                        'media_type': rec.get('media_type', 'movie')
-                                    }
-                                    st.session_state.active_tab = 3
-
+                                # bind rec values explicitly to avoid loop closure issues
+                                _tmdb_id = rec.get('id')
+                                _title = rec.get('title', 'Unknown Title')
+                                _mtype = rec.get('media_type', 'movie')
                                 st.button(
                                     f"🔍 Find Similar",
                                     key=f"similar_rec_{idx}",
-                                    on_click=switch_to_similar_rec
+                                    on_click=_set_similar_item,
+                                    args=(_tmdb_id, _title, _mtype),
                                 )
                             with col_b:
                                 tmdb_id = rec.get('id')
@@ -554,7 +566,6 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
     search_label = f"Searching for items similar to '{source_title}'..." if source_title else "Searching for similar items..."
     with st.spinner(search_label):
         result = api_request("/mcp/knn", method="POST", data=payload)
-
         if result and "results" in result:
             header = f"✅ Found {len(result['results'])} items similar to **{source_title}**!" if source_title else f"✅ Found {len(result['results'])} similar items!"
             st.success(header)
@@ -575,10 +586,13 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
                     with col2:
                         icon = "🎬" if item.get("media_type") == "movie" else "📺"
                         st.markdown(f"### {icon} {item.get('title', 'Unknown')}")
-                        st.write(f"**Overview:** {item.get('overview', 'No description available')[:500]}...")
+                        if item.get("overview") and item.get("overview").strip():
+                            st.write(f"**Overview:** {item.get('overview')[:500]}...")
 
-                        if "distance" in item or "similarity" in item:
-                            score = item.get("similarity", 1 - item.get("distance", 0))
+                        if "score" in item:
+                            d = item.get("score")
+                            sigma = 1.0  # adjust this value to control the spread
+                            score = np.exp(-d / (2 * sigma ** 2))  # convert distance to similarity score (based on FAISS using L2)
                             st.progress(float(score))
 
                     with col3:

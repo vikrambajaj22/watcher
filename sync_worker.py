@@ -45,5 +45,4 @@ def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
 
 
 if __name__ == "__main__":
-    # Default: Trakt every hour (3600s) and TMDB every 6 hours
-    start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6)
+    start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=24)

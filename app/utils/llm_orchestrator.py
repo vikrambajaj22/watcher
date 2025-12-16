@@ -48,7 +48,7 @@ def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
             raise ValueError(f"tmdb_id {payload.tmdb_id} not found")
         emb = doc.get("embedding")
         if emb is None:
-            raise ValueError("embedding missing for tmdb_id")
+            raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id}")
         return np.array(emb, dtype=np.float32)
 
     if payload.text is not None:
@@ -116,7 +116,7 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     ids = [int(r[0]) for r in vs_res]
     docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0}))
     docs_by_id = {d.get("id"): d for d in docs}
-
+    logger.info("Found %s matching documents in tmdb_metadata", len(docs_by_id))
     # optional media_type filtering
     requested_media = None
     if getattr(payload, "media_type", None):
@@ -147,7 +147,7 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
 
         if len(results) >= k:
             break
-
+    logger.info("Found %s results after media type filtering", len(results))
     return {"results": results}
 
 

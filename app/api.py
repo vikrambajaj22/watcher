@@ -233,7 +233,6 @@ def admin_faiss_rebuild(payload: dict):
 )
 def mcp_knn(payload: MCPPayload):
     try:
-        # delegate to consolidated MCP handler
         res = call_mcp_knn(payload)
         return JSONResponse(res)
     except ValueError as ve:

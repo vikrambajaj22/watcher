@@ -154,7 +154,7 @@ def query_faiss(
         if k <= 0:
             k = 10
 
-        # call search and normalize outputs
+        # call search and return raw outputs (scores are distances)
         try:
             res = index.search(q, k)
         except Exception as e:
@@ -218,3 +218,4 @@ def query_faiss(
     except Exception as e:
         logger.error("FAISS query failed: %s", repr(e), exc_info=True)
         return []
+
