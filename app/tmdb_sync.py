@@ -8,6 +8,9 @@ from datetime import timedelta
 
 import requests
 from dateutil import parser as _dateutil_parser
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from requests.exceptions import RequestException
 
 from app.config.settings import settings
 from app.db import (
@@ -261,123 +264,174 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
     max_ts = int(time.time())
     to_embed: list[dict] = []
 
+    # create a requests Session with retry/backoff for transient network errors
+    def _session_with_retries(retries: int = 3, backoff: float = 0.5) -> requests.Session:
+        s = requests.Session()
+        retry = Retry(
+            total=retries,
+            read=retries,
+            connect=retries,
+            backoff_factor=backoff,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=("GET", "POST"),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        return s
+
+    session = _session_with_retries(retries=3, backoff=0.8)
+
     for days_back in range(0, days_back_limit):
         d = today - timedelta(days=days_back)
         date_str = d.strftime("%m_%d_%Y")
         url = f"http://files.tmdb.org/p/exports/{prefix}_ids_{date_str}.json.gz"
         logger.info("Attempting TMDB export URL: %s", url)
-        try:
-            resp = requests.get(url, stream=True, timeout=30)
-        except Exception as e:
-            logger.warning("Failed to request export %s: %s", url, repr(e), exc_info=True)
-            continue
-
-        if resp.status_code != 200:
-            logger.info("Export not available at %s (status=%s). Trying previous day.", url, resp.status_code)
+        EXPORT_DOWNLOAD_RETRIES = 3
+        resp = None
+        last_exc = None
+        for attempt in range(1, EXPORT_DOWNLOAD_RETRIES + 1):
+            try:
+                resp = session.get(url, stream=True, timeout=30)
+                # if non-200, let the outer logic treat it as not available
+                break
+            except RequestException as e:
+                last_exc = e
+                logger.warning(
+                    "Export request attempt %s/%s failed for %s: %s",
+                    attempt,
+                    EXPORT_DOWNLOAD_RETRIES,
+                    url,
+                    repr(e),
+                    exc_info=True,
+                )
+                time.sleep(attempt * 1.0)
+                resp = None
+                continue
+        if resp is None:
+            logger.warning("Failed to request export %s after %s attempts: %s", url, EXPORT_DOWNLOAD_RETRIES, repr(last_exc))
             continue
 
         # stream and process the gzipped newline-delimited JSON file in CHUNK_SIZE batches
-        try:
-            logger.info("Downloaded TMDB export %s; processing...", url)
-            resp.raw.decode_content = True
-            gz = gzip.GzipFile(fileobj=resp.raw)
-            # iterate over gzip bytes lines and decode each line
-            chunk_ids: list[int] = []
-            for raw_line in gz:
-                try:
-                    line = raw_line.decode("utf-8").strip()
-                except Exception:
-                    continue
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    tid = obj.get("id")
-                    if tid:
-                        chunk_ids.append(int(tid))
-                except Exception:
-                    continue
+        STREAM_RETRIES = 2
+        stream_success = False
+        for stream_attempt in range(1, STREAM_RETRIES + 1):
+            try:
+                logger.info("Downloaded TMDB export %s; processing... (attempt %s/%s)", url, stream_attempt, STREAM_RETRIES)
+                resp.raw.decode_content = True
+                gz = gzip.GzipFile(fileobj=resp.raw)
+                # iterate over gzip bytes lines and decode each line
+                chunk_ids: list[int] = []
+                for raw_line in gz:
+                    try:
+                        line = raw_line.decode("utf-8").strip()
+                    except Exception:
+                        continue
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        tid = obj.get("id")
+                        if tid:
+                            chunk_ids.append(int(tid))
+                    except Exception:
+                        continue
 
-                if len(chunk_ids) >= CHUNK_SIZE:
-                    details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
-                    logger.debug("Export fetch details: media_type=%s requested_ids=%s returned_details=%s", media_type, len(chunk_ids), len(details))
-                    if not details:
-                        logger.warning(
-                            "No details returned for export chunk (media_type=%s requested_ids=%s). These IDs may be marked failed or TMDB returned no data.",
+                    if len(chunk_ids) >= CHUNK_SIZE:
+                        details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
+                        logger.debug("Export fetch details: media_type=%s requested_ids=%s returned_details=%s", media_type, len(chunk_ids), len(details))
+                        if not details:
+                            logger.warning(
+                                "No details returned for export chunk (media_type=%s requested_ids=%s). These IDs may be marked failed or TMDB returned no data.",
+                                media_type,
+                                len(chunk_ids),
+                            )
+                        processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
+                        total_processed += processed
+                        # collect queued embedding items into the shared to_embed list
+                        if queued:
+                            to_embed.extend(queued)
+                        if max_seen and max_seen > max_ts:
+                            max_ts = max_seen
+                        logger.debug(
+                            "Export chunk: media_type=%s chunk_size=%s processed=%s queued_embeddings=%s",
                             media_type,
                             len(chunk_ids),
+                            processed,
+                            len(queued),
                         )
+                        chunk_ids = []
+                        # log progress for large exports
+                        if total_processed % EXPORT_LOG_EVERY_IDS == 0:
+                            logger.info(
+                                "Export progress: media_type=%s processed_ids=%s queued_embeddings=%s",
+                                media_type,
+                                total_processed,
+                                len(queued),
+                            )
+                        if processed and (total_processed // CHUNK_SIZE) % CHUNK_LOG_EVERY == 0:
+                            logger.info(
+                                "Export chunk processed: media_type=%s total_processed=%s queued_embeddings=%s",
+                                media_type,
+                                total_processed,
+                                len(queued),
+                            )
+
+                if chunk_ids:
+                    details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
                     processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
                     total_processed += processed
-                    # collect queued embedding items into the shared to_embed list
                     if queued:
                         to_embed.extend(queued)
                     if max_seen and max_seen > max_ts:
                         max_ts = max_seen
                     logger.debug(
-                        "Export chunk: media_type=%s chunk_size=%s processed=%s queued_embeddings=%s",
+                        "Export final chunk: media_type=%s chunk_size=%s processed=%s queued_embeddings=%s",
                         media_type,
                         len(chunk_ids),
                         processed,
                         len(queued),
                     )
-                    chunk_ids = []
-                    # log progress for large exports
-                    if total_processed % EXPORT_LOG_EVERY_IDS == 0:
-                        logger.info(
-                            "Export progress: media_type=%s processed_ids=%s queued_embeddings=%s",
-                            media_type,
-                            total_processed,
-                            len(queued),
-                        )
-                    if processed and (total_processed // CHUNK_SIZE) % CHUNK_LOG_EVERY == 0:
-                        logger.info(
-                            "Export chunk processed: media_type=%s total_processed=%s queued_embeddings=%s",
-                            media_type,
-                            total_processed,
-                            len(queued),
-                        )
 
-            if chunk_ids:
-                details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
-                processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
-                total_processed += processed
-                if queued:
-                    to_embed.extend(queued)
-                if max_seen and max_seen > max_ts:
-                    max_ts = max_seen
-                logger.debug(
-                    "Export final chunk: media_type=%s chunk_size=%s processed=%s queued_embeddings=%s",
-                    media_type,
-                    len(chunk_ids),
-                    processed,
-                    len(queued),
-                )
+                logger.info("Processed export %s: processed=%s", url, total_processed)
 
-            logger.info("Processed export %s: processed=%s", url, total_processed)
+                if total_processed:
+                    _set_last_sync_timestamp(media_type, max_ts)
 
-            if total_processed:
-                _set_last_sync_timestamp(media_type, max_ts)
+                if embed_updated and not to_embed:
+                    logger.warning(
+                        "Export processed %s items but no embeddings were queued (media_type=%s). Check embed_updated flag, _fetch_details results, and failure markers.",
+                        total_processed,
+                        media_type,
+                    )
 
-            if embed_updated and not to_embed:
-                logger.warning(
-                    "Export processed %s items but no embeddings were queued (media_type=%s). Check embed_updated flag, _fetch_details results, and failure markers.",
-                    total_processed,
-                    media_type,
-                )
+                summary = {"total_processed": total_processed, "embed_queued": len(to_embed), "embed_submitted": 0, "embed_succeeded": 0, "embed_failed": 0, "embed_timed_out": 0}
+                if embed_updated and to_embed:
+                    emb_summary = _submit_embedding_tasks(to_embed)
+                    summary["embed_submitted"] = emb_summary.get("submitted", 0)
+                    summary["embed_succeeded"] = emb_summary.get("succeeded", 0)
+                    summary["embed_failed"] = emb_summary.get("failed", 0)
+                    summary["embed_timed_out"] = emb_summary.get("timed_out", 0)
 
-            summary = {"total_processed": total_processed, "embed_queued": len(to_embed), "embed_submitted": 0, "embed_succeeded": 0, "embed_failed": 0, "embed_timed_out": 0}
-            if embed_updated and to_embed:
-                emb_summary = _submit_embedding_tasks(to_embed)
-                summary["embed_submitted"] = emb_summary.get("submitted", 0)
-                summary["embed_succeeded"] = emb_summary.get("succeeded", 0)
-                summary["embed_failed"] = emb_summary.get("failed", 0)
-                summary["embed_timed_out"] = emb_summary.get("timed_out", 0)
+                stream_success = True
+                return summary
 
-            return summary
-
-        except Exception as e:
-            logger.warning("Failed to stream/process export %s: %s", url, repr(e), exc_info=True)
+            except Exception as e:
+                logger.warning("Stream attempt %s/%s failed for %s: %s", stream_attempt, STREAM_RETRIES, url, repr(e), exc_info=True)
+                # if there are more stream attempts, try to re-request the URL (session has retry policy)
+                if stream_attempt < STREAM_RETRIES:
+                    try:
+                        time.sleep(stream_attempt * 1.0)
+                        resp = session.get(url, stream=True, timeout=30)
+                    except RequestException as re:
+                        logger.warning("Re-request failed during stream retry for %s: %s", url, repr(re), exc_info=True)
+                        resp = None
+                        break
+                else:
+                    logger.warning("Failed to stream/process export %s after %s attempts: %s", url, STREAM_RETRIES, repr(e))
+        if not stream_success:
+            # try next date
             continue
 
     logger.info("No TMDB export found for %s in the past %s days", media_type, days_back_limit)
