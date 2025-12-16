@@ -15,10 +15,11 @@ import numpy as np
 
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_text
+from app.vector_store import query
 from app.schemas.api import MCPPayload
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
-from app.vector_store import load_index, query
+from app.utils.prompt_registry import PromptRegistry
 
 logger = get_logger(__name__)
 
@@ -51,12 +52,50 @@ def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
         return np.array(emb, dtype=np.float32)
 
     if payload.text is not None:
-        return embed_text([payload.text])[0]
+        # enrich free-text queries with an LLM before embedding so the vector
+        # captures additional structured signals (genres, actors, directors, etc.).
+        try:
+            enriched = enrich_text_for_embedding(payload.text)
+            logger.info("Enriched input text '%s': %s", payload.text, enriched)
+        except Exception as e:
+            logger.exception("Text enrichment failed, falling back to original text: %s", repr(e), exc_info=True)
+            enriched = payload.text
+        return embed_text([enriched])[0]
 
     if payload.vector is not None:
         return np.array(payload.vector, dtype=np.float32)
 
     raise ValueError("invalid payload; provide tmdb_id, text, or vector")
+
+
+def enrich_text_for_embedding(text: str, model: str = "gpt-4.1-nano", max_tokens: int = 150) -> str:
+    """Use an LLM to enrich a free-text query with likely genres, actors, and other
+    relevant descriptors before embedding.
+
+    The function returns a short, enhanced description (string). On failure, it
+    raises an exception so callers can fall back if desired.
+    """
+    client = get_openai_client()
+
+    registry = PromptRegistry("app/prompts/embedding")
+    template = registry.load_prompt_template("enrich_for_embedding", 1)
+    system_prompt = template.render(user_query=text)
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt}
+        ],
+        temperature=0.0,
+        max_tokens=max_tokens,
+    )
+
+    choice = resp.choices[0]
+    msg = choice.message
+    content = msg.content
+    if not content:
+        raise ValueError("LLM returned empty enrichment")
+    return content.strip()
 
 
 def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
