@@ -193,7 +193,9 @@ class MediaRecommender:
                 "id": c.get("id"),
                 "title": (c.get("title") or _resolve_title(c.get("id"))),
                 "score": c.get("_score"),
-                "media_type": c.get("media_type")
+                "media_type": c.get("media_type"),
+                "poster_path": c.get("poster_path"),
+                "overview": c.get("overview"),
             }
             for c in top_candidates
         ]
@@ -227,7 +229,15 @@ class MediaRecommender:
         valid_recs = []
         unknown_ids = []
 
-        def _build_rec_obj(rid, title, reasoning=None, metadata=None, media_type=None):
+        def _build_rec_obj(rid, title, reasoning=None, metadata=None, media_type=None, poster_path=None, overview=None):
+            # Build metadata dict with poster_path and overview if not already provided
+            if metadata is None:
+                metadata = {}
+            if poster_path is not None:
+                metadata["poster_path"] = poster_path
+            if overview is not None:
+                metadata["overview"] = overview
+
             return {
                 "id": str(rid) if rid is not None else "",
                 "title": title or "",
@@ -258,7 +268,9 @@ class MediaRecommender:
                 cand.get("title"),
                 reasoning=reasoning,
                 metadata=metadata,
-                media_type=cand.get("media_type")
+                media_type=cand.get("media_type"),
+                poster_path=cand.get("poster_path"),
+                overview=cand.get("overview")
             ))
 
         if unknown_ids:
@@ -277,7 +289,9 @@ class MediaRecommender:
                 cid,
                 c.get("title"),
                 reasoning=reasoning,
-                media_type=c.get("media_type")
+                media_type=c.get("media_type"),
+                poster_path=c.get("poster_path"),
+                overview=c.get("overview")
             ))
             if len(valid_recs) >= recommend_count:
                 break

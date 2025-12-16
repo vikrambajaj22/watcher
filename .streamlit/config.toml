@@ -1,0 +1,19 @@
+[server]
+port = 8501
+address = "localhost"
+headless = true
+
+[browser]
+serverAddress = "localhost"
+serverPort = 8501
+gatherUsageStats = false
+
+[client]
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[theme]
+base = "dark"  # options: "light" or "dark" - Users can toggle via ⋮ menu → Settings → Theme
+primaryColor = "#667eea"
+font = "sans serif"
+

@@ -44,7 +44,7 @@ def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
     if payload.tmdb_id is not None:
         doc = tmdb_metadata_collection.find_one({"id": payload.tmdb_id}, {"_id": 0})
         if not doc:
-            raise ValueError("tmdb_id not found")
+            raise ValueError(f"tmdb_id {payload.tmdb_id} not found")
         emb = doc.get("embedding")
         if emb is None:
             raise ValueError("embedding missing for tmdb_id")
@@ -101,6 +101,8 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
                 "title": title,
                 "media_type": doc.get("media_type"),
                 "score": float(score),
+                "poster_path": doc.get("poster_path"),
+                "overview": doc.get("overview", "No description available"),
             }
         )
 

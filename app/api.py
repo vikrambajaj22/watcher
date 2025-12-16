@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
+from app.dao.history import get_watch_history
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_item_and_store, embed_all_items
 from app.faiss_index import INDEX_DIR
@@ -12,6 +13,7 @@ from app.schemas.recommendations.recommendations import (
     RecommendationsResponse,
     RecommendRequest,
 )
+from app.trakt_sync import sync_trakt_history
 from app.utils.llm_orchestrator import call_mcp_knn
 from app.utils.logger import get_logger
 
@@ -22,6 +24,12 @@ import os
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/health")
+def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "ok", "service": "watcher"}
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -65,23 +73,60 @@ def recommend(media_type: str, payload: RecommendRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/history")
+def get_history(media_type: str = None):
+    """Get watch history, optionally filtered by media_type."""
+    try:
+        history = get_watch_history(media_type=media_type)
+        return JSONResponse(history)
+    except Exception as e:
+        logger.error("get_history error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/sync/trakt")
+def admin_sync(background_tasks: BackgroundTasks):
+    """Trigger Trakt history sync in background."""
+    try:
+        background_tasks.add_task(sync_trakt_history)
+        return JSONResponse(
+            {"status": "accepted", "message": "sync started"}, status_code=202
+        )
+    except Exception as e:
+        logger.error("admin_sync error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @router.get("/auth/trakt/start")
-def trakt_auth_start():
-    """Redirect user to Trakt OAuth authorization URL."""
-    return RedirectResponse(get_auth_url())
+def trakt_auth_start(request: Request, from_ui: bool = False):
+    """Redirect user to Trakt OAuth authorization URL.
+
+    Args:
+        from_ui: If True, user will be redirected to UI after auth. Otherwise, to API docs.
+    """
+    state = "ui" if from_ui else "api"
+    return RedirectResponse(get_auth_url(state=state))
 
 
 @router.get("/auth/trakt/callback")
 def trakt_auth_callback(request: Request):
-    """Handle Trakt OAuth callback and exchange code for token."""
+    """Handle Trakt OAuth callback and exchange code for token.
+
+    Redirects to UI homepage if state=ui, otherwise to API docs.
+    """
     code = request.query_params.get("code")
+    state = request.query_params.get("state", "api")
+
     if not code:
         # redirect to start if code is missing
         return RedirectResponse("/auth/trakt/start")
     try:
         token_data = exchange_code_for_token(code)
         save_token_data(token_data)
-        return RedirectResponse("/docs")
+        if state == "ui":
+            return RedirectResponse("http://localhost:8501")  # streamlit UI (#TODO: make this a config)
+        else:
+            return RedirectResponse("/docs")  # API docs
     except Exception:
         return RedirectResponse("/auth/trakt/start")
 

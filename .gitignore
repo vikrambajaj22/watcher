@@ -17,3 +17,11 @@ dist/
 *.index
 *.npy
 /faiss_index/rebuild.log
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Logs
+backend.log
+frontend.log
+*.log

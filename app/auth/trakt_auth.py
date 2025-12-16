@@ -23,12 +23,24 @@ HEADERS = {
 }
 
 
-def get_auth_url():
+def get_auth_url(state: str = None):
+    """Generate Trakt OAuth authorization URL with optional state parameter.
+
+    Args:
+        state: Optional state parameter to track where auth was initiated (e.g., "ui" or "api")
+
+    Returns:
+        OAuth authorization URL
+    """
     params = {
         "response_type": "code",
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
     }
+
+    if state:
+        params["state"] = state
+
     import urllib.parse
 
     url = f"{AUTH_URL}?" + urllib.parse.urlencode(params)
