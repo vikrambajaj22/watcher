@@ -17,7 +17,7 @@ from app.db import tmdb_metadata_collection
 from app.embeddings import embed_text
 from app.vector_store import query
 from app.utils.knn_utils import process_knn_results
-from app.schemas.api import MCPPayload
+from app.schemas.api import KNNRequest
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
 from app.utils.prompt_registry import PromptRegistry
@@ -38,7 +38,7 @@ def load_tool(tool_name: str) -> Dict[str, Any] | None:
     return mcp_function_schema
 
 
-def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
+def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
     """Resolve a numeric query vector from a validated payload.
 
     Raises ValueError on missing item or embedding.
@@ -108,7 +108,7 @@ def enrich_text_for_embedding(text: str, model: str = "gpt-4.1-nano", max_tokens
     return content.strip()
 
 
-def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
+def call_mcp_knn(payload: KNNRequest) -> Dict[str, Any]:
     """Execute the KNN query for the given validated payload and return structured results.
 
     Returns a dict with a `results` key containing list of {id, title, media_type, score}.
@@ -141,7 +141,7 @@ def get_payload_type(tool_name):
     """Get the Pydantic model type for the given tool_name."""
     match tool_name:
         case "mcp_knn":
-            return MCPPayload
+            return KNNRequest
     return None
 
 

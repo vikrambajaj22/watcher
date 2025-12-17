@@ -3,7 +3,7 @@ from typing import List, Optional
 from pydantic import BaseModel, model_validator
 
 
-class MCPPayload(BaseModel):
+class KNNRequest(BaseModel):
     """Payload for the /mcp/knn endpoint.
     Provide exactly one of: tmdb_id, text, or vector. k controls number of neighbors.
     """
@@ -52,3 +52,55 @@ class AdminReindexPayload(BaseModel):
     build_faiss: Optional[bool] = False
     dim: Optional[int] = 384
     factory: Optional[str] = "IDMap,IVF100,Flat"
+
+
+class KNNResultItem(BaseModel):
+    id: int
+    title: Optional[str] = None
+    media_type: Optional[str] = None
+    score: Optional[float] = None
+    poster_path: Optional[str] = None
+    overview: Optional[str] = None
+
+
+class KNNResponse(BaseModel):
+    """Response from /mcp/knn endpoint."""
+    results: List[KNNResultItem]
+
+
+class WillLikeRequest(BaseModel):
+    """Payload for the /mcp/will-like endpoint.
+    Provide exactly one of: tmdb_id or title, along with media_type.
+    """
+    tmdb_id: Optional[int] = None
+    title: Optional[str] = None
+    media_type: str
+
+    @model_validator(mode="after")
+    def check_one_of(self):
+        # require exactly one of tmdb_id or title (not both)
+        has_id = self.tmdb_id is not None
+        has_title = bool(self.title)
+        if not has_id and not has_title:
+            raise ValueError("one of tmdb_id or title must be provided")
+        if has_id and has_title:
+            raise ValueError("provide exactly one of tmdb_id or title, not both")
+        if str(self.media_type).lower() not in {"movie", "tv"}:
+            raise ValueError("media_type must be 'movie' or 'tv'")
+        self.media_type = str(self.media_type).lower()
+        return self
+
+
+class ItemSummary(BaseModel):
+    id: Optional[int] = None
+    title: Optional[str] = None
+    media_type: Optional[str] = None
+    overview: Optional[str] = None
+
+
+class WillLikeResponse(BaseModel):
+    """Response from /mcp/will-like endpoint."""
+    will_like: bool
+    score: float
+    explanation: str
+    item: ItemSummary

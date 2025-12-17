@@ -163,14 +163,39 @@ def _set_similar_item(tmdb_id: Optional[int], title: Optional[str], media_type: 
             'title': title,
             'media_type': media_type,
         }
-        st.session_state.active_tab = 3
+        st.session_state.active_tab = 4
     except Exception:
         st.session_state['similar_item'] = {
             'tmdb_id': tmdb_id,
             'title': title,
             'media_type': media_type,
         }
-        st.session_state['active_tab'] = 3
+        st.session_state['active_tab'] = 4
+
+
+def _check_will_like_inline(tmdb_id: int, media_type: str, result_key: str):
+    """Call the will-like API and store the result under a unique session_state key for inline display.
+
+    This does NOT change tabs - show results inline.
+    """
+    try:
+        payload = {"tmdb_id": int(tmdb_id), "media_type": str(media_type)}
+        res = api_request('/mcp/will-like', method='POST', data=payload)
+    except Exception as e:
+        res = {"error": str(e)}
+    st.session_state[result_key] = res
+    # mark that we should restore similar results on next run and show inline result
+    st.session_state['_restore_similar'] = True
+
+
+def _safe_rerun():
+    """Call Streamlit's experimental_rerun if available, swallow errors."""
+    fn = getattr(st, "experimental_rerun", None)
+    if fn:
+        try:
+            fn()
+        except Exception:
+            pass
 
 
 def show_auth_page():
@@ -223,6 +248,7 @@ def show_dashboard():
         "🏠 Home",
         "📺 Watch History",
         "✨ Recommendations",
+        "🤔 Will I Like?",
         "🔍 Similar Items",
         "⚙️ Admin Panel"
     ]
@@ -251,8 +277,10 @@ def show_dashboard():
     elif st.session_state.active_tab == 2:
         show_recommendations_page()
     elif st.session_state.active_tab == 3:
-        show_similar_items_page()
+        show_will_like_page()
     elif st.session_state.active_tab == 4:
+        show_similar_items_page()
+    elif st.session_state.active_tab == 5:
         show_admin_page()
 
 
@@ -497,9 +525,104 @@ def show_recommendations_page():
                         st.markdown("---")
 
 
+def show_will_like_page():
+    """Display the 'Will I Like?' page where users can query by TMDB ID or by title."""
+    st.header("🤔 Will I Like This?")
+    st.write("Check whether an item matches your taste based on your watch history.")
+
+    tab_id, tab_title = st.tabs(["By TMDB ID", "By Title"])
+
+    with tab_id:
+        st.subheader("Check by TMDB ID")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            tmdb_id = st.number_input("TMDB ID", min_value=1, value=550, key="will_tmdb_id")
+        with col2:
+            media_type = st.selectbox("Media Type", ["movie", "tv"], key="will_id_media")
+        if st.button("🤔 Check Will I Like (by ID)", key="will_check_id"):
+            with st.spinner("Checking..."):
+                payload = {"tmdb_id": int(tmdb_id), "media_type": media_type}
+                res = api_request('/mcp/will-like', method='POST', data=payload)
+                st.session_state['will_like_result'] = res
+                st.session_state['will_like_tmdb_id'] = int(tmdb_id)
+
+    with tab_title:
+        st.subheader("Check by Title")
+        title_str = st.text_input("Movie / TV show title", key="will_title_input")
+        media_type_title = st.selectbox("Media Type", ["movie", "tv"], key="will_title_media")
+        if st.button("🤔 Check Will I Like (by Title)", key="will_check_title"):
+            if not title_str:
+                st.error("Please provide a title")
+            else:
+                with st.spinner("Checking..."):
+                    payload = {"title": title_str, "media_type": media_type_title}
+                    res = api_request('/mcp/will-like', method='POST', data=payload)
+                    st.session_state['will_like_result'] = res
+
+    st.markdown("---")
+    # show last computed will-like result if available
+    if st.session_state.get('will_like_result'):
+        res = st.session_state.get('will_like_result')
+        if isinstance(res, dict) and 'error' in res:
+            st.warning(f"Will I like? check failed: {res.get('error')}")
+        else:
+            item = res.get('item', {})
+            score = res.get('score')
+            will = res.get('will_like')
+            expl = res.get('explanation')
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                poster_url = get_poster_url(item.get('poster_path'), item.get('title', 'No Title'))
+                st.image(poster_url, use_container_width=True)
+            with col2:
+                emoji = '❤️' if will else '🤷'
+                st.markdown(f"### {emoji} Will you like: **{item.get('title','Unknown')}**")
+                if isinstance(score, (int, float)):
+                    st.write(f"**Score:** {score:.3f}")
+                st.write(expl)
+        st.markdown('---')
+
+
 def show_similar_items_page():
     """Display similar items finder using KNN."""
     st.header("🔍 Find Similar Items")
+
+    # if we previously performed an inline check, restore persisted results now so the UI shows results + inline output
+    if st.session_state.get('_restore_similar'):
+        persisted = st.session_state.get('_persisted_similar_results')
+        if persisted is not None:
+            st.session_state['similar_results'] = list(persisted)
+        try:
+            del st.session_state['_restore_similar']
+        except Exception:
+            pass
+
+    # if results were cleared by a rerun (e.g. after a button callback), try to restore from persisted backup
+    if st.session_state.get('similar_results') is None:
+        persisted = st.session_state.get('_persisted_similar_results')
+        if persisted is not None:
+            st.session_state['similar_results'] = list(persisted)
+            # render immediately
+            render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
+            return
+
+        # if no persisted copy, try to re-run last search payload
+        if st.session_state.get('last_search_payload'):
+            payload = st.session_state.get('last_search_payload')
+            try:
+                search_similar(
+                    tmdb_id=payload.get('tmdb_id'),
+                    text=payload.get('text'),
+                    media_type=payload.get('media_type', 'all'),
+                    k=payload.get('k', 10),
+                    source_title=st.session_state.get('similar_source_title')
+                )
+            except Exception:
+                # if re-run fails, clear last payload to avoid loops
+                try:
+                    del st.session_state['last_search_payload']
+                except Exception:
+                    pass
 
     # check if we came here from watch history or recommendations
     if 'similar_item' in st.session_state:
@@ -513,10 +636,28 @@ def show_similar_items_page():
             source_title=item['title']
         )
 
-        del st.session_state.similar_item
+        # remove the trigger and render stored results (search_similar writes to session_state)
+        try:
+            del st.session_state.similar_item
+        except Exception:
+            pass
         st.markdown("---")
+        # render persisted results if any
+        if st.session_state.get('similar_results') is not None:
+            render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
+            return
 
     st.write("Find movies and TV shows similar to what you're looking for")
+
+    # optional debug toggle to inspect session_state relevant keys
+    debug = st.checkbox("Show debug info (session state)", key="similar_debug_toggle")
+    if debug:
+        st.write("session_state keys:", list(st.session_state.keys()))
+        st.write({
+            'similar_results': st.session_state.get('similar_results'),
+            'last_search_payload': st.session_state.get('last_search_payload'),
+            'similar_source_title': st.session_state.get('similar_source_title'),
+        })
 
     tab1, tab2 = st.tabs(["By TMDB ID", "By Text Description"])
 
@@ -549,9 +690,13 @@ def show_similar_items_page():
         if st.button("🔍 Find Similar by Description", type="primary") and text_query:
             search_similar(text=text_query, media_type=media_type, k=k)
 
+    # if results exist in session state (from previous search), render them here so callbacks don't clear the page
+    if st.session_state.get('similar_results') is not None:
+        render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
+
 
 def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
-                   media_type: str = "all", k: int = 10, source_title: Optional[str] = None):
+                    media_type: str = "all", k: int = 10, source_title: Optional[str] = None):
     """Search for similar items using the KNN endpoint."""
     payload = {
         "k": k,
@@ -567,44 +712,83 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
         return
 
     search_label = f"Searching for items similar to '{source_title}'..." if source_title else "Searching for similar items..."
+    # perform the API call and store results in session_state so callbacks won't clear them on rerun
     with st.spinner(search_label):
         result = api_request("/mcp/knn", method="POST", data=payload)
-        if result and "results" in result:
-            header = f"✅ Found {len(result['results'])} items similar to **{source_title}**!" if source_title else f"✅ Found {len(result['results'])} similar items!"
-            st.success(header)
+    if result and "results" in result:
+        st.session_state['similar_results'] = result['results']
+        # keep a persisted backup so inline callbacks / reruns can restore results
+        st.session_state['_persisted_similar_results'] = list(result['results'])
+        st.session_state['similar_source_title'] = source_title
+        # persist the payload so we can re-run automatically after reruns (e.g., inline button clicks)
+        st.session_state['last_search_payload'] = payload
+        # header/success is rendered by render_similar_results to avoid duplicate banners
+    elif result:
+        st.session_state['similar_results'] = []
+        st.session_state['_persisted_similar_results'] = []
+        st.session_state['similar_source_title'] = source_title
+        st.session_state['last_search_payload'] = payload
+        st.warning("No similar items found. Try adjusting your search.")
+
+
+def render_similar_results(results, source_title: Optional[str] = None):
+    """Render similar results list (reads inline will-like keys from session_state)."""
+    header = f"✅ Found {len(results)} items similar to **{source_title}**!" if source_title else f"✅ Found {len(results)} similar items!"
+    st.success(header)
+    st.markdown("---")
+
+    for idx, item in enumerate(results, 1):
+        with st.container():
+            col1, col2, col3 = st.columns([1, 3, 1])
+
+            with col1:
+                poster_url = get_poster_url(item.get("poster_path"), item.get("title", "Unknown"))
+                st.image(poster_url, use_container_width=True)
+
+            with col2:
+                icon = "🎬" if item.get("media_type") == "movie" else "📺"
+                st.markdown(f"### {icon} {item.get('title', 'Unknown')}")
+                if item.get("overview") and item.get("overview").strip():
+                    st.write(f"**Overview:** {item.get('overview')[:500]}...")
+
+                if "score" in item:
+                    d = item.get("score")
+                    sigma = 1.0
+                    score = np.exp(-d / (2 * sigma ** 2))
+                    st.progress(float(score))
+
+            with col3:
+                st.metric("ID", item.get("id", "N/A"))
+                st.metric("Type", item.get("media_type", "N/A"))
+                _id = item.get("id")
+                _mtype = item.get("media_type")
+                if _id:
+                    btn_key = f"will_like_sim_{idx}_{_id}"
+                    inline_key = f"will_like_inline_{_id}_{_mtype}"
+                    # imperative button handling to avoid callback-ordering issues
+                    clicked = st.button("🤔 Will I Like?", key=btn_key)
+                    if clicked:
+                        # perform the inline check immediately and persist result in session_state
+                        _check_will_like_inline(_id, _mtype, inline_key)
+                        # force a rerun so the inline result and persisted results display together
+                        _safe_rerun()
+                    # render inline result if present
+                    res = st.session_state.get(inline_key)
+                    if res:
+                        if isinstance(res, dict) and 'error' in res:
+                            st.warning(f"Will I like? check failed: {res.get('error')}")
+                        else:
+                            item2 = res.get('item', {})
+                            score = res.get('score')
+                            will = res.get('will_like')
+                            expl = res.get('explanation')
+                            emoji = '❤️' if will else '🤷'
+                            st.markdown(f"**{emoji} {item2.get('title','Unknown')}**")
+                            if isinstance(score, (int, float)):
+                                st.write(f"Score: {score:.3f}")
+                            st.write(expl)
 
             st.markdown("---")
-
-            for idx, item in enumerate(result["results"], 1):
-                with st.container():
-                    col1, col2, col3 = st.columns([1, 3, 1])
-
-                    with col1:
-                        poster_url = get_poster_url(item.get("poster_path"), item.get("title", "Unknown"))
-                        st.image(
-                            poster_url,
-                            use_container_width=True
-                        )
-
-                    with col2:
-                        icon = "🎬" if item.get("media_type") == "movie" else "📺"
-                        st.markdown(f"### {icon} {item.get('title', 'Unknown')}")
-                        if item.get("overview") and item.get("overview").strip():
-                            st.write(f"**Overview:** {item.get('overview')[:500]}...")
-
-                        if "score" in item:
-                            d = item.get("score")
-                            sigma = 1.0  # adjust this value to control the spread
-                            score = np.exp(-d / (2 * sigma ** 2))  # convert distance to similarity score (based on FAISS using L2)
-                            st.progress(float(score))
-
-                    with col3:
-                        st.metric("ID", item.get("id", "N/A"))
-                        st.metric("Type", item.get("media_type", "N/A"))
-
-                    st.markdown("---")
-        elif result:
-            st.warning("No similar items found. Try adjusting your search.")
 
 
 def show_admin_page():

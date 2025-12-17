@@ -4,22 +4,25 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.dao.history import get_watch_history, clear_history_cache
 from app.db import tmdb_metadata_collection
-from app.embeddings import embed_item_and_store, embed_all_items
+from app.embeddings import embed_item_and_store, embed_all_items, build_user_vector_from_history
 from app.faiss_index import INDEX_DIR
 from app.process.recommendation import MediaRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
-from app.schemas.api import MCPPayload
+from app.schemas.api import KNNRequest, KNNResponse, WillLikeRequest, WillLikeResponse
 from app.schemas.recommendations.recommendations import (
     RecommendationsResponse,
     RecommendRequest,
 )
 from app.trakt_sync import sync_trakt_history
 from app.utils.llm_orchestrator import call_mcp_knn
+from app.tmdb_client import get_metadata
+from app.mcp_will_like import compute_will_like, WillLikeError
 from app.utils.logger import get_logger
 
 import subprocess
 import sys
 import os
+import numpy as np
 
 logger = get_logger(__name__)
 
@@ -252,18 +255,46 @@ def admin_get_tmdb_metadata(tmdb_id: int, media_type: str = None):
 
 @router.post(
     "/mcp/knn",
+    response_model=KNNResponse,
     summary="Find top-k nearest neighbors",
     description="Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector. Provide exactly one of tmdb_id, text, or vector. media_type must be provided: it can be 'movie' or 'tv' if tmdb_id is used, or 'movie', 'tv', or 'all' for text/vector queries.",
 )
-def mcp_knn(payload: MCPPayload):
+def mcp_knn(payload: KNNRequest) -> KNNResponse:
     try:
         res = call_mcp_knn(payload)
-        return JSONResponse(res)
+        # validate/convert response via MCPResponse
+        return KNNResponse.model_validate(res)
     except ValueError as ve:
-        return JSONResponse({"error": str(ve)}, status_code=400)
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error("mcp_knn error: %s", repr(e), exc_info=True)
-        return JSONResponse({"error": str(e)}, status_code=500)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mcp/will-like", response_model=WillLikeResponse)
+def mcp_will_like(payload: WillLikeRequest) -> WillLikeResponse:
+    """Determine whether the current user is likely to like the given TMDB item.
+
+    Accepts either:
+      - {"tmdb_id": <int>, "media_type": "movie"|"tv"}
+      - {"title": "Some Movie/Show Name", "media_type": "movie"|"tv"}
+
+    Returns: {will_like: bool, score: float, explanation: str, item: {...}}
+    """
+    try:
+        try:
+            res = compute_will_like(payload.tmdb_id, payload.title, payload.media_type)
+            return WillLikeResponse.model_validate(res)
+        except WillLikeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error("mcp_will_like error: %s", repr(e), exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("mcp_will_like error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/admin/clear-history-cache")
