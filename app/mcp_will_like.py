@@ -28,15 +28,22 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
     resolved_id = None
     resolved_title = None
     resolved_overview = None
+    resolved_poster = None
 
     # resolve by tmdb_id if provided
     if tmdb_id is not None:
         resolved_id = int(tmdb_id)
-        # prefer exact media_type match in DB
-        resolved_doc = tmdb_metadata_collection.find_one({"id": resolved_id, "media_type": media_type}, {"_id": 0, "embedding": 1, "title": 1, "overview": 1})
+        # prefer exact media_type match in DB; include poster_path/backdrop if present
+        resolved_doc = tmdb_metadata_collection.find_one(
+            {"id": resolved_id, "media_type": media_type},
+            {"_id": 0, "embedding": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
+        )
         if not resolved_doc:
             # fallback to id-only
-            resolved_doc = tmdb_metadata_collection.find_one({"id": resolved_id}, {"_id": 0, "embedding": 1, "media_type": 1, "title": 1, "overview": 1})
+            resolved_doc = tmdb_metadata_collection.find_one(
+                {"id": resolved_id},
+                {"_id": 0, "embedding": 1, "media_type": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
+            )
         # if not in DB, fetch from TMDB and embed/store
         if not resolved_doc:
             try:
@@ -55,7 +62,10 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         # db case-insensitive regex on title or name
         try:
             regex = {"$regex": title, "$options": "i"}
-            docs = list(tmdb_metadata_collection.find({"media_type": media_type, "$or": [{"title": regex}, {"name": regex}]}, {"_id": 0, "id": 1, "embedding": 1, "title": 1, "overview": 1}).limit(1))
+            docs = list(tmdb_metadata_collection.find(
+                {"media_type": media_type, "$or": [{"title": regex}, {"name": regex}]},
+                {"_id": 0, "id": 1, "embedding": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
+            ).limit(1))
             if docs:
                 resolved_doc = docs[0]
                 resolved_id = resolved_doc.get("id")
@@ -83,8 +93,9 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
     item_emb = None
     if resolved_doc:
         item_emb = resolved_doc.get("embedding")
-        resolved_title = resolved_doc.get("title") or resolved_doc.get("name")
+        resolved_title = resolved_doc.get("title") or resolved_doc.get("name") or resolved_doc.get("original_title") or resolved_doc.get("original_name")
         resolved_overview = resolved_doc.get("overview")
+        resolved_poster = resolved_doc.get("poster_path") or resolved_doc.get("backdrop_path")
 
     if not item_emb and resolved_id:
         try:
@@ -97,8 +108,9 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         md["media_type"] = media_type
         item_with_emb = embed_item_and_store(md)
         item_emb = item_with_emb.get("embedding")
-        resolved_title = item_with_emb.get("title") or item_with_emb.get("name")
+        resolved_title = item_with_emb.get("title") or item_with_emb.get("name") or item_with_emb.get("original_title") or item_with_emb.get("original_name")
         resolved_overview = item_with_emb.get("overview")
+        resolved_poster = item_with_emb.get("poster_path") or item_with_emb.get("backdrop_path")
 
     if not item_emb:
         raise WillLikeError("item embedding could not be obtained")
@@ -136,6 +148,5 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         "will_like": will_like,
         "score": score,
         "explanation": explanation,
-        "item": {"id": int(resolved_id) if resolved_id else None, "title": resolved_title, "media_type": media_type, "overview": resolved_overview},
+        "item": {"id": int(resolved_id) if resolved_id else None, "title": resolved_title, "media_type": media_type, "overview": resolved_overview, "poster_path": resolved_poster},
     }
-

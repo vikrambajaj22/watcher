@@ -110,6 +110,7 @@ class ItemSummary(BaseModel):
     title: Optional[str] = None
     media_type: Optional[str] = None
     overview: Optional[str] = None
+    poster_path: Optional[str] = None
 
 
 class WillLikeResponse(BaseModel):
