@@ -526,7 +526,8 @@ def show_similar_items_page():
         with col1:
             tmdb_id = st.number_input("Enter TMDB ID", min_value=1, value=550, key="tmdb_id_input")
         with col2:
-            media_type = st.selectbox("Media Type", ["movie", "tv", "all"], key="tmdb_media_type")
+            # for TMDB ID lookups a specific media type is required (movie or tv) — 'all' is not valid
+            media_type = st.selectbox("Media Type", ["movie", "tv"], key="tmdb_media_type", help="For TMDB ID searches, select either 'movie' or 'tv'. Use the Text search tab to search across both (choose 'all').")
         with col3:
             k = st.number_input("Results", min_value=1, max_value=50, value=10, key="tmdb_k")
         if st.button("🔍 Find Similar by ID", type="primary"):
@@ -541,6 +542,7 @@ def show_similar_items_page():
         )
         col1, col2 = st.columns(2)
         with col1:
+            # for free-text searches allow 'all' to search movies + TV
             media_type = st.selectbox("Media Type", ["movie", "tv", "all"], key="text_media_type")
         with col2:
             k = st.number_input("Results", min_value=1, max_value=50, value=10, key="text_k")
@@ -592,6 +594,7 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
 
                         if "score" in item:
                             d = item.get("score")
+                            st.text(f"**Score:** {d}")
                             sigma = 1.0  # adjust this value to control the spread
                             score = np.exp(-d / (2 * sigma ** 2))  # convert distance to similarity score (based on FAISS using L2)
                             st.progress(float(score))

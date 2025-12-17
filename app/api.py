@@ -253,7 +253,7 @@ def admin_get_tmdb_metadata(tmdb_id: int, media_type: str = None):
 @router.post(
     "/mcp/knn",
     summary="Find top-k nearest neighbors",
-    description="Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector. Provide exactly one of tmdb_id, text, or vector.",
+    description="Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector. Provide exactly one of tmdb_id, text, or vector. media_type must be provided: it can be 'movie' or 'tv' if tmdb_id is used, or 'movie', 'tv', or 'all' for text/vector queries.",
 )
 def mcp_knn(payload: MCPPayload):
     try:

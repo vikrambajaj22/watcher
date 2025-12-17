@@ -12,7 +12,7 @@ class MCPPayload(BaseModel):
     text: Optional[str] = None
     vector: Optional[List[float]] = None
     k: int = 10
-    media_type: Optional[str] = None  # optional: 'movie', 'tv', or 'all'
+    media_type: str  # required: 'movie', 'tv', or 'all'
 
     @model_validator(mode="after")
     def check_one_of(self):
@@ -26,13 +26,17 @@ class MCPPayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_media_type(self):
-        if self.media_type is None:
-            return self
+        # media_type is required and must be one of allowed values
         allowed = {"movie", "tv", "all"}
+        if not self.media_type:
+            raise ValueError("media_type is required and must be one of: 'movie', 'tv', 'all'")
         if str(self.media_type).lower() not in allowed:
             raise ValueError("media_type must be one of: 'movie', 'tv', 'all'")
         # normalize
         self.media_type = str(self.media_type).lower()
+        # special-case: when a tmdb_id is provided, media_type must be specific (movie|tv), not 'all'
+        if self.tmdb_id is not None and self.media_type == 'all':
+            raise ValueError("media_type cannot be 'all' when tmdb_id is provided; specify 'movie' or 'tv'")
         return self
 
 

@@ -46,7 +46,9 @@ def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
     if payload.tmdb_id is not None:
         # prefer exact (id, media_type) match when media_type provided in payload
         query = {"id": payload.tmdb_id}
-        if getattr(payload, "media_type", None):
+        # media_type is required on MCPPayload and normalized by its validator
+        # only apply media_type filter if not 'all'
+        if str(payload.media_type).lower() != "all":
             query["media_type"] = str(payload.media_type).lower()
         doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
         if not doc:
@@ -56,7 +58,7 @@ def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
             raise ValueError(f"tmdb_id {payload.tmdb_id} not found")
         emb = doc.get("embedding")
         if emb is None:
-            raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id}")
+            raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id} with media_type {payload.media_type}")
         return np.array(emb, dtype=np.float32)
 
     if payload.text is not None:
@@ -122,11 +124,8 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     vs_res = query(qvec, query_k)
     logger.info("Found %s results from vector store", len(vs_res))
 
-    requested_media_type = None
-    if getattr(payload, "media_type", None):
-        requested_media_type = str(payload.media_type).lower()
-        if requested_media_type not in {"movie", "tv", "all"}:
-            raise ValueError("media_type must be one of: 'movie', 'tv', 'all'")
+    # media_type is required and has been validated by the Pydantic model; normalize again for safety
+    requested_media_type = str(payload.media_type).lower()
 
     candidates = process_knn_results(
         vs_res=vs_res,

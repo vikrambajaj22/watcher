@@ -171,6 +171,32 @@ python sync_worker.py
 - `POST /recommend/{movie|tv|all}` - Get recommendations
 - `POST /mcp/knn` - Find similar items
 
+Notes for `POST /mcp/knn`:
+- `media_type` is a required field in the request body and must be one of: `movie`, `tv`, or `all`.
+  - When providing a specific `tmdb_id`, `media_type` must be either `movie` or `tv` (not `all`) because a TMDB numeric id can correspond to distinct movie and TV records in the database; the API will validate and reject `tmdb_id`+`media_type: all` requests.
+
+Example requests:
+
+By TMDB id (required to specify `movie` or `tv`):
+```json
+POST /mcp/knn
+{
+  "tmdb_id": 60803,
+  "k": 10,
+  "media_type": "movie"
+}
+```
+
+By free-text (you may use `all` to search across both movies and TV):
+```json
+POST /mcp/knn
+{
+  "text": "mind-bending thriller with a twist ending",
+  "k": 10,
+  "media_type": "all"
+}
+```
+
 ### Authentication
 - `GET /auth/trakt/start` - Start OAuth
 - `GET /auth/trakt/callback` - OAuth callback
