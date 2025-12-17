@@ -2,9 +2,10 @@ from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
+from app.config.settings import settings
 from app.dao.history import get_watch_history, clear_history_cache
 from app.db import tmdb_metadata_collection
-from app.embeddings import embed_item_and_store, embed_all_items, build_user_vector_from_history
+from app.embeddings import embed_item_and_store, embed_all_items
 from app.faiss_index import INDEX_DIR
 from app.process.recommendation import MediaRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
@@ -15,14 +16,12 @@ from app.schemas.recommendations.recommendations import (
 )
 from app.trakt_sync import sync_trakt_history
 from app.utils.llm_orchestrator import call_mcp_knn
-from app.tmdb_client import get_metadata
 from app.mcp_will_like import compute_will_like, WillLikeError
 from app.utils.logger import get_logger
 
 import subprocess
 import sys
 import os
-import numpy as np
 
 logger = get_logger(__name__)
 
@@ -132,7 +131,8 @@ def trakt_auth_callback(request: Request):
         token_data = exchange_code_for_token(code)
         save_token_data(token_data)
         if state == "ui":
-            return RedirectResponse("http://localhost:8501")  # streamlit UI (#TODO: make this a config)
+            ui_base = getattr(settings, "UI_BASE_URL", "http://localhost:8501")
+            return RedirectResponse(ui_base)
         else:
             return RedirectResponse("/docs")  # API docs
     except Exception:

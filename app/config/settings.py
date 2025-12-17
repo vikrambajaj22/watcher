@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     TRAKT_HISTORY_API_URL: str = "https://api.trakt.tv/sync/history"
     TMDB_API_URL: str = "https://api.themoviedb.org/3"
     OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
+    # Base URL for the UI (Streamlit app). Used for OAuth redirect back to the UI when auth flow starts from the UI.
+    UI_BASE_URL: str = "http://localhost:8501"
 
     @property
     def TRAKT_ACCESS_TOKEN(self):
