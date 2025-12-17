@@ -21,6 +21,7 @@ from app.schemas.api import KNNRequest
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
 from app.utils.prompt_registry import PromptRegistry
+from app.tmdb_client import search_by_title
 
 logger = get_logger(__name__)
 
@@ -43,22 +44,34 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
 
     Raises ValueError on missing item or embedding.
     """
+    # If a title is provided, resolve it to TMDB metadata first (requires input_media_type)
+    if payload.title is not None:
+        input_mt = getattr(payload, "input_media_type", None)
+        try:
+            md = search_by_title(payload.title, media_type=input_mt)
+        except Exception as e:
+            md = None
+        if not md or not md.get("id"):
+            raise ValueError(f"title '{payload.title}' could not be resolved to a TMDB item (type={input_mt})")
+        # set resolved tmdb_id and let tmdb_id flow continue
+        payload.tmdb_id = md.get("id")
+
     if payload.tmdb_id is not None:
-        # prefer exact (id, media_type) match when media_type provided in payload
+        # prefer exact (id, input_media_type) match when input_media_type provided in payload
         query = {"id": payload.tmdb_id}
-        # media_type is required on MCPPayload and normalized by its validator
-        # only apply media_type filter if not 'all'
-        if str(payload.media_type).lower() != "all":
-            query["media_type"] = str(payload.media_type).lower()
+        # determine input media type: use explicit input_media_type
+        input_mt = getattr(payload, "input_media_type", None)
+        if input_mt:
+            query["media_type"] = str(input_mt).lower()
         doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
         if not doc:
             # fallback to id-only if exact match not found
             doc = tmdb_metadata_collection.find_one({"id": payload.tmdb_id}, {"_id": 0})
         if not doc:
-            raise ValueError(f"tmdb_id {payload.tmdb_id} not found")
+            raise ValueError(f"tmdb_id {payload.tmdb_id} not found for input_media_type {input_mt}")
         emb = doc.get("embedding")
         if emb is None:
-            raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id} with media_type {payload.media_type}")
+            raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id} with input_media_type {input_mt}")
         return np.array(emb, dtype=np.float32)
 
     if payload.text is not None:
@@ -72,10 +85,7 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
             enriched = payload.text
         return embed_text([enriched])[0]
 
-    if payload.vector is not None:
-        return np.array(payload.vector, dtype=np.float32)
-
-    raise ValueError("invalid payload; provide tmdb_id, text, or vector")
+    raise ValueError("invalid payload; provide tmdb_id, title or text")
 
 
 def enrich_text_for_embedding(text: str, model: str = "gpt-4.1-nano", max_tokens: int = 150) -> str:
@@ -124,8 +134,9 @@ def call_mcp_knn(payload: KNNRequest) -> Dict[str, Any]:
     vs_res = query(qvec, query_k)
     logger.info("Found %s results from vector store", len(vs_res))
 
-    # media_type is required and has been validated by the Pydantic model; normalize again for safety
-    requested_media_type = str(payload.media_type).lower()
+    # determine the results media_type filter
+    requested_media_type = getattr(payload, "results_media_type", "all")
+    requested_media_type = str(requested_media_type).lower()
 
     candidates = process_knn_results(
         vs_res=vs_res,

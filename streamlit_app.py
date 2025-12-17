@@ -612,8 +612,10 @@ def show_similar_items_page():
             try:
                 search_similar(
                     tmdb_id=payload.get('tmdb_id'),
+                    title=payload.get('title'),
                     text=payload.get('text'),
-                    media_type=payload.get('media_type', 'all'),
+                    input_media_type=payload.get('input_media_type'),
+                    results_media_type=payload.get('results_media_type', 'all'),
                     k=payload.get('k', 10),
                     source_title=st.session_state.get('similar_source_title')
                 )
@@ -629,9 +631,12 @@ def show_similar_items_page():
         item = st.session_state.similar_item
         st.info(f"🎯 Finding items similar to: **{item['title']}**")
 
+        # when coming from history/recommendations, the triggering item provides its media_type as its type
+        # treat that as the input_media_type (the ID's type) and keep results filter as 'all' by default
         search_similar(
             tmdb_id=item['tmdb_id'],
-            media_type=item['media_type'],
+            input_media_type=item['media_type'],
+            results_media_type='all',
             k=10,
             source_title=item['title']
         )
@@ -659,52 +664,119 @@ def show_similar_items_page():
             'similar_source_title': st.session_state.get('similar_source_title'),
         })
 
-    tab1, tab2 = st.tabs(["By TMDB ID", "By Text Description"])
+    tab_id, tab_title, tab_text = st.tabs(["By TMDB ID", "By Title", "By Text Description"])
 
-    with tab1:
+    # --- By TMDB ID ---
+    with tab_id:
         st.subheader("Search by TMDB ID")
-        col1, col2, col3 = st.columns([2, 1, 1])
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
         with col1:
             tmdb_id = st.number_input("Enter TMDB ID", min_value=1, value=550, key="tmdb_id_input")
         with col2:
-            # for TMDB ID lookups a specific media type is required (movie or tv) — 'all' is not valid
-            media_type = st.selectbox("Media Type", ["movie", "tv"], key="tmdb_media_type", help="For TMDB ID searches, select either 'movie' or 'tv'. Use the Text search tab to search across both (choose 'all').")
+            # input media type: used to resolve the TMDB id (movie or tv)
+            input_media = st.selectbox("ID Type", ["movie", "tv"], key="tmdb_input_media", help="Type of the provided TMDB ID (movie or tv)")
         with col3:
+            # results media type: filter applied to KNN results
+            results_media = st.selectbox("Results Type", ["movie", "tv", "all"], index=2, key="tmdb_results_media", help="Filter results to movie/tv/all")
+        with col4:
             k = st.number_input("Results", min_value=1, max_value=50, value=10, key="tmdb_k")
-        if st.button("🔍 Find Similar by ID", type="primary"):
-            search_similar(tmdb_id=tmdb_id, media_type=media_type, k=k)
 
-    with tab2:
+        if st.button("🔍 Find Similar by ID", type="primary"):
+            # resolve metadata using the backend API (/admin/tmdb/<id>)
+            source_title = None
+            try:
+                endpoint = f"/admin/tmdb/{tmdb_id}"
+                if input_media:
+                    endpoint = f"{endpoint}?media_type={input_media}"
+                md_resp = api_request(endpoint, method="GET")
+                md = None
+                # admin returns a list of matching documents; pick first if present
+                if isinstance(md_resp, list):
+                    md = md_resp[0] if len(md_resp) > 0 else None
+                elif isinstance(md_resp, dict):
+                    md = md_resp
+
+                if not md:
+                    raise Exception("metadata not found")
+
+                source_title = md.get('title') or md.get('name')
+                st.session_state['similar_source_metadata'] = md
+                if source_title:
+                    st.info(f"Searching similar to: {source_title} (TMDB id={tmdb_id}, id_type={input_media})")
+            except Exception as e:
+                st.warning(f"Could not fetch metadata for TMDB id {tmdb_id} (type={input_media}): {e}")
+                if 'similar_source_metadata' in st.session_state:
+                    try:
+                        del st.session_state['similar_source_metadata']
+                    except Exception:
+                        pass
+
+            # Use results_media as the results_media_type filter for returned items; pass input_media_type for ID resolution
+            search_similar(tmdb_id=tmdb_id, input_media_type=input_media, results_media_type=results_media, k=k, source_title=source_title)
+
+    # --- By Title ---
+    with tab_title:
+        st.subheader("Search by TMDB Title")
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+        with col1:
+            title_in = st.text_input("Title (TMDB search)", key="title_in")
+        with col2:
+            # input media type for the title lookup
+            title_input_media = st.selectbox("Title Type", ["movie", "tv"], key="title_input_media", help="Search TMDB in this type for the provided title")
+        with col3:
+            # results media type filter
+            title_results_media = st.selectbox("Results Type", ["movie", "tv", "all"], index=2, key="title_results_media")
+        with col4:
+            k_title = st.number_input("Results", min_value=1, max_value=50, value=10, key="title_k")
+
+        if st.button("🔎 Resolve Title & Find Similar", type="primary"):
+            if not title_in:
+                st.error("Please provide a title to search")
+            else:
+                # delegate title resolution to the backend /mcp/knn API
+                search_similar(title=title_in, input_media_type=title_input_media, results_media_type=title_results_media, k=k_title, source_title=title_in)
+
+    # --- By Text Description (free-text embeddings) ---
+    with tab_text:
         st.subheader("Search by Text Description")
         text_query = st.text_area(
             "Describe what you're looking for",
             placeholder="e.g., 'mind-bending thriller with a twist ending' or 'heartwarming family drama'",
             key="text_query"
         )
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns([3, 1])
         with col1:
-            # for free-text searches allow 'all' to search movies + TV
-            media_type = st.selectbox("Media Type", ["movie", "tv", "all"], key="text_media_type")
+            # results media type filter only — this is the output filter
+            text_results_media = st.selectbox("Results Type", ["movie", "tv", "all"], index=2, key="text_results_media")
         with col2:
-            k = st.number_input("Results", min_value=1, max_value=50, value=10, key="text_k")
+            k_text = st.number_input("Results", min_value=1, max_value=50, value=10, key="text_k")
+
         if st.button("🔍 Find Similar by Description", type="primary") and text_query:
-            search_similar(text=text_query, media_type=media_type, k=k)
+            # free-text search uses only the output filter
+            search_similar(text=text_query, results_media_type=text_results_media, k=k_text)
 
     # if results exist in session state (from previous search), render them here so callbacks don't clear the page
     if st.session_state.get('similar_results') is not None:
         render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
 
 
-def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
-                    media_type: str = "all", k: int = 10, source_title: Optional[str] = None):
+def search_similar(tmdb_id: Optional[int] = None, title: Optional[str] = None, text: Optional[str] = None,
+                    input_media_type: Optional[str] = None, results_media_type: str = "all",
+                    k: int = 10, source_title: Optional[str] = None):
     """Search for similar items using the KNN endpoint."""
     payload = {
         "k": k,
-        "media_type": media_type
+        "results_media_type": results_media_type
     }
 
     if tmdb_id:
         payload["tmdb_id"] = tmdb_id
+        if input_media_type:
+            payload["input_media_type"] = input_media_type
+    elif title:
+        payload["title"] = title
+        if input_media_type:
+            payload["input_media_type"] = input_media_type
     elif text:
         payload["text"] = text
     else:
@@ -715,6 +787,13 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
     # perform the API call and store results in session_state so callbacks won't clear them on rerun
     with st.spinner(search_label):
         result = api_request("/mcp/knn", method="POST", data=payload)
+    # if this was not an ID-based search, clear any previous persisted source metadata
+    if not tmdb_id and 'similar_source_metadata' in st.session_state:
+        try:
+            del st.session_state['similar_source_metadata']
+        except Exception:
+            pass
+
     if result and "results" in result:
         st.session_state['similar_results'] = result['results']
         # keep a persisted backup so inline callbacks / reruns can restore results
@@ -733,9 +812,26 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
 
 def render_similar_results(results, source_title: Optional[str] = None):
     """Render similar results list (reads inline will-like keys from session_state)."""
-    header = f"✅ Found {len(results)} items similar to **{source_title}**!" if source_title else f"✅ Found {len(results)} similar items!"
-    st.success(header)
-    st.markdown("---")
+    # Determine a display title: prefer explicit source_title argument, then persisted metadata title
+    display_title = source_title
+    metadata = st.session_state.get('similar_source_metadata')
+    metadata_title = None
+    metadata_poster = None
+    if not display_title and metadata:
+        metadata_title = metadata.get('title') or metadata.get('name')
+        display_title = metadata_title
+        metadata_poster = metadata.get('poster_path')
+
+    if display_title:
+        st.markdown(f"### 🔍 Results similar to: **{display_title}**")
+        # show poster if available
+        poster_to_show = metadata_poster or (None)
+        if poster_to_show:
+            st.image(get_poster_url(poster_to_show, display_title), width=120)
+        st.markdown("---")
+    else:
+        st.markdown(f"✅ Found {len(results)} similar items!")
+        st.markdown("---")
 
     for idx, item in enumerate(results, 1):
         with st.container():

@@ -5,38 +5,52 @@ from pydantic import BaseModel, model_validator
 
 class KNNRequest(BaseModel):
     """Payload for the /mcp/knn endpoint.
-    Provide exactly one of: tmdb_id, text, or vector. k controls number of neighbors.
+    Provide exactly one of: tmdb_id, title, or text. k controls number of neighbors.
+
+    Contract:
+      - input_media_type: optional, 'movie'|'tv' — required when providing tmdb_id or title.
+      - results_media_type: required, 'movie'|'tv'|'all' — filter applied to returned neighbors.
     """
 
     tmdb_id: Optional[int] = None
+    title: Optional[str] = None
     text: Optional[str] = None
-    vector: Optional[List[float]] = None
     k: int = 10
-    media_type: str  # required: 'movie', 'tv', or 'all'
+    input_media_type: Optional[str] = None  # required when tmdb_id or title is present
+    results_media_type: str = "all"  # required: 'movie', 'tv', or 'all'
 
     @model_validator(mode="after")
     def check_one_of(self):
-        tmdb_id, text, vector = self.tmdb_id, self.text, self.vector
-        count = sum(1 for v in (tmdb_id, text, vector) if v is not None)
+        tmdb_id, title, text = self.tmdb_id, self.title, self.text
+        count = sum(1 for v in (tmdb_id, title, text) if v is not None)
         if count == 0:
-            raise ValueError("one of tmdb_id, text, or vector must be provided")
+            raise ValueError("one of tmdb_id, title, or text must be provided")
         if count > 1:
-            raise ValueError("provide exactly one of tmdb_id, text, or vector")
+            raise ValueError("provide exactly one of tmdb_id, title, or text")
         return self
 
     @model_validator(mode="after")
     def validate_media_type(self):
-        # media_type is required and must be one of allowed values
-        allowed = {"movie", "tv", "all"}
-        if not self.media_type:
-            raise ValueError("media_type is required and must be one of: 'movie', 'tv', 'all'")
-        if str(self.media_type).lower() not in allowed:
-            raise ValueError("media_type must be one of: 'movie', 'tv', 'all'")
-        # normalize
-        self.media_type = str(self.media_type).lower()
-        # special-case: when a tmdb_id is provided, media_type must be specific (movie|tv), not 'all'
-        if self.tmdb_id is not None and self.media_type == 'all':
-            raise ValueError("media_type cannot be 'all' when tmdb_id is provided; specify 'movie' or 'tv'")
+        allowed_results = {"movie", "tv", "all"}
+        allowed_input = {"movie", "tv"}
+
+        # normalize and validate results_media_type
+        if not self.results_media_type:
+            raise ValueError("results_media_type is required and must be one of: 'movie', 'tv', 'all'")
+        if str(self.results_media_type).lower() not in allowed_results:
+            raise ValueError("results_media_type must be one of: 'movie', 'tv', 'all'")
+        self.results_media_type = str(self.results_media_type).lower()
+
+        # validate input_media_type when present
+        if self.input_media_type is not None:
+            if str(self.input_media_type).lower() not in allowed_input:
+                raise ValueError("input_media_type must be one of: 'movie', 'tv'")
+            self.input_media_type = str(self.input_media_type).lower()
+
+        # when a tmdb_id or title is provided, require input_media_type to disambiguate movie vs tv
+        if (self.tmdb_id is not None or self.title) and not self.input_media_type:
+            raise ValueError("input_media_type is required when providing a tmdb_id or title; specify 'movie' or 'tv'")
+
         return self
 
 

@@ -257,7 +257,14 @@ def admin_get_tmdb_metadata(tmdb_id: int, media_type: str = None):
     "/mcp/knn",
     response_model=KNNResponse,
     summary="Find top-k nearest neighbors",
-    description="Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector. Provide exactly one of tmdb_id, text, or vector. media_type must be provided: it can be 'movie' or 'tv' if tmdb_id is used, or 'movie', 'tv', or 'all' for text/vector queries.",
+    description="""
+Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector.
+Provide exactly one of tmdb_id, text, or vector. The request separates the *input* media type (when providing a tmdb_id or doing a TMDB title lookup) and the *results* media type (a filter applied to returned neighbors).
+
+Fields:
+ - input_media_type: optional for free-text but required ('movie'|'tv') to resolve a provided tmdb_id or title.
+ - results_media_type: required, 'movie'|'tv'|'all' and used to filter returned neighbors.
+""",
 )
 def mcp_knn(payload: KNNRequest) -> KNNResponse:
     try:
