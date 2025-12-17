@@ -594,7 +594,6 @@ def search_similar(tmdb_id: Optional[int] = None, text: Optional[str] = None,
 
                         if "score" in item:
                             d = item.get("score")
-                            st.text(f"**Score:** {d}")
                             sigma = 1.0  # adjust this value to control the spread
                             score = np.exp(-d / (2 * sigma ** 2))  # convert distance to similarity score (based on FAISS using L2)
                             st.progress(float(score))
