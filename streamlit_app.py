@@ -413,7 +413,7 @@ def show_history_page():
 
                 with col2:
                     icon = "🎬" if item["media_type"] == "movie" else "📺"
-                    st.markdown(f"### {icon} {item['title']}")
+                    st.markdown(f"### {icon} {(item.get('title') or 'Unknown')}")
                     if item["media_type"] == "tv":
                         st.write(f"Episodes: {item.get('watched_episodes', 0)}/{item.get('total_episodes', '?')}")
                     else:
@@ -486,7 +486,7 @@ def show_recommendations_page():
 
                         with col1:
                             poster_path = rec.get('metadata', {}).get('poster_path') if rec.get('metadata') else None
-                            poster_url = get_poster_url(poster_path, rec.get('title', 'No Title'))
+                            poster_url = get_poster_url(poster_path, (rec.get('title') or 'No Title'))
                             st.image(
                                 poster_url,
                                 use_container_width=True
@@ -495,7 +495,7 @@ def show_recommendations_page():
                         with col2:
                             media_icon = "🎬" if rec.get('media_type') == 'movie' else "📺" if rec.get(
                                 'media_type') == 'tv' else "🎭"
-                            st.markdown(f"### {idx}. {media_icon} {rec.get('title', 'Unknown Title')}")
+                            st.markdown(f"### {idx}. {media_icon} {(rec.get('title') or 'Unknown Title')}")
                             st.markdown(f"**Reasoning:** {rec.get('reasoning', 'No reasoning provided')}")
 
                             if rec.get('metadata'):
@@ -506,7 +506,7 @@ def show_recommendations_page():
                             with col_a:
                                 # bind rec values explicitly to avoid loop closure issues
                                 _tmdb_id = rec.get('id')
-                                _title = rec.get('title', 'Unknown Title')
+                                _title = rec.get('title') or 'Unknown Title'
                                 _mtype = rec.get('media_type', 'movie')
                                 st.button(
                                     f"🔍 Find Similar",
@@ -572,11 +572,11 @@ def show_will_like_page():
             expl = res.get('explanation')
             col1, col2 = st.columns([1, 3])
             with col1:
-                poster_url = get_poster_url(item.get('poster_path'), item.get('title', 'No Title'))
+                poster_url = get_poster_url(item.get('poster_path'), (item.get('title') or 'No Title'))
                 st.image(poster_url, use_container_width=True)
             with col2:
                 emoji = '❤️' if will else '🤷'
-                st.markdown(f"### {emoji} Will you like: **{item.get('title','Unknown')}**")
+                st.markdown(f"### {emoji} Will you like: **{(item.get('title') or 'Unknown')}**")
                 if isinstance(score, (int, float)):
                     st.write(f"**Score:** {score:.3f}")
                 st.write(expl)
@@ -818,7 +818,7 @@ def render_similar_results(results, source_title: Optional[str] = None):
     metadata_title = None
     metadata_poster = None
     if not display_title and metadata:
-        metadata_title = metadata.get('title') or metadata.get('name')
+        metadata_title = (metadata.get('title') or metadata.get('name'))
         display_title = metadata_title
         metadata_poster = metadata.get('poster_path')
 
@@ -838,7 +838,7 @@ def render_similar_results(results, source_title: Optional[str] = None):
             col1, col2, col3 = st.columns([1, 3, 1])
 
             with col1:
-                poster_url = get_poster_url(item.get("poster_path"), item.get("title", "Unknown"))
+                poster_url = get_poster_url(item.get("poster_path"), (item.get("title") or "Unknown"))
                 st.image(poster_url, use_container_width=True)
 
             with col2:
@@ -879,7 +879,7 @@ def render_similar_results(results, source_title: Optional[str] = None):
                             will = res.get('will_like')
                             expl = res.get('explanation')
                             emoji = '❤️' if will else '🤷'
-                            st.markdown(f"**{emoji} {item2.get('title','Unknown')}**")
+                            st.markdown(f"**{emoji} {(item2.get('title') or 'Unknown')}**")
                             if isinstance(score, (int, float)):
                                 st.write(f"Score: {score:.3f}")
                             st.write(expl)
@@ -891,12 +891,11 @@ def show_admin_page():
     """Display admin panel for management tasks."""
     st.header("⚙️ Admin Panel")
     st.warning("⚠️ These actions can be resource-intensive. Use with caution.")
-    tab1, tab2, tab3 = st.tabs(["📊 Status", "🧠 Embeddings", "📇 FAISS Index"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Status", "🧠 Embeddings", "📇 FAISS Index", "♻️ State/Cache Management"])
 
     with tab1:
         st.subheader("System Status")
-
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             api_status = api_request("/health")
             is_online = api_status is not None and api_status.get("status") == "ok"
@@ -987,6 +986,31 @@ def show_admin_page():
                     if "log" in result:
                         st.info(f"Check logs at: {result['log']}")
 
+    with tab4:
+        st.write("Manage caches.")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Clear API GET cache"):
+                try:
+                    cached_api_get.clear()
+                    st.success("API GET cache cleared")
+                except Exception as e:
+                    st.error(f"Failed to clear API GET cache: {e}")
+            if st.button("Clear Recommendations cache"):
+                try:
+                    cached_recommendations.clear()
+                    st.success("Recommendations cache cleared")
+                except Exception as e:
+                    st.error(f"Failed to clear recommendations cache: {e}")
+        with col_b:
+            if st.button("Clear Persisted Similar Results"):
+                for k in ['similar_results', '_persisted_similar_results', 'similar_source_title', 'last_search_payload']:
+                    if k in st.session_state:
+                        try:
+                            del st.session_state[k]
+                        except Exception:
+                            pass
+                st.success("Cleared Persisted Similar Search state")
 
 def main():
     """Main application entry point."""

@@ -1,19 +1,21 @@
-[server]
-port = 8501
-address = "localhost"
-headless = true
-
-[browser]
-serverAddress = "localhost"
-serverPort = 8501
-gatherUsageStats = false
-
-[client]
-showErrorDetails = true
-toolbarMode = "minimal"
+# Streamlit configuration for Watcher app
+# This file sets a default theme so you don't need the three-dot menu to change
+# light/dark mode while developing or when the menu is not visible.
 
 [theme]
-base = "dark"  # options: "light" or "dark" - Users can toggle via ⋮ menu → Settings → Theme
+# options: "dark" or "light"
+base = "dark"
 primaryColor = "#667eea"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#111317"
+textColor = "#ffffff"
 font = "sans serif"
+
+# If you want the default to be light, switch base = "light" and adjust colors.
+
+# Notes:
+# - The three-dot menu still controls the UI when Streamlit is run normally in the browser
+#   (run with `streamlit run streamlit_app.py`). Some hosting or embed modes hide the
+#   menu; this file ensures a theme is applied regardless.
+# - To override locally, create ~/.streamlit/config.toml with your preferred settings.
 
