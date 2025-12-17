@@ -49,9 +49,10 @@ def load_index() -> Optional["faiss.Index"]:
     return _index
 
 
-def query(vector: np.ndarray, k: int = 10) -> List[Tuple[int, float]]:
+def query(vector: np.ndarray, k: int = 10) -> List[Tuple[int, str, float]]:
     """Query the loaded index, loading it first if necessary. Returns list of (tmdb_id, score)."""
     idx = load_index()
     if idx is None:
         raise RuntimeError("FAISS index not available; run rebuild_index first")
+    # query_faiss returns tuples of (tmdb_id, media_type, score)
     return query_faiss(idx, vector, k)

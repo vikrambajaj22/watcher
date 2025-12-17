@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
-from app.dao.history import get_watch_history
+from app.dao.history import get_watch_history, clear_history_cache
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_item_and_store, embed_all_items
 from app.faiss_index import INDEX_DIR
@@ -74,10 +74,15 @@ def recommend(media_type: str, payload: RecommendRequest):
 
 
 @router.get("/history")
-def get_history(media_type: str = None):
-    """Get watch history, optionally filtered by media_type."""
+def get_history(media_type: str = None, include_posters: bool = True):
+    """Get watch history, optionally filtered by media_type.
+
+    Query params:
+      - media_type: optional 'movie'|'tv'
+      - include_posters: boolean (default true) - when false, skip poster enrichment for faster responses
+    """
     try:
-        history = get_watch_history(media_type=media_type)
+        history = get_watch_history(media_type=media_type, include_posters=include_posters)
         return JSONResponse(history)
     except Exception as e:
         logger.error("get_history error: %s", repr(e), exc_info=True)
@@ -226,6 +231,25 @@ def admin_faiss_rebuild(payload: dict):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@router.get("/admin/tmdb/{tmdb_id}")
+def admin_get_tmdb_metadata(tmdb_id: int, media_type: str = None):
+    """Debug endpoint: return stored TMDB metadata documents for the given tmdb_id.
+
+    Optional query param `media_type` can be 'movie' or 'tv' to filter results.
+    """
+    try:
+        q = {"id": int(tmdb_id)}
+        if media_type:
+            q["media_type"] = str(media_type).lower()
+        cursor = list(tmdb_metadata_collection.find(q, {"_id": 0}))
+        if not cursor:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse(cursor)
+    except Exception as e:
+        logger.error("admin_get_tmdb_metadata error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @router.post(
     "/mcp/knn",
     summary="Find top-k nearest neighbors",
@@ -239,4 +263,18 @@ def mcp_knn(payload: MCPPayload):
         return JSONResponse({"error": str(ve)}, status_code=400)
     except Exception as e:
         logger.error("mcp_knn error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/admin/clear-history-cache")
+def admin_clear_history_cache():
+    """Admin endpoint to clear in-memory history cache."""
+    try:
+        ok = clear_history_cache()
+        if ok:
+            return JSONResponse({"status": "cleared"}, status_code=200)
+        else:
+            return JSONResponse({"error": "failed"}, status_code=500)
+    except Exception as e:
+        logger.error("admin_clear_history_cache error: %s", repr(e), exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)

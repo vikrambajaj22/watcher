@@ -1,11 +1,13 @@
 """Recommendation processing module."""
 
 import json
+import time
 
 from app.dao.history import get_watch_history
 from app.db import tmdb_metadata_collection
 from app.embeddings import build_user_vector_from_history
-from app.faiss_index import load_faiss_index, query_faiss
+from app.vector_store import query as vector_query
+from app.utils.knn_utils import process_knn_results
 from app.schemas.recommendations.recommendations import RecommendationsResponse
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_chat_completion
@@ -44,7 +46,7 @@ class MediaRecommender:
         """Load watch history from the database."""
         try:
             # allow None to mean all media types
-            watch_history = get_watch_history(media_type=media_type)
+            watch_history = get_watch_history(media_type=media_type, include_posters=False)
             watch_history = self.format_watch_history(
                 watch_history=watch_history, media_type=media_type
             )
@@ -87,6 +89,7 @@ class MediaRecommender:
         present in the user's watch history.
         """
         history_media_type = None if media_type == "all" else media_type
+        # do not include posters when generating recommendations (faster)
         watch_history = self.load_watch_history(media_type=history_media_type)
 
         # build a set of watched ids to exclude from recommendations
@@ -104,9 +107,12 @@ class MediaRecommender:
                 if t:
                     return t
             try:
-                d = tmdb_metadata_collection.find_one(
-                    {"id": candidate_id}, {"_id": 0, "title": 1, "name": 1, "original_title": 1, "original_name": 1}
-                )
+                # prefer exact media_type match if doc available in calling scope
+                query = {"id": candidate_id}
+                # if caller-provided doc has a media_type, use it to disambiguate
+                if doc and doc.get("media_type"):
+                    query["media_type"] = doc.get("media_type")
+                d = tmdb_metadata_collection.find_one(query, {"_id": 0, "title": 1, "name": 1, "original_title": 1, "original_name": 1})
                 if d:
                     return (
                         d.get("title")
@@ -121,52 +127,38 @@ class MediaRecommender:
 
         candidates_filtered = []
         try:
+            t_start = time.time()
             user_vec = build_user_vector_from_history(watch_history)
+            vec_time = time.time() - t_start
+            logger.info("User vector build time: %.3fs", vec_time)
             if user_vec is not None:
-                index = load_faiss_index()
-                if index is not None:
-                    # query with a larger k to allow for post-query filtering
-                    k = max(200, recommend_count * 40)
-                    res = query_faiss(index, user_vec, k=k)
+                # use vector_store.query which loads the FAISS index if necessary
+                max_k = 1000
+                k = min(max_k, max(200, recommend_count * 20))
+                t_q = time.time()
+                try:
+                    res = vector_query(user_vec, k=k)
+                except Exception as e:
+                    logger.warning("FAISS/vector query failed: %s", repr(e), exc_info=True)
+                    res = []
+                q_time = time.time() - t_q
+                logger.info("Vector store query time: %.3fs results=%s", q_time, len(res))
 
-                    # fetch docs for returned ids in bulk
-                    ids = [r[0] for r in res]
-                    docs = list(
-                        tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0})
-                    )
-                    # normalize title fields on the fetched docs so TV 'name' fields become 'title'
-                    for d in docs:
-                        title = (
-                            d.get("title")
-                            or d.get("name")
-                            or d.get("original_title")
-                            or d.get("original_name")
-                        )
-                        d["title"] = title
-                    # normalize doc ids to strings for stable lookups
-                    docs_by_id = {str(d.get("id")): d for d in docs}
+                # process knn results via shared helper (prefer exact id+media matches and apply filters)
+                requested_media_type = None if media_type == "all" else media_type
+                candidates = process_knn_results(
+                    vs_res=res,
+                    k=max(recommend_count * 5, 20),
+                    exclude_id=None,
+                    requested_media_type=requested_media_type,
+                    watched_ids=watched_ids,
+                )
 
-                    # iterate in FAISS order and filter by media_type + watched ids
-                    target_pool = max(recommend_count * 5, 20)
-                    for iid, score in res:
-                        key = str(iid)
-                        if key in watched_ids:
-                            continue
-                        doc = docs_by_id.get(key)
-                        if not doc:
-                            continue
-                        if media_type != "all" and doc.get("media_type") != media_type:
-                            continue
-                        # include score and keep the doc shape
-                        doc_copy = dict(doc)
-                        # resolve title robustly
-                        doc_copy["title"] = _resolve_title(iid, doc)
-                        if not doc_copy["title"]:
-                            logger.warning("Resolved empty title for candidate id=%s media_type=%s", key, doc.get("media_type"))
-                        doc_copy["_score"] = score
-                        candidates_filtered.append(doc_copy)
-                        if len(candidates_filtered) >= target_pool:
-                            break
+                # normalize candidate docs into the expected shape (score stored as _score)
+                for c in candidates:
+                    doc_copy = dict(c)
+                    doc_copy["_score"] = doc_copy.pop("score", None)
+                    candidates_filtered.append(doc_copy)
         except Exception as e:
             logger.warning(
                 "Candidate generation via embeddings/FAISS failed: %s",

@@ -16,6 +16,7 @@ import numpy as np
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_text
 from app.vector_store import query
+from app.utils.knn_utils import process_knn_results
 from app.schemas.api import MCPPayload
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
@@ -43,7 +44,14 @@ def resolve_query_vector(payload: MCPPayload) -> np.ndarray:
     Raises ValueError on missing item or embedding.
     """
     if payload.tmdb_id is not None:
-        doc = tmdb_metadata_collection.find_one({"id": payload.tmdb_id}, {"_id": 0})
+        # prefer exact (id, media_type) match when media_type provided in payload
+        query = {"id": payload.tmdb_id}
+        if getattr(payload, "media_type", None):
+            query["media_type"] = str(payload.media_type).lower()
+        doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
+        if not doc:
+            # fallback to id-only if exact match not found
+            doc = tmdb_metadata_collection.find_one({"id": payload.tmdb_id}, {"_id": 0})
         if not doc:
             raise ValueError(f"tmdb_id {payload.tmdb_id} not found")
         emb = doc.get("embedding")
@@ -112,43 +120,22 @@ def call_mcp_knn(payload: MCPPayload) -> Dict[str, Any]:
     # query with k+1 to account for excluding the input item
     query_k = k + 1 if exclude_id is not None else k
     vs_res = query(qvec, query_k)
-    logger.info("Found %s results", len(vs_res))
-    ids = [int(r[0]) for r in vs_res]
-    docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0}))
-    docs_by_id = {d.get("id"): d for d in docs}
-    logger.info("Found %s matching documents in tmdb_metadata", len(docs_by_id))
-    # optional media_type filtering
-    requested_media = None
+    logger.info("Found %s results from vector store", len(vs_res))
+
+    requested_media_type = None
     if getattr(payload, "media_type", None):
-        requested_media = str(payload.media_type).lower()
-        if requested_media not in {"movie", "tv", "all"}:
+        requested_media_type = str(payload.media_type).lower()
+        if requested_media_type not in {"movie", "tv", "all"}:
             raise ValueError("media_type must be one of: 'movie', 'tv', 'all'")
 
-    results: List[Dict[str, Any]] = []
-    for tid, score in vs_res:
-        if exclude_id is not None and int(tid) == int(exclude_id):
-            continue
-
-        doc = docs_by_id.get(tid, {})
-        title = doc.get("title") or doc.get("name")
-        media = (doc.get("media_type") or "").lower() if doc else ""
-        if requested_media and requested_media != "all" and media != requested_media:
-            continue
-        results.append(
-            {
-                "id": int(tid),
-                "title": title,
-                "media_type": doc.get("media_type"),
-                "score": float(score),
-                "poster_path": doc.get("poster_path"),
-                "overview": doc.get("overview", "No description available"),
-            }
-        )
-
-        if len(results) >= k:
-            break
-    logger.info("Found %s results after media type filtering", len(results))
-    return {"results": results}
+    candidates = process_knn_results(
+        vs_res=vs_res,
+        k=k,
+        exclude_id=exclude_id,
+        requested_media_type=requested_media_type,
+        watched_ids=None,
+    )
+    return {"results": candidates}
 
 
 def get_payload_type(tool_name):

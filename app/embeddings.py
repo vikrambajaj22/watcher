@@ -384,8 +384,15 @@ def build_user_vector_from_history(
     if not ids:
         return None
 
-    docs_cursor = tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "embedding": 1})
-    docs_by_id = {d.get("id"): d for d in docs_cursor}
+    # fetch candidate docs that have embeddings; build a map keyed by (id, media_type) and fallback by id
+    docs_cursor = tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "media_type": 1, "embedding": 1})
+    docs_exact = {(int(d.get("id")), str(d.get("media_type") or "").lower()): d for d in docs_cursor}
+    # build fallback by id (first seen)
+    docs_by_id = {}
+    for k, v in docs_exact.items():
+        _id = k[0]
+        if _id not in docs_by_id:
+            docs_by_id[_id] = v
 
     for it in history_items:
         tid = it.get("id")

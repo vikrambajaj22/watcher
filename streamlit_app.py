@@ -286,7 +286,8 @@ def show_home_page():
 
     st.subheader("👨🏻‍💻 Quick Stats")
 
-    history = api_request("/history", method="GET")
+    # request history without poster enrichment for faster stats
+    history = api_request("/history?include_posters=false", method="GET")
     if history:
         movies = [item for item in history if item.get("media_type") == "movie"]
         shows = [item for item in history if item.get("media_type") == "tv"]

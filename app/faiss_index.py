@@ -59,7 +59,19 @@ def build_faiss_index(
         logger.info("No items with embeddings found to build FAISS index")
         return None
 
-    ids = np.array([d["id"] for d in docs], dtype=np.int64)
+    # build composite integer labels from (id, media_type) -> unique int64
+    def _encode_label(tmdb_id: int, media_type: str) -> int:
+        # encode: shift id left by 1 and set low bit: 0=movie,1=tv
+        try:
+            mt = 0 if (str(media_type or "").lower() == "movie") else 1
+        except Exception:
+            mt = 0
+        return (int(tmdb_id) << 1) | int(mt)
+
+    labels = np.array(
+        [_encode_label(d.get("id"), d.get("media_type")) for d in docs],
+        dtype=np.int64,
+    )
     vecs = np.array([d["embedding"] for d in docs], dtype=np.float32)
 
     # normalize factory string to avoid user-provided casing issues (e.g., IDMAP vs IDMap)
@@ -82,7 +94,7 @@ def build_faiss_index(
 
     # add_with_ids expects ids as int64 array; ensure dtype
     try:
-        index.add_with_ids(vecs, np.array(ids, dtype=np.int64))
+        index.add_with_ids(vecs, labels)
     except Exception as e:
         logger.error(
             "Failed to add vectors with ids to FAISS index: %s", repr(e), exc_info=True
@@ -92,7 +104,7 @@ def build_faiss_index(
     # save CPU index (labels inside index) -- no separate meta file
     faiss.write_index(index, INDEX_FILE)
     logger.info(
-        "Built and saved FAISS index with %s vectors at %s", len(ids), INDEX_FILE
+        "Built and saved FAISS index with %s vectors at %s", len(labels), INDEX_FILE
     )
 
     if FAISS_USE_GPU:
@@ -137,8 +149,23 @@ def load_faiss_index() -> Optional["faiss.Index"]:
 
 def query_faiss(
     index: "faiss.Index", query_vec: np.ndarray, k: int = 10
-) -> List[Tuple[int, float]]:
-    """Query FAISS index with the given vector and return list of (tmdb_id, score) tuples."""
+) -> List[Tuple[int, str, float]]:
+    """Query FAISS index with the given vector and return list of (tmdb_id, media_type, score) tuples.
+
+    Labels are decoded from the composite label encoding used during build.
+    """
+
+    def _decode_label(label: int) -> tuple[int, str]:
+        # low bit indicates media_type: 0=movie,1=tv; id is label >> 1
+        try:
+            lid = int(label)
+        except Exception:
+            lid = int(label.item()) if hasattr(label, "item") else int(label)
+        mt_bit = lid & 1
+        tmdb_id = lid >> 1
+        media = "movie" if mt_bit == 0 else "tv"
+        return tmdb_id, media
+
     try:
         q = np.array(query_vec, dtype=np.float32)
         logger.info("Querying FAISS index using vector with shape: %s", q.shape)
@@ -204,15 +231,15 @@ def query_faiss(
             idxs = idxs.reshape(1, -1)
 
         nq = idxs.shape[0]
-        results: List[Tuple[int, float]] = []
+        results: List[Tuple[int, str, float]] = []
         for i in range(nq):
             for j in range(min(k, idxs.shape[1])):
                 idx = int(idxs[i, j])
                 if idx < 0:
                     continue
                 score = float(D[i, j])
-                tmdb_id = idx  # labels are TMDB ids
-                results.append((tmdb_id, score))
+                tmdb_id, media = _decode_label(idx)
+                results.append((tmdb_id, media, score))
         logger.info("FAISS query returned %s total hits", len(results))
         return results
     except Exception as e:
