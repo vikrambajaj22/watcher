@@ -15,6 +15,8 @@ import os
 import time
 from typing import Optional, Dict, Any
 
+from dateutil import parser
+
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 TOKEN_FILE = ".env.trakt_token"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"  # w500 for good quality
@@ -141,6 +143,93 @@ def cached_sync_status() -> Optional[Dict]:
         return None
     except Exception:
         return None
+
+
+def format_ts(ts: Any) -> str:
+    """Format either epoch int or ISO string to a human-readable timestamp.
+
+    Returns 'Never' for falsy values.
+    """
+    if not ts:
+        return "Never"
+    try:
+        if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
+            return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))
+
+        dt = parser.isoparse(ts)
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return str(ts)
+
+
+def clear_caches():
+    """Clear local Streamlit caches used for API GETs and sync status."""
+    try:
+        cached_api_get.clear()
+    except Exception:
+        pass
+    try:
+        cached_sync_status.clear()
+    except Exception:
+        pass
+
+
+def start_trakt_sync_shared(admin=False) -> Optional[Dict]:
+    """Trigger /admin/sync/trakt and store returned job id in session state.
+
+    If admin=True store under 'admin_last_sync_job_id' to avoid clashing with UI auto-sync keys.
+    """
+    try:
+        res = api_request("/admin/sync/trakt", method="POST", data={})
+        job_id = None
+        if isinstance(res, dict):
+            job_id = res.get('job_id')
+        if job_id:
+            key = 'admin_last_sync_job_id' if admin else 'last_sync_job_id'
+            polled_key = 'admin_last_sync_polled' if admin else 'last_sync_polled'
+            inprog_key = 'sync_in_progress'
+            st.session_state[key] = job_id
+            st.session_state[inprog_key] = True
+            st.session_state[polled_key] = False
+        else:
+            # fallback: clear caches so UI will pick up later
+            clear_caches()
+        return res
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def poll_job_status(job_id: str, max_wait: int = 60, interval: int = 2) -> Optional[dict]:
+    """Poll /admin/sync/job/{job_id} until finished or timeout.
+
+    Returns the job JSON when finished, or None if not finished within max_wait or request fails.
+    If max_wait <= 0 this will perform a single probe and return the job JSON or None.
+    """
+    waited = 0
+    while True:
+        try:
+            url = f"{API_BASE_URL}/admin/sync/job/{job_id}"
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                js = r.json()
+                status = js.get('status')
+                if status in ('completed', 'failed'):
+                    return js
+            else:
+                # unexpected status -> treat as transient
+                js = None
+        except Exception:
+            js = None
+
+        # if this was a single probe, return whatever we have (likely None)
+        if max_wait <= 0:
+            return js
+
+        if waited >= max_wait:
+            return None
+
+        time.sleep(interval)
+        waited += interval
 
 
 def api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Optional[Dict]:
@@ -337,27 +426,9 @@ def show_history_page():
     except Exception:
         sync_status = {}
 
-    def _fmt(ts):
-        if not ts:
-            return "Never"
-        try:
-            # if numeric epoch
-            if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
-                return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))
-            # ISO string -> parse and show date portion
-            try:
-                from dateutil import parser as _dp
-
-                dt = _dp.isoparse(ts)
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-            except Exception:
-                return str(ts)
-        except Exception:
-            return str(ts)
-
-    last_trakt = _fmt(sync_status.get('trakt_last_activity'))
-    last_tmdb_movie = _fmt(sync_status.get('tmdb_movie_last_sync'))
-    last_tmdb_tv = _fmt(sync_status.get('tmdb_tv_last_sync'))
+    last_trakt = format_ts(sync_status.get('trakt_last_activity'))
+    last_tmdb_movie = format_ts(sync_status.get('tmdb_movie_last_sync'))
+    last_tmdb_tv = format_ts(sync_status.get('tmdb_tv_last_sync'))
     st.caption(f"Last sync — Trakt: {last_trakt} | TMDB(movie): {last_tmdb_movie} | TMDB(tv): {last_tmdb_tv}")
 
     col1, col2 = st.columns([3, 1])
@@ -374,7 +445,7 @@ def show_history_page():
 
         if time.time() - last_sync_ts > 300:
             try:
-                res = api_request("/admin/sync/trakt", method="POST", data={})
+                res = start_trakt_sync_shared()
                 st.session_state['history_auto_sync_ts'] = int(time.time())
                 # if backend returned a job_id, store and poll it
                 job_id = None
@@ -386,10 +457,7 @@ def show_history_page():
                     st.session_state['last_sync_polled'] = False
                 else:
                     # fallback: clear cache so UI will pick up changes later
-                    try:
-                        cached_api_get.clear()
-                    except Exception:
-                        pass
+                    clear_caches()
             except Exception:
                 # best-effort - don't block the page if sync trigger fails
                 pass
@@ -467,14 +535,7 @@ def show_history_page():
                     status = js.get('status')
                     if status in ('completed', 'failed'):
                         # job finished - clear cache and session flags, then rerun to reflect updates
-                        try:
-                            cached_api_get.clear()
-                        except Exception:
-                            pass
-                        try:
-                            cached_sync_status.clear()
-                        except Exception:
-                            pass
+                        clear_caches()
                         st.session_state['sync_in_progress'] = False
                         # remove job id and polled marker so UI won't show sync messages
                         try:
@@ -508,14 +569,7 @@ def show_history_page():
                             status = js.get('status')
                             if status in ('completed', 'failed'):
                                 # job finished - clear cache and session flags, then rerun to reflect updates
-                                try:
-                                    cached_api_get.clear()
-                                except Exception:
-                                    pass
-                                try:
-                                    cached_sync_status.clear()
-                                except Exception:
-                                    pass
+                                clear_caches()
                                 st.session_state['sync_in_progress'] = False
                                 # remove job id and polled marker so UI won't show sync messages
                                 try:
@@ -1051,9 +1105,15 @@ def show_admin_page():
     """Display admin panel for management tasks."""
     st.header("⚙️ Admin Panel")
     st.warning("⚠️ These actions can be resource-intensive. Use with caution.")
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Status", "🧠 Embeddings", "📇 FAISS Index", "♻️ State/Cache Management"])
+    tab_status, tab_sync, tab_embedding, tab_faiss, tab_state = st.tabs([
+        "📊 Status",
+        "🔄 Manual Sync",
+        "🧠 Embeddings",
+        "📇 FAISS Index",
+        "♻️ State/Cache Management",
+    ])
 
-    with tab1:
+    with tab_status:
         st.subheader("System Status")
         col1, col2 = st.columns(2)
         with col1:
@@ -1071,26 +1131,13 @@ def show_admin_page():
         except Exception:
             s = {}
 
-        def _fmt2(ts):
-            if not ts:
-                return "Never"
-            try:
-                if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
-                    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))
-                from dateutil import parser as _dp
-
-                dt = _dp.isoparse(ts)
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-            except Exception:
-                return str(ts)
 
         st.caption(
-            f"Last sync — Trakt: {_fmt2(s.get('trakt_last_activity'))} | TMDB(movie): {_fmt2(s.get('tmdb_movie_last_sync'))} | TMDB(tv): {_fmt2(s.get('tmdb_tv_last_sync'))}"
+            f"Last sync — Trakt: {format_ts(s.get('trakt_last_activity'))} | TMDB(movie): {format_ts(s.get('tmdb_movie_last_sync'))} | TMDB(tv): {format_ts(s.get('tmdb_tv_last_sync'))}"
         )
         if st.button("Refresh sync status"):
             try:
-                cached_sync_status.clear()
-                cached_api_get.clear()
+                clear_caches()
             except Exception:
                 pass
 
@@ -1102,7 +1149,7 @@ def show_admin_page():
             else:
                 st.info("No token information available")
 
-    with tab2:
+    with tab_embedding:
         st.subheader("🧠 Embedding Management")
         st.write("Generate embeddings for similarity search")
 
@@ -1142,7 +1189,7 @@ def show_admin_page():
                     st.success("✅ Full embedding generation started!")
                     st.json(result)
 
-    with tab3:
+    with tab_faiss:
         st.subheader("📇 FAISS Index Management")
 
         st.write("Build or rebuild the FAISS index for fast similarity search")
@@ -1175,7 +1222,7 @@ def show_admin_page():
                     if "log" in result:
                         st.info(f"Check logs at: {result['log']}")
 
-    with tab4:
+    with tab_state:
         st.write("Manage caches.")
         col_a, col_b = st.columns(2)
         with col_a:
@@ -1200,6 +1247,67 @@ def show_admin_page():
                         except Exception:
                             pass
                 st.success("Cleared Persisted Similar Search state")
+
+    with tab_sync:
+        st.subheader("🔄 Manual Trakt Sync")
+        st.write("Trigger a manual Trakt history sync and monitor its job status.")
+
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("Use this to start a manual Trakt sync (runs on the backend). The UI can poll the job status until completion.")
+        with col2:
+            if st.button("Start Trakt Sync", type="primary"):
+                with st.spinner("Starting Trakt sync..."):
+                    res = start_trakt_sync_shared(admin=True)
+                    if isinstance(res, dict) and res.get('job_id'):
+                        st.success(f"Sync started (job_id={res.get('job_id')})")
+                    else:
+                        st.error(f"Sync request failed: {res}")
+
+        job_id = st.session_state.get('admin_last_sync_job_id')
+        if job_id:
+            st.markdown(f"**Last job id:** {job_id}")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("Check job status now"):
+                    js = poll_job_status(job_id, max_wait=0)
+                    if js:
+                        st.json(js)
+                        if js.get('status') in ('completed', 'failed'):
+                            clear_caches()
+                            try:
+                                del st.session_state['admin_last_sync_job_id']
+                            except Exception:
+                                pass
+                    else:
+                        st.warning("Job status not available (still running or not found)")
+            with col_b:
+                if st.button("Poll until complete (60s)"):
+                    with st.spinner("Polling job status until completion..."):
+                        js = poll_job_status(job_id, max_wait=60, interval=2)
+                        if js:
+                            st.success(f"Job finished: {js.get('status')}")
+                            clear_caches()
+                            try:
+                                del st.session_state['admin_last_sync_job_id']
+                            except Exception:
+                                pass
+                            st.json(js)
+                        else:
+                            st.warning("Polling ended without completion. Check later or view job status.")
+
+        st.markdown("---")
+        if st.button("Clear History Cache"):
+            try:
+                res = api_request('/admin/clear-history-cache', method='POST', data={})
+                if res and res.get('status') == 'cleared':
+                    cached_api_get.clear()
+                    st.success('History cache cleared')
+                else:
+                    st.error(f'Failed to clear history cache: {res}')
+            except Exception as e:
+                st.error(f'Error clearing history cache: {e}')
+
 
 def main():
     """Main application entry point."""
