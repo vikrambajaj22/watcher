@@ -12,6 +12,7 @@ import streamlit as st
 import requests
 import json
 import os
+import time
 from typing import Optional, Dict, Any
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
@@ -104,7 +105,7 @@ def cached_api_get(endpoint: str) -> Optional[Dict]:
         return None
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def cached_recommendations(media_type: str, recommend_count: int) -> Optional[Dict]:
     """Cached recommendations - 10 minute TTL (600 seconds).
 
@@ -124,6 +125,19 @@ def cached_recommendations(media_type: str, recommend_count: int) -> Optional[Di
         response = requests.post(url, json={"recommend_count": recommend_count})
         if response.status_code == 200:
             return response.json()
+        return None
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cached_sync_status() -> Optional[Dict]:
+    """Cached fetch of sync status from backend."""
+    try:
+        url = f"{API_BASE_URL}/admin/sync/status"
+        r = requests.get(url)
+        if r.status_code == 200:
+            return r.json()
         return None
     except Exception:
         return None
@@ -312,50 +326,75 @@ def show_home_page():
 
     st.markdown("---")
 
-    st.subheader("👨🏻‍💻 Quick Stats")
-
-    # request history without poster enrichment for faster stats
-    history = api_request("/history?include_posters=false", method="GET")
-    if history:
-        movies = [item for item in history if item.get("media_type") == "movie"]
-        shows = [item for item in history if item.get("media_type") == "tv"]
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("🎬 Movies Watched", len(movies))
-        col2.metric("📺 Shows Watched", len(shows))
-
 
 def show_history_page():
     """Display watch history page."""
     st.header("📺 Watch History")
 
-    def trigger_sync():
-        """Trigger sync and clear cache."""
-        result = api_request("/admin/sync/trakt", method="POST", data={})
-        if result:
-            # clear the cache immediately
-            cached_api_get.clear()
-            st.session_state.sync_in_progress = True
+    # show last sync timestamps (small, cached call)
+    try:
+        sync_status = cached_sync_status() or {}
+    except Exception:
+        sync_status = {}
+
+    def _fmt(ts):
+        if not ts:
+            return "Never"
+        try:
+            # if numeric epoch
+            if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
+                return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))
+            # ISO string -> parse and show date portion
+            try:
+                from dateutil import parser as _dp
+
+                dt = _dp.isoparse(ts)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return str(ts)
+        except Exception:
+            return str(ts)
+
+    last_trakt = _fmt(sync_status.get('trakt_last_activity'))
+    last_tmdb_movie = _fmt(sync_status.get('tmdb_movie_last_sync'))
+    last_tmdb_tv = _fmt(sync_status.get('tmdb_tv_last_sync'))
+    st.caption(f"Last sync — Trakt: {last_trakt} | TMDB(movie): {last_tmdb_movie} | TMDB(tv): {last_tmdb_tv}")
 
     col1, col2 = st.columns([3, 1])
     with col1:
         st.write("View and manage your Trakt watch history")
     with col2:
-        if st.button("🔄 Sync from Trakt", type="primary", on_click=trigger_sync):
-            pass  # callback handles sync
+        # auto-trigger a background Trakt sync periodically (aligned with history cache TTL)
+        # throttle to once per 300s (the cached_api_get TTL) to avoid spamming the API on every rerun
+        last_sync_ts = st.session_state.get('history_auto_sync_ts', 0)
+        try:
+            last_sync_ts = float(last_sync_ts)
+        except Exception:
+            last_sync_ts = 0.0
 
-    if st.session_state.get('sync_in_progress', False):
-        st.warning("⏳ Sync running in background... Wait 5-10 seconds, then click refresh below.")
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            if st.button("🔄 Refresh Data", type="primary"):
-                cached_api_get.clear()
-                del st.session_state.sync_in_progress
-                st.rerun()
-        with col2:
-            st.caption("Click this after waiting for the sync to complete on the server.")
+        if time.time() - last_sync_ts > 300:
+            try:
+                res = api_request("/admin/sync/trakt", method="POST", data={})
+                st.session_state['history_auto_sync_ts'] = int(time.time())
+                # if backend returned a job_id, store and poll it
+                job_id = None
+                if isinstance(res, dict):
+                    job_id = res.get('job_id')
+                if job_id:
+                    st.session_state['last_sync_job_id'] = job_id
+                    st.session_state['sync_in_progress'] = True
+                    st.session_state['last_sync_polled'] = False
+                else:
+                    # fallback: clear cache so UI will pick up changes later
+                    try:
+                        cached_api_get.clear()
+                    except Exception:
+                        pass
+            except Exception:
+                # best-effort - don't block the page if sync trigger fails
+                pass
 
-    st.markdown("---")
+    # filters shown above the history list; build them before fetching to keep UI stable
     col1, col2, col3 = st.columns(3)
     with col1:
         media_filter = st.selectbox("Media Type", ["All", "Movies", "TV Shows"])
@@ -364,23 +403,144 @@ def show_history_page():
     with col3:
         search = st.text_input("🔍 Search", placeholder="Search titles...")
 
-    with st.spinner("Loading history..."):
+    # determine server-side media_type param and fetch history accordingly (server-side filtering when possible)
+    if media_filter == "Movies":
+        media_type_param = "movie"
+    elif media_filter == "TV Shows":
+        media_type_param = "tv"
+    else:
         media_type_param = None
-        if media_filter == "Movies":
-            media_type_param = "movie"
-        elif media_filter == "TV Shows":
-            media_type_param = "tv"
 
-        endpoint = "/history"
+    endpoint = "/history"
+    if media_type_param:
+        endpoint = f"/history?media_type={media_type_param}"
+    history_data = api_request(endpoint, method="GET")
+
+    # after fetching history_data, clear any transient sync-in-progress UI flags
+    try:
+        if history_data and st.session_state.get('sync_in_progress'):
+            for k in ['sync_in_progress', 'last_sync_job_id', 'last_sync_polled']:
+                if k in st.session_state:
+                    try:
+                        del st.session_state[k]
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # history_data already fetched (possibly filtered server-side)
+    if not history_data:
+        st.info("No watch history found. Wait for sync to finish or try Refresh Data.")
+        return
+
+    # compute metrics: if the user applied a server-side media filter, fetch an unfiltered (cached) summary
+    # to show totals across all media; otherwise compute from the returned history_data.
+    try:
         if media_type_param:
-            endpoint = f"/history?media_type={media_type_param}"
+            # fetch unfiltered, no-posters summary (cached) for totals
+            overall = api_request("/history?include_posters=false", method="GET") or []
+            total_movies = sum(1 for it in overall if it.get("media_type") == "movie")
+            total_shows = sum(1 for it in overall if it.get("media_type") == "tv")
+        else:
+            total_movies = sum(1 for it in history_data if it.get("media_type") == "movie")
+            total_shows = sum(1 for it in history_data if it.get("media_type") == "tv")
+    except Exception:
+        total_movies = sum(1 for it in history_data if it.get("media_type") == "movie")
+        total_shows = sum(1 for it in history_data if it.get("media_type") == "tv")
 
-        history_data = api_request(endpoint, method="GET")
+    mcol1, mcol2, mcol3 = st.columns(3)
+    mcol1.metric("🎬 Movies Watched", total_movies)
+    mcol2.metric("📺 Shows Watched", total_shows)
 
-        if not history_data:
-            st.info("No watch history found. Click 'Sync from Trakt' to fetch your history.")
-            return
+    # if a sync job was scheduled, probe job status and poll if needed; once completed, clear job flags
+    if st.session_state.get('sync_in_progress', False):
+        job_id = st.session_state.get('last_sync_job_id')
+        polled = st.session_state.get('last_sync_polled', False)
 
+        # quick probe: if we've already polled once but flags still set, do a single status check and clear if finished
+        if job_id and polled:
+            try:
+                url = f"{API_BASE_URL}/admin/sync/job/{job_id}"
+                r = requests.get(url, timeout=3)
+                if r.status_code == 200:
+                    js = r.json()
+                    status = js.get('status')
+                    if status in ('completed', 'failed'):
+                        # job finished - clear cache and session flags, then rerun to reflect updates
+                        try:
+                            cached_api_get.clear()
+                        except Exception:
+                            pass
+                        try:
+                            cached_sync_status.clear()
+                        except Exception:
+                            pass
+                        st.session_state['sync_in_progress'] = False
+                        # remove job id and polled marker so UI won't show sync messages
+                        try:
+                            del st.session_state['last_sync_job_id']
+                        except Exception:
+                            pass
+                        try:
+                            del st.session_state['last_sync_polled']
+                        except Exception:
+                            pass
+                        _safe_rerun()
+                else:
+                    # still running - show ephemeral message and allow polling below
+                    st.warning("⏳ Sync running in background... Polling job status...")
+            except Exception:
+                st.warning("⏳ Sync running in background... Polling job status...")
+
+        # Poll job status (blocking spinner for up to 60s) if not already polled in this session run
+        elif job_id and not polled:
+            st.warning("⏳ Sync running in background... Polling job status...")
+            with st.spinner("Waiting for sync to complete (this may take a while)..."):
+                interval = 2
+                waited = 0
+                max_wait = 60
+                while waited < max_wait:
+                    try:
+                        url = f"{API_BASE_URL}/admin/sync/job/{job_id}"
+                        r = requests.get(url, timeout=5)
+                        if r.status_code == 200:
+                            js = r.json()
+                            status = js.get('status')
+                            if status in ('completed', 'failed'):
+                                # job finished - clear cache and session flags, then rerun to reflect updates
+                                try:
+                                    cached_api_get.clear()
+                                except Exception:
+                                    pass
+                                try:
+                                    cached_sync_status.clear()
+                                except Exception:
+                                    pass
+                                st.session_state['sync_in_progress'] = False
+                                # remove job id and polled marker so UI won't show sync messages
+                                try:
+                                    del st.session_state['last_sync_job_id']
+                                except Exception:
+                                    pass
+                                try:
+                                    del st.session_state['last_sync_polled']
+                                except Exception:
+                                    pass
+                                _safe_rerun()
+                                break
+                    except Exception:
+                        pass
+                    time.sleep(interval)
+                    waited += interval
+                # mark polled even if not completed to avoid repeated polling in this render loop
+                st.session_state['last_sync_polled'] = True
+        else:
+            # no job id or already cleared — ensure flag is off
+            st.session_state['sync_in_progress'] = False
+
+    st.markdown("---")
+
+    with st.spinner("Loading history..."):
         if search:
             history_data = [
                 item for item in history_data
@@ -904,6 +1064,35 @@ def show_admin_page():
             st.metric("Auth Status", "✅ Authenticated" if is_authenticated() else "❌ Not Authenticated")
 
         st.markdown("---")
+
+        # show last sync metadata for convenience
+        try:
+            s = cached_sync_status() or {}
+        except Exception:
+            s = {}
+
+        def _fmt2(ts):
+            if not ts:
+                return "Never"
+            try:
+                if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
+                    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))
+                from dateutil import parser as _dp
+
+                dt = _dp.isoparse(ts)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return str(ts)
+
+        st.caption(
+            f"Last sync — Trakt: {_fmt2(s.get('trakt_last_activity'))} | TMDB(movie): {_fmt2(s.get('tmdb_movie_last_sync'))} | TMDB(tv): {_fmt2(s.get('tmdb_tv_last_sync'))}"
+        )
+        if st.button("Refresh sync status"):
+            try:
+                cached_sync_status.clear()
+                cached_api_get.clear()
+            except Exception:
+                pass
 
         st.subheader("🔑 Token Information")
         if st.button("Show Token Info"):

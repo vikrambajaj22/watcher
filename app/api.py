@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.config.settings import settings
 from app.dao.history import get_watch_history, clear_history_cache
-from app.db import tmdb_metadata_collection
+from app.db import tmdb_metadata_collection, sync_meta_collection
 from app.embeddings import embed_item_and_store, embed_all_items
 from app.faiss_index import INDEX_DIR
 from app.process.recommendation import MediaRecommender
@@ -15,6 +15,10 @@ from app.schemas.recommendations.recommendations import (
     RecommendRequest,
 )
 from app.trakt_sync import sync_trakt_history
+import uuid
+import time as _time
+import traceback as _traceback
+
 from app.utils.llm_orchestrator import call_mcp_knn
 from app.mcp_will_like import compute_will_like, WillLikeError
 from app.utils.logger import get_logger
@@ -77,7 +81,7 @@ def recommend(media_type: str, payload: RecommendRequest):
 
 @router.get("/history")
 def get_history(media_type: str = None, include_posters: bool = True):
-    """Get watch history, optionally filtered by media_type.
+    """Get watch history from database, optionally filtered by media_type and get posters.
 
     Query params:
       - media_type: optional 'movie'|'tv'
@@ -95,12 +99,73 @@ def get_history(media_type: str = None, include_posters: bool = True):
 def admin_sync(background_tasks: BackgroundTasks):
     """Trigger Trakt history sync in background."""
     try:
-        background_tasks.add_task(sync_trakt_history)
+        # create a job id and persist a job document in sync_meta_collection
+        job_id = str(uuid.uuid4())
+        job_key = f"trakt_sync_job:{job_id}"
+        started_at = int(_time.time())
+        sync_meta_collection.update_one(
+            {"_id": job_key},
+            {"$set": {"status": "pending", "started_at": started_at}},
+            upsert=True,
+        )
+
+        # background wrapper to update job status
+        def _run_sync_job(jid: str):
+            job_key_inner = f"trakt_sync_job:{jid}"
+            try:
+                sync_meta_collection.update_one(
+                    {"_id": job_key_inner}, {"$set": {"status": "running"}}
+                )
+                sync_trakt_history()
+                sync_meta_collection.update_one(
+                    {"_id": job_key_inner},
+                    {
+                        "$set": {
+                            "status": "completed",
+                            "finished_at": int(_time.time()),
+                        }
+                    },
+                )
+            except Exception as e:
+                # record failure and error
+                try:
+                    sync_meta_collection.update_one(
+                        {"_id": job_key_inner},
+                        {
+                            "$set": {
+                                "status": "failed",
+                                "finished_at": int(_time.time()),
+                                "error": str(e),
+                                "trace": _traceback.format_exc(),
+                            }
+                        },
+                    )
+                except Exception:
+                    pass
+
+        background_tasks.add_task(_run_sync_job, job_id)
         return JSONResponse(
-            {"status": "accepted", "message": "sync started"}, status_code=202
+            {"status": "accepted", "message": "sync started", "job_id": job_id},
+            status_code=202,
         )
     except Exception as e:
         logger.error("admin_sync error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.get("/admin/sync/job/{job_id}")
+def admin_sync_job_status(job_id: str):
+    """Return job status document for the given job_id (from sync_meta_collection)."""
+    try:
+        from app.db import sync_meta_collection
+
+        key = f"trakt_sync_job:{job_id}"
+        doc = sync_meta_collection.find_one({"_id": key}, {"_id": 0})
+        if not doc:
+            return JSONResponse({"error": "job not found"}, status_code=404)
+        return JSONResponse(doc)
+    except Exception as e:
+        logger.error("admin_sync_job_status error: %s", repr(e), exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
@@ -316,3 +381,38 @@ def admin_clear_history_cache():
     except Exception as e:
         logger.error("admin_clear_history_cache error: %s", repr(e), exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.get("/admin/sync/status")
+def admin_sync_status():
+    """Return last sync timestamps for Trakt and TMDB (movie, tv).
+
+    Response shape:
+    {
+        "trakt_last_activity": <iso string or null>,
+        "tmdb_movie_last_sync": <epoch int or null>,
+        "tmdb_tv_last_sync": <epoch int or null>
+    }
+    """
+    try:
+        from app.db import sync_meta_collection
+
+        def _get(key):
+            try:
+                doc = sync_meta_collection.find_one({"_id": key})
+                if not doc:
+                    return None
+                return doc.get("last_sync") or doc.get("last_activity")
+            except Exception:
+                return None
+
+        status = {
+            "trakt_last_activity": _get("trakt_last_activity"),
+            "tmdb_movie_last_sync": _get("tmdb_movie_last_sync"),
+            "tmdb_tv_last_sync": _get("tmdb_tv_last_sync"),
+        }
+        return JSONResponse(status)
+    except Exception as e:
+        logger.error("admin_sync_status error: %s", repr(e), exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
