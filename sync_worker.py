@@ -45,4 +45,4 @@ def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
 
 
 if __name__ == "__main__":
-    start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=24)
+    start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=72)

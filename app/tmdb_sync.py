@@ -1,10 +1,10 @@
-import concurrent.futures
 import time
 from datetime import datetime, timezone
 from typing import Optional
 import gzip
 import json
 from datetime import timedelta
+import os
 
 import requests
 from dateutil import parser as _dateutil_parser
@@ -18,7 +18,7 @@ from app.db import (
     tmdb_failures_collection,
     tmdb_metadata_collection,
 )
-from app.embeddings import embed_item_and_store
+from app.embeddings import EMBED_MODEL_NAME, _process_batch
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +32,13 @@ CHUNK_SIZE = 100  # number of IDs to fetch details for in one batch
 DISCOVER_LOG_EVERY_PAGES = 50  # log every N discover pages
 EXPORT_LOG_EVERY_IDS = 10000  # log every N ids processed from export
 CHUNK_LOG_EVERY = 10  # log after every N chunks processed
+
+# embedding batch controls
+EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "256"))
+# when the queued embeddings reach this threshold, submit batches incrementally
+EMBED_BATCH_SUBMIT_THRESHOLD = int(os.getenv("EMBED_BATCH_SUBMIT_THRESHOLD", "512"))
+# if desired, batch submissions can be parallelized by workers
+EMBED_BATCH_MAX_WORKERS = int(os.getenv("EMBED_BATCH_MAX_WORKERS", "2"))
 
 
 def _get_last_sync_timestamp(media_type: str) -> Optional[int]:
@@ -323,6 +330,12 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                 gz = gzip.GzipFile(fileobj=resp.raw)
                 # iterate over gzip bytes lines and decode each line
                 chunk_ids: list[int] = []
+                # counters for incremental embedding submissions during export
+                embed_submitted = 0
+                embed_succeeded = 0
+                embed_failed = 0
+                embed_timed_out = 0
+
                 for raw_line in gz:
                     try:
                         line = raw_line.decode("utf-8").strip()
@@ -349,34 +362,45 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                             )
                         processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
                         total_processed += processed
-                        # collect queued embedding items into the shared to_embed list
+                        # collect queued embedding items into the shared to_embed list (cumulative)
                         if queued:
                             to_embed.extend(queued)
                         if max_seen and max_seen > max_ts:
                             max_ts = max_seen
                         logger.debug(
-                            "Export chunk: media_type=%s chunk_size=%s processed=%s queued_embeddings=%s",
+                            "Export chunk: media_type=%s chunk_size=%s processed=%s cumulative_queued_embeddings=%s",
                             media_type,
                             len(chunk_ids),
                             processed,
-                            len(queued),
+                            len(to_embed),
                         )
                         chunk_ids = []
                         # log progress for large exports
                         if total_processed % EXPORT_LOG_EVERY_IDS == 0:
                             logger.info(
-                                "Export progress: media_type=%s processed_ids=%s queued_embeddings=%s",
+                                "Export progress: media_type=%s processed_ids=%s cumulative_queued_embeddings=%s",
                                 media_type,
                                 total_processed,
-                                len(queued),
+                                len(to_embed),
                             )
                         if processed and (total_processed // CHUNK_SIZE) % CHUNK_LOG_EVERY == 0:
                             logger.info(
-                                "Export chunk processed: media_type=%s total_processed=%s queued_embeddings=%s",
+                                "Export chunk processed: media_type=%s total_processed=%s cumulative_queued_embeddings=%s",
                                 media_type,
                                 total_processed,
-                                len(queued),
+                                len(to_embed),
                             )
+
+                        # if queued embeddings exceed the threshold, process them incrementally now
+                        if embed_updated and len(to_embed) >= EMBED_BATCH_SUBMIT_THRESHOLD:
+                            logger.info("Embedding threshold reached (cumulative_queued=%s). Submitting batches...", len(to_embed))
+                            emb_summary = _submit_embedding_tasks(to_embed)
+                            embed_submitted += emb_summary.get("submitted", 0)
+                            embed_succeeded += emb_summary.get("succeeded", 0)
+                            embed_failed += emb_summary.get("failed", 0)
+                            embed_timed_out += emb_summary.get("timed_out", 0)
+                            # drain queued items after submission
+                            to_embed = []
 
                 if chunk_ids:
                     details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
@@ -387,32 +411,34 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                     if max_seen and max_seen > max_ts:
                         max_ts = max_seen
                     logger.debug(
-                        "Export final chunk: media_type=%s chunk_size=%s processed=%s queued_embeddings=%s",
+                        "Export final chunk: media_type=%s chunk_size=%s processed=%s cumulative_queued_embeddings=%s",
                         media_type,
                         len(chunk_ids),
                         processed,
-                        len(queued),
+                        len(to_embed),
                     )
 
-                logger.info("Processed export %s: processed=%s", url, total_processed)
-
-                if total_processed:
-                    _set_last_sync_timestamp(media_type, max_ts)
-
-                if embed_updated and not to_embed:
-                    logger.warning(
-                        "Export processed %s items but no embeddings were queued (media_type=%s). Check embed_updated flag, _fetch_details results, and failure markers.",
-                        total_processed,
-                        media_type,
-                    )
-
-                summary = {"total_processed": total_processed, "embed_queued": len(to_embed), "embed_submitted": 0, "embed_succeeded": 0, "embed_failed": 0, "embed_timed_out": 0}
-                if embed_updated and to_embed:
+                # if any queued remain and exceed threshold, process them now
+                if embed_updated and len(to_embed) >= EMBED_BATCH_SUBMIT_THRESHOLD:
+                    logger.info("Submitting remaining queued embeddings (cumulative_queued=%s)", len(to_embed))
                     emb_summary = _submit_embedding_tasks(to_embed)
-                    summary["embed_submitted"] = emb_summary.get("submitted", 0)
-                    summary["embed_succeeded"] = emb_summary.get("succeeded", 0)
-                    summary["embed_failed"] = emb_summary.get("failed", 0)
-                    summary["embed_timed_out"] = emb_summary.get("timed_out", 0)
+                    embed_submitted += emb_summary.get("submitted", 0)
+                    embed_succeeded += emb_summary.get("succeeded", 0)
+                    embed_failed += emb_summary.get("failed", 0)
+                    embed_timed_out += emb_summary.get("timed_out", 0)
+                    to_embed = []
+
+                logger.info("Processed export %s: processed=%s cumulative_queued_embeddings=%s", url, total_processed, len(to_embed))
+
+                # final submission for any remaining queued embeddings
+                summary = {"total_processed": total_processed, "embed_queued": len(to_embed), "embed_submitted": embed_submitted, "embed_succeeded": embed_succeeded, "embed_failed": embed_failed, "embed_timed_out": embed_timed_out}
+                if embed_updated and to_embed:
+                    # process remaining queued items
+                    emb_summary = _submit_embedding_tasks(to_embed)
+                    summary["embed_submitted"] += emb_summary.get("submitted", 0)
+                    summary["embed_succeeded"] += emb_summary.get("succeeded", 0)
+                    summary["embed_failed"] += emb_summary.get("failed", 0)
+                    summary["embed_timed_out"] += emb_summary.get("timed_out", 0)
 
                 stream_success = True
                 return summary
@@ -456,6 +482,15 @@ def _process_details_batch(details: list[dict], media_type: str, embed_updated: 
             logger.warning("Skipping detail without id (media_type=%s) - malformed TMDB response: %s", media_type, det)
             continue
 
+        # fetch existing doc (if any) BEFORE overwriting, so we can decide whether an embedding is needed
+        existing_doc = None
+        try:
+            existing_doc = tmdb_metadata_collection.find_one(
+                {"id": tid, "media_type": media_type}, {"_id": 0, "embedding_meta": 1, "embedding": 1}
+            )
+        except Exception:
+            existing_doc = None
+
         try:
             tmdb_metadata_collection.update_one(
                 {"id": tid, "media_type": media_type},
@@ -484,13 +519,37 @@ def _process_details_batch(details: list[dict], media_type: str, embed_updated: 
 
         if embed_updated:
             try:
-                queued_item = dict(det, media_type=media_type)
-                queued_items.append(queued_item)
-                # info-level on first queued item (visible in normal logs)
-                if len(queued_items) == 1:
-                    logger.info("Queued first embedding item in batch for media_type=%s (id=%s)", media_type, queued_item.get("id"))
+                # determine if embedding is needed:
+                needs_embedding = False
+                # if there is an existing doc with embedding_meta, and model matches, skip
+                try:
+                    if existing_doc:
+                        emb = existing_doc.get("embedding")
+                        emb_meta = existing_doc.get("embedding_meta") or {}
+                        emb_model = emb_meta.get("embedding_model")
+                        if not emb or not emb_meta:
+                            needs_embedding = True
+                        elif emb_model != EMBED_MODEL_NAME:
+                            needs_embedding = True
+                        else:
+                            needs_embedding = False
+                    else:
+                        # no existing doc -> if incoming payload already has embedding (unlikely) skip, otherwise embed
+                        if not det.get("embedding"):
+                            needs_embedding = True
+                except Exception:
+                    needs_embedding = True
+
+                if needs_embedding:
+                    queued_item = dict(det, media_type=media_type)
+                    queued_items.append(queued_item)
+                    # info-level on first queued item (visible in normal logs)
+                    if len(queued_items) == 1:
+                        logger.info("Queued first embedding item in batch for media_type=%s (id=%s)", media_type, queued_item.get("id"))
+                    else:
+                        logger.debug("Queued embedding for %s (media_type=%s). batch_queued=%s", queued_item.get("id"), media_type, len(queued_items))
                 else:
-                    logger.debug("Queued embedding for %s (media_type=%s). batch_queued=%s", queued_item.get("id"), media_type, len(queued_items))
+                    logger.debug("Skipping embedding for %s (media_type=%s) - embedding present and up-to-date", tid, media_type)
             except Exception as e:
                 logger.warning("Failed to prepare embedding for %s: %s", det.get("id"), repr(e), exc_info=True)
 
@@ -498,64 +557,62 @@ def _process_details_batch(details: list[dict], media_type: str, embed_updated: 
 
 
 def _submit_embedding_tasks(to_embed: list) -> dict:
-    """Submit embedding tasks using a thread pool and return a summary dict with
-    keys: submitted, succeeded, failed, timed_out.
+    """Process embeddings in batches using the embeddings module's _process_batch.
+    Returns a summary dict with keys: submitted, succeeded, failed, timed_out.
+    This function validates results by checking the DB for written embeddings after each batch.
     """
     summary = {"submitted": 0, "succeeded": 0, "failed": 0, "timed_out": 0}
     if not to_embed:
         return summary
 
+    total = len(to_embed)
+    logger.info("Starting embedding processing for %s items (batch_size=%s)", total, EMBED_BATCH_SIZE)
+
     try:
-        futures = []
-        future_to_id = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            for item in to_embed:
-                try:
-                    fut = executor.submit(embed_item_and_store, item)
-                    futures.append(fut)
-                    future_to_id[fut] = item.get("id")
-                except Exception as e:
-                    logger.warning(
-                        "Failed to submit embedding job for %s: %s",
-                        item.get("id"),
-                        repr(e),
-                        exc_info=True,
-                    )
-        summary["submitted"] = len(futures)
-
-        total_timeout = min(30 * max(1, len(futures)), 600)
-        done, not_done = concurrent.futures.wait(
-            futures, timeout=total_timeout, return_when=concurrent.futures.ALL_COMPLETED
-        )
-
-        for f in done:
-            item_id = future_to_id.get(f)
+        for idx in range(0, total, EMBED_BATCH_SIZE):
+            batch = to_embed[idx : idx + EMBED_BATCH_SIZE]
+            batch_ids = [int(item.get("id")) for item in batch if item.get("id")]
+            submitted = len(batch)
             try:
-                f.result()
-                summary["succeeded"] += 1
-            except Exception as e:
-                summary["failed"] += 1
-                logger.warning(
-                    "Embedding job failed for %s: %s", item_id, repr(e), exc_info=True
-                )
+                _process_batch(batch)
+                # verify how many docs now have embeddings written
+                if batch_ids:
+                    try:
+                        written = tmdb_metadata_collection.count_documents(
+                            {"id": {"$in": batch_ids}, "embedding": {"$exists": True}}
+                        )
+                    except Exception:
+                        written = 0
+                else:
+                    written = submitted
 
-        for f in not_done:
-            item_id = future_to_id.get(f)
-            try:
-                canceled = f.cancel()
-                logger.warning(
-                    "Embedding task for %s did not complete in time (canceled=%s)",
-                    item_id,
-                    canceled,
+                succeeded = int(written)
+                failed = submitted - succeeded
+                summary["submitted"] += submitted
+                summary["succeeded"] += succeeded
+                summary["failed"] += failed
+
+                logger.info(
+                    "Embedding batch processed: batch_index=%s batch_size=%s cumulative_remaining=%s submitted=%s succeeded=%s failed=%s",
+                    idx // EMBED_BATCH_SIZE,
+                    submitted,
+                    max(0, total - (idx + submitted)),
+                    submitted,
+                    succeeded,
+                    failed,
                 )
             except Exception as e:
+                # mark all in this batch as failed
+                summary["submitted"] += submitted
+                summary["failed"] += submitted
                 logger.warning(
-                    "Failed to cancel embedding task for %s: %s", item_id, repr(e), exc_info=True
+                    "Embedding batch failed for ids=%s: %s",
+                    batch_ids[:10],
+                    repr(e),
+                    exc_info=True,
                 )
-            summary["timed_out"] += 1
-
     except Exception as e:
-        logger.warning("Embedding step failed: %s", repr(e), exc_info=True)
+        logger.warning("Embedding processing aborted: %s", repr(e), exc_info=True)
 
     return summary
 
