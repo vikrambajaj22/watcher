@@ -16,8 +16,8 @@ fi
 cleanup() {
     echo ""
     echo "🛑 Shutting down..."
-    kill $BACKEND_PID 2>/dev/null
-    kill $FRONTEND_PID 2>/dev/null
+    kill -9 $BACKEND_PID 2>/dev/null
+    kill -9 $FRONTEND_PID 2>/dev/null
     exit 0
 }
 
@@ -26,6 +26,8 @@ trap cleanup SIGINT SIGTERM
 
 # Start the FastAPI backend
 echo "🚀 Starting FastAPI backend on http://localhost:8080..."
+# kill any existing processes on the same port 8080
+kill -9 $(lsof -t -i:8080)
 uvicorn app.main:app --reload --port 8080 > backend.log 2>&1 &
 BACKEND_PID=$!
 

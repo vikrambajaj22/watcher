@@ -471,12 +471,48 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
         def _run_tmdb_job(jid: str, mtype: str, full: bool, embed_u: bool, force: bool):
             key = f"tmdb_sync_job:{jid}"
             try:
+                # check if job was canceled before the worker started; if so, honor it and skip running
+                existing = sync_meta_collection.find_one({"_id": key})
+                if existing and (existing.get("cancel") or existing.get("status") == "canceled"):
+                    # ensure canceled state persisted with finished_at
+                    try:
+                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "canceled", "finished_at": int(_time.time())}})
+                    except Exception:
+                        pass
+                    return
+
                 sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "running", "last_update": int(_time.time())}})
                 res = sync_tmdb(mtype, full_sync=full, embed_updated=embed_u, force_refresh=force, job_id=jid)
-                sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}}, upsert=True)
-            except Exception as e:
+                # if the sync reported it was canceled, mark job as canceled; otherwise complete it
                 try:
-                    sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "failed", "finished_at": int(_time.time()), "error": str(e), "trace": _traceback.format_exc()}}, upsert=True)
+                    current = sync_meta_collection.find_one({"_id": key}) or {}
+                    already_canceled = bool(current.get("cancel") or current.get("status") == "canceled")
+                    if already_canceled or (isinstance(res, dict) and res.get("canceled")):
+                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "canceled", "finished_at": int(_time.time()), "result": res}}, upsert=True)
+                    else:
+                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}}, upsert=True)
+                except Exception:
+                    # best-effort final update
+                    try:
+                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}}, upsert=True)
+                    except Exception:
+                        pass
+            except Exception as e:
+                # If job was canceled by user, avoid overwriting canceled status with 'failed'.
+                try:
+                    current = sync_meta_collection.find_one({"_id": key}) or {}
+                    already_canceled = bool(current.get("cancel") or current.get("status") == "canceled")
+                    if already_canceled:
+                        # preserve canceled state and record the error in result/error fields
+                        try:
+                            sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "canceled", "finished_at": int(_time.time()), "error": str(e), "trace": _traceback.format_exc()}}, upsert=True)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "failed", "finished_at": int(_time.time()), "error": str(e), "trace": _traceback.format_exc()}}, upsert=True)
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
@@ -498,7 +534,14 @@ def admin_cancel_tmdb(payload: AdminCancelJobRequest):
         doc = sync_meta_collection.find_one({"_id": key})
         if not doc:
             raise HTTPException(status_code=404, detail="job not found")
-        sync_meta_collection.update_one({"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": int(_time.time())}})
+        now = int(_time.time())
+        # If job hasn't started (pending) mark it canceled immediately
+        status = doc.get("status")
+        if status in (None, "pending", "running"):
+            sync_meta_collection.update_one({"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": now, "status": "canceled", "finished_at": now}}, upsert=True)
+            return AdminAckResponse(status="accepted", message="job canceled")
+        # Otherwise (already completed/failed/canceled), just set the cancel flag for record
+        sync_meta_collection.update_one({"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": now}})
         return AdminAckResponse(status="accepted", message="cancel requested")
     except Exception as e:
         logger.error("admin_cancel_tmdb error: %s", repr(e), exc_info=True)

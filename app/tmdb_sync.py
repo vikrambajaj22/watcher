@@ -939,6 +939,16 @@ def sync_tmdb(media_type: str, full_sync: bool = False, embed_updated: bool = Tr
         page = 1
         to_embed = []
         while True:
+            # cooperative cancel check for incremental sync (before fetching a page)
+            if job_id:
+                try:
+                    key = f"tmdb_sync_job:{job_id}"
+                    jd = sync_meta_collection.find_one({"_id": key}, {"_id": 0, "cancel": 1})
+                    if jd and jd.get("cancel"):
+                        logger.info("TMDB incremental sync canceled by user/job (job_id=%s)", job_id)
+                        return {"canceled": True, "total_processed": 0, "embed_queued": 0}
+                except Exception:
+                    pass
             changes = _fetch_changes(media_type, start_time, page)
             if not changes.get("results"):
                 logger.info("No more changes found for %s", media_type)
@@ -988,6 +998,16 @@ def sync_tmdb_changes(media_type: str, window_seconds: int = 0, embed_updated: b
     to_embed = []
     while True:
         try:
+            # cooperative cancel check inside sync_tmdb_changes
+            if job_id:
+                try:
+                    key = f"tmdb_sync_job:{job_id}"
+                    jd = sync_meta_collection.find_one({"_id": key}, {"_id": 0, "cancel": 1})
+                    if jd and jd.get("cancel"):
+                        logger.info("TMDB sync_changes canceled by user/job (job_id=%s)", job_id)
+                        return {"processed": 0, "embed_submitted": 0, "embed_succeeded": 0, "embed_failed": 0, "last_seen": 0, "canceled": True}
+                except Exception:
+                    pass
             changes = _fetch_changes(media_type, start_time, page)
         except Exception as e:
             logger.warning("Failed to fetch changes for %s page %s: %s", media_type, page, repr(e))

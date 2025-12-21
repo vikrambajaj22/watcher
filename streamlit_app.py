@@ -1405,6 +1405,11 @@ def show_admin_page():
                             sc, rr = raw_api_post('/admin/sync/tmdb/cancel', {'job_id': jid})
                             if sc in (200,202):
                                 st.success('Cancel requested')
+                                try:
+                                    clear_caches()
+                                except Exception:
+                                    pass
+                                _safe_rerun()
                             else:
                                 st.error(f'Cancel request returned: {sc} - {rr}')
                         else:
@@ -1477,6 +1482,11 @@ def show_admin_page():
                     sc, rr = raw_api_post("/admin/sync/tmdb/cancel", {"job_id": tmdb_job_id})
                     if sc in (200,202):
                         st.success("Cancel requested")
+                        try:
+                            clear_caches()
+                        except Exception:
+                            pass
+                        _safe_rerun()
                     else:
                         st.error(f"Cancel request returned: {sc} - {rr}")
 
