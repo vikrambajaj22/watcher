@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Dict, List
 
@@ -170,19 +170,39 @@ def admin_sync(background_tasks: BackgroundTasks):
 
 
 @router.get("/admin/sync/job/{job_id}", response_model=JobStatusModel)
-def admin_sync_job_status(job_id: str):
-    """Return job status document for the given job_id (from sync_meta_collection)."""
+def admin_sync_job_status(job_id: str, job_type: str = Query(..., description="Job type: 'trakt' or 'tmdb'")):
+    """Return job status document for the given job_id (from sync_meta_collection).
+
+    Requires explicit query param `job_type` which must be either 'trakt' or 'tmdb'.
+    If `job_id` is already a full key (e.g. 'tmdb_sync_job:<id>') it must match `job_type`.
+    """
     try:
         from app.db import sync_meta_collection
 
-        key = f"trakt_sync_job:{job_id}"
+        t = (job_type or "").lower()
+        if t not in ("trakt", "tmdb"):
+            raise HTTPException(status_code=400, detail="job_type must be 'trakt' or 'tmdb'")
+
+        # if caller passed a fully-prefixed key, ensure it matches the requested type.
+        if job_id.startswith("trakt_sync_job:") or job_id.startswith("tmdb_sync_job:"):
+            # validate prefix matches type
+            expected_prefix = f"{t}_sync_job:"
+            if not job_id.startswith(expected_prefix):
+                raise HTTPException(status_code=400, detail=f"job_id prefix does not match job_type '{t}'")
+            key = job_id
+        else:
+            key = f"{t}_sync_job:{job_id}"
+
         doc = sync_meta_collection.find_one({"_id": key}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="job not found")
+
         try:
             return JobStatusModel.model_validate(doc)
         except Exception:
             return JobStatusModel(**doc)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("admin_sync_job_status error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

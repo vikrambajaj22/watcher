@@ -216,7 +216,7 @@ def start_trakt_sync_shared(admin=False) -> Optional[Dict]:
         return {"error": str(e)}
 
 
-def poll_job_status(job_id: str, max_wait: int = 60, interval: int = 2) -> Optional[dict]:
+def poll_job_status(job_id: str, job_type: str = "trakt", max_wait: int = 60, interval: int = 2) -> Optional[dict]:
     """Poll /admin/sync/job/{job_id} until finished or timeout.
 
     Returns the job JSON when finished, or None if not finished within max_wait or request fails.
@@ -225,7 +225,8 @@ def poll_job_status(job_id: str, max_wait: int = 60, interval: int = 2) -> Optio
     waited = 0
     while True:
         try:
-            url = f"{API_BASE_URL}/admin/sync/job/{job_id}"
+            # include explicit job_type query param required by backend
+            url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type={job_type}"
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 js = r.json()
@@ -570,7 +571,7 @@ def show_history_page():
         # quick probe: if we've already polled once but flags still set, do a single status check and clear if finished
         if job_id and polled:
             try:
-                url = f"{API_BASE_URL}/admin/sync/job/{job_id}"
+                url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
                 r = requests.get(url, timeout=3)
                 if r.status_code == 200:
                     js = r.json()
@@ -604,7 +605,7 @@ def show_history_page():
                 max_wait = 60
                 while waited < max_wait:
                     try:
-                        url = f"{API_BASE_URL}/admin/sync/job/{job_id}"
+                        url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
                         r = requests.get(url, timeout=5)
                         if r.status_code == 200:
                             js = r.json()
@@ -1325,7 +1326,7 @@ def show_admin_page():
             col_a, col_b = st.columns(2)
             with col_a:
                 if st.button("Check job status now"):
-                    js = poll_job_status(job_id, max_wait=0)
+                    js = poll_job_status(job_id, job_type='trakt', max_wait=0)
                     if js:
                         st.json(js)
                         if js.get('status') in ('completed', 'failed'):
@@ -1339,7 +1340,7 @@ def show_admin_page():
             with col_b:
                 if st.button("Poll until complete (60s)"):
                     with st.spinner("Polling job status until completion..."):
-                        js = poll_job_status(job_id, max_wait=60, interval=2)
+                        js = poll_job_status(job_id, job_type='trakt', max_wait=60, interval=2)
                         if js:
                             st.success(f"Job finished: {js.get('status')}")
                             clear_caches()
@@ -1382,7 +1383,7 @@ def show_admin_page():
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("Refresh TMDB Job Status"):
-                    js = poll_job_status(tmdb_job_id, max_wait=0)
+                    js = poll_job_status(tmdb_job_id, job_type='tmdb', max_wait=0)
                     if js:
                         st.json(js)
                         if js.get('status') in ('completed', 'failed', 'canceled'):
@@ -1398,7 +1399,7 @@ def show_admin_page():
             with c2:
                 if st.button("Poll until complete (300s)"):
                     with st.spinner("Polling TMDB job until completion..."):
-                        js = poll_job_status(tmdb_job_id, max_wait=300, interval=5)
+                        js = poll_job_status(tmdb_job_id, job_type='tmdb', max_wait=300, interval=5)
                         if js:
                             st.success(f"Job finished: {js.get('status')}")
                             clear_caches()
@@ -1421,7 +1422,7 @@ def show_admin_page():
 
             # show lightweight live snapshot of the job (non-blocking)
             try:
-                url = f"{API_BASE_URL}/admin/sync/job/{tmdb_job_id}"
+                url = f"{API_BASE_URL}/admin/sync/job/{tmdb_job_id}?job_type=tmdb"
                 r = requests.get(url, timeout=3)
                 if r.status_code == 200:
                     js = r.json()
