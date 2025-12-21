@@ -367,6 +367,8 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                 gz = gzip.GzipFile(fileobj=resp.raw)
                 # iterate over gzip bytes lines and decode each line
                 chunk_ids: list[int] = []
+                # track how many IDs we requested from TMDB for the current chunk (initialized to 0)
+                requested_fetch_count = 0
                 # counters for incremental embedding submissions during export
                 embed_submitted = 0
                 embed_succeeded = 0
@@ -423,6 +425,9 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                                         queued_from_db.append(d)
                                 except Exception:
                                     queued_from_db = []
+
+                        # how many IDs did we actually request from TMDB for this chunk
+                        requested_fetch_count = len(to_fetch) if ('to_fetch' in locals() and to_fetch is not None) else 0
 
                         details = []
                         if to_fetch:
@@ -548,6 +553,9 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                                     queued_from_db.append(d)
                             except Exception:
                                 queued_from_db = []
+                    # how many IDs did we actually request from TMDB for this final chunk
+                    requested_fetch_count = len(to_fetch) if ('to_fetch' in locals() and to_fetch is not None) else 0
+
                     details = []
                     if to_fetch:
                         details = _fetch_details(media_type, to_fetch, skip_failed_filter=True)
