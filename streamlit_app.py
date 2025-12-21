@@ -16,6 +16,7 @@ import time
 from typing import Optional, Dict, Any
 
 from dateutil import parser
+from app.schemas.api import HistoryItem, TMDBMetadata
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 TOKEN_FILE = ".env.trakt_token"
@@ -101,7 +102,23 @@ def cached_api_get(endpoint: str) -> Optional[Dict]:
     try:
         response = requests.get(url)
         if response.status_code == 200:
-            return response.json()
+            js = response.json()
+            # validate responses for typed endpoints
+            try:
+                if endpoint.startswith('/history'):
+                    # expect a list of history items
+                    if isinstance(js, list):
+                        validated = [HistoryItem.model_validate(item).model_dump() for item in js]
+                        return validated
+                if endpoint.startswith('/admin/tmdb/') or endpoint.startswith('/admin/tmdb'):
+                    # admin tmdb returns a list of metadata docs
+                    if isinstance(js, list):
+                        validated = [TMDBMetadata.model_validate(item).model_dump() for item in js]
+                        return validated
+            except Exception:
+                # validation failure shouldn't block UI; fall back to raw JSON
+                return js
+            return js
         return None
     except Exception:
         return None
@@ -1333,6 +1350,97 @@ def show_admin_page():
                             st.json(js)
                         else:
                             st.warning("Polling ended without completion. Check later or view job status.")
+
+        st.markdown("---")
+        st.subheader("🔄 TMDB Sync")
+        st.write("Trigger TMDB metadata sync (export/discover) and monitor its job status.")
+
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            tmdb_media_type = st.selectbox("Media Type", ["movie", "tv"], key="tmdb_sync_media")
+            full_sync = st.checkbox("Full Sync (export/discover)", value=False, key="tmdb_full_sync")
+            force_refresh = st.checkbox("Force Refresh Metadata (re-fetch existing)", value=False, key="tmdb_force_refresh")
+            embed_updated = st.checkbox("Compute embeddings during sync", value=True, key="tmdb_embed_updated")
+
+        with col_b:
+            if st.button("Start TMDB Sync", type="primary"):
+                with st.spinner("Starting TMDB sync..."):
+                    status_code, resp = raw_api_post("/admin/sync/tmdb", {"media_type": tmdb_media_type, "full_sync": full_sync, "embed_updated": embed_updated, "force_refresh": force_refresh})
+                    if status_code in (200, 202) and isinstance(resp, dict) and resp.get("job_id"):
+                        jid = resp.get("job_id")
+                        st.session_state['tmdb_last_sync_job_id'] = jid
+                        st.session_state['tmdb_sync_in_progress'] = True
+                        st.session_state['tmdb_last_sync_polled'] = False
+                        st.success(f"TMDB sync started (job_id={jid})")
+                    else:
+                        st.error(f"Failed to start TMDB sync: {resp}")
+
+        # show currently tracked TMDB job and controls
+        tmdb_job_id = st.session_state.get('tmdb_last_sync_job_id')
+        if tmdb_job_id:
+            st.markdown(f"**TMDB job id:** {tmdb_job_id}")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if st.button("Refresh TMDB Job Status"):
+                    js = poll_job_status(tmdb_job_id, max_wait=0)
+                    if js:
+                        st.json(js)
+                        if js.get('status') in ('completed', 'failed', 'canceled'):
+                            clear_caches()
+                            for k in ['tmdb_last_sync_job_id', 'tmdb_sync_in_progress', 'tmdb_last_sync_polled']:
+                                if k in st.session_state:
+                                    try:
+                                        del st.session_state[k]
+                                    except Exception:
+                                        pass
+                    else:
+                        st.warning("Job status not available (still running or not found)")
+            with c2:
+                if st.button("Poll until complete (300s)"):
+                    with st.spinner("Polling TMDB job until completion..."):
+                        js = poll_job_status(tmdb_job_id, max_wait=300, interval=5)
+                        if js:
+                            st.success(f"Job finished: {js.get('status')}")
+                            clear_caches()
+                            for k in ['tmdb_last_sync_job_id', 'tmdb_sync_in_progress', 'tmdb_last_sync_polled']:
+                                if k in st.session_state:
+                                    try:
+                                        del st.session_state[k]
+                                    except Exception:
+                                        pass
+                            st.json(js)
+                        else:
+                            st.warning("Polling ended without completion. Check job status later.")
+            with c3:
+                if st.button("Cancel TMDB Job"):
+                    sc, rr = raw_api_post("/admin/sync/tmdb/cancel", {"job_id": tmdb_job_id})
+                    if sc in (200,202):
+                        st.success("Cancel requested")
+                    else:
+                        st.error(f"Cancel request returned: {sc} - {rr}")
+
+            # show lightweight live snapshot of the job (non-blocking)
+            try:
+                url = f"{API_BASE_URL}/admin/sync/job/{tmdb_job_id}"
+                r = requests.get(url, timeout=3)
+                if r.status_code == 200:
+                    js = r.json()
+                    st.write(f"Status: {js.get('status')}")
+                    st.write(f"Processed: {js.get('processed', 0)}")
+                    st.write(f"Embeddings queued: {js.get('embed_queued', 0)}")
+                    # show a simple progress indicator when a total isn't known
+                    try:
+                        if isinstance(js.get('processed'), int):
+                            # show a small determinate bar modulo an arbitrary cap to indicate activity
+                            cap = max(1000, js.get('processed', 0))
+                            val = min(1.0, js.get('processed', 0) / cap)
+                            st.progress(val)
+                    except Exception:
+                        pass
+                else:
+                    st.info("Job status not available")
+            except Exception:
+                pass
 
         st.markdown("---")
         if st.button("Clear History Cache"):

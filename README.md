@@ -132,6 +132,8 @@ How the sync works:
    - Optionally queue embeddings for each item (recommended to disable for the initial bulk ingest).
    - Set the `tmdb_<media_type>_last_sync` meta to the max `updated_at` observed so later runs can use `/changes`.
 2. If no suitable export is found within the lookback window, fall back to the `/discover/{movie|tv}` path (with a safety cap on pages to avoid TMDB page errors).
+   - Note: `/discover` is limited by TMDB and may not return the full universe of IDs; TMDB's API allows up to 500 pages — the app caps discover pages by default to 500 pages. For 100% coverage prefer the export files described above.
+   - You can override the cap with the environment variable `TMDB_DISCOVER_MAX_PAGES` (e.g., export TMDB_DISCOVER_MAX_PAGES=500) but this may still be limited by TMDB.
 3. On subsequent runs, use `/movie/changes` and `/tv/changes` to fetch incremental updates only.
 
 Operational notes & recommendations
@@ -139,28 +141,36 @@ Operational notes & recommendations
 - Exports avoid the discover 500-page limit, but large runs may still hit TMDB rate limits when fetching per-ID details — consider adding rate-limiting/backoff.
 - The export streaming handles gz files and processes IDs in batches to bound memory usage.
 
-How to force a re-run of the initial ingest
-- Delete the stored last-sync marker(s) and re-run the sync. Example (from repo root):
+Extra tips
+- To force use of TMDB exports (recommended for full coverage) make sure your environment can reach `http://files.tmdb.org/p/exports/` and increase the `days_back_limit` if the latest export isn't available for any reason.
+- To control discover behavior (if you must use discover), set `TMDB_DISCOVER_MAX_PAGES` in your environment to the number of pages to attempt (default 500). Example:
 
 ```bash
-from app.db import sync_meta_collection
-# delete movie and tv last sync markers
-sync_meta_collection.delete_one({"_id":"tmdb_movie_last_sync"})
-sync_meta_collection.delete_one({"_id":"tmdb_tv_last_sync"})
-print('deleted last_sync markers')
+export TMDB_DISCOVER_MAX_PAGES=500
 ```
 
-Then trigger an export-preferred initial metadata-only sync (no embeddings):
+Then run your sync (metadata-only recommended for initial run):
 
 ```bash
-from app.tmdb_sync import sync_tmdb_changes
+python - <<'PY'
+from app.tmdb_sync import sync_tmdb
+sync_tmdb('movie', full_sync=True, embed_updated=False)
+PY
 ```
 
-Or run the sync worker script (with embedding creation):
+Force-refresh metadata
+----------------------
+If you want to re-fetch metadata from TMDB even for IDs already present in your database (for example if you suspect data drift or want to refresh all fields), use the `force_refresh` flag:
 
 ```bash
-python sync_worker.py
-````
+python - <<'PY'
+from app.tmdb_sync import sync_tmdb
+# full sync, re-fetch metadata for all IDs, but skip embedding during the initial pass
+sync_tmdb('movie', full_sync=True, embed_updated=False, force_refresh=True)
+PY
+```
+
+After a force-refresh you can run embedding passes separately (recommended) so your system doesn't hit TMDB and your embedding provider simultaneously.
 
 **Location**: the sync logic is implemented in `app/tmdb_sync.py` (see `_sync_from_export`, `_fetch_all_ids_by_discover`, and `sync_tmdb_changes`).
 
@@ -175,26 +185,22 @@ Notes for `POST /mcp/knn`:
 - `media_type` is a required field in the request body and must be one of: `movie`, `tv`, or `all`.
   - When providing a specific `tmdb_id`, `media_type` must be either `movie` or `tv` (not `all`) because a TMDB numeric id can correspond to distinct movie and TV records in the database; the API will validate and reject `tmdb_id`+`media_type: all` requests.
 
-Example requests:
+Example requests
 
 By TMDB id (required to specify `movie` or `tv`):
-```json
-POST /mcp/knn
-{
-  "tmdb_id": 60803,
-  "k": 10,
-  "media_type": "movie"
-}
+
+```bash
+curl -X POST "${API_BASE_URL:-http://localhost:8080}/mcp/knn" \
+  -H "Content-Type: application/json" \
+  -d '{"tmdb_id": 60803, "k": 10, "results_media_type": "movie", "input_media_type": "movie"}'
 ```
 
 By free-text (you may use `all` to search across both movies and TV):
-```json
-POST /mcp/knn
-{
-  "text": "mind-bending thriller with a twist ending",
-  "k": 10,
-  "media_type": "all"
-}
+
+```bash
+curl -X POST "${API_BASE_URL:-http://localhost:8080}/mcp/knn" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "mind-bending thriller with a twist ending", "k": 10, "results_media_type": "all"}'
 ```
 
 ### Authentication

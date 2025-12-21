@@ -207,19 +207,17 @@ def _fetch_all_ids_by_discover(media_type: str) -> list[int]:
         if item.get("id"):
             ids.append(item.get("id"))
 
-    # TMDB limits page parameter to [1..500]. Cap pages to avoid Invalid page errors.
+    # TMDB limits the discover page parameter; cap to a reasonable default
     try:
-        total_pages = int(total_pages)
+        # TMDB allows up to 500 pages for discover; default to 500 unless overridden.
+        max_pages_allowed = int(os.getenv("TMDB_DISCOVER_MAX_PAGES", "500"))
     except Exception:
-        total_pages = 1
-
-    max_pages_allowed = 500
+        max_pages_allowed = 500
     if total_pages > max_pages_allowed:
         logger.warning(
-            "TMDB discover reports %s pages for %s but API max is %s; capping to %s",
+            "TMDB discover reports %s pages for %s but capping to %s (set TMDB_DISCOVER_MAX_PAGES env to change)",
             total_pages,
             media_type,
-            max_pages_allowed,
             max_pages_allowed,
         )
     capped_pages = min(total_pages, max_pages_allowed)
@@ -256,7 +254,7 @@ def _fetch_all_ids_by_discover(media_type: str) -> list[int]:
     return ids
 
 
-def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: bool = True) -> Optional[dict]:
+def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: bool = True, force_refresh: bool = False, job_id: Optional[str] = None) -> Optional[dict]:
     """Stream TMDB daily export files and process IDs in chunks.
 
     Tries today's export and falls back up to `days_back_limit` days. Returns
@@ -269,7 +267,7 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
 
     total_processed = 0
     max_ts = int(time.time())
-    to_embed: list[dict] = []
+    to_embed = []
 
     # create a requests Session with retry/backoff for transient network errors
     def _session_with_retries(retries: int = 3, backoff: float = 0.5) -> requests.Session:
@@ -351,10 +349,52 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                     except Exception:
                         continue
 
+                    # cooperative cancel check (job document may have a 'cancel' flag)
+                    if job_id:
+                        try:
+                            job_doc = sync_meta_collection.find_one({"_id": f"tmdb_sync_job:{job_id}"}, {"_id": 0, "cancel": 1})
+                            if job_doc and job_doc.get("cancel"):
+                                logger.info("TMDB export sync canceled by user/job (job_id=%s)", job_id)
+                                return {"canceled": True, "total_processed": total_processed, "embed_queued": len(to_embed)}
+                        except Exception:
+                            pass
+
                     if len(chunk_ids) >= CHUNK_SIZE:
-                        details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
-                        logger.debug("Export fetch details: media_type=%s requested_ids=%s returned_details=%s", media_type, len(chunk_ids), len(details))
-                        if not details:
+                        # compute to_fetch based on force_refresh flag
+                        if force_refresh:
+                            # always fetch from TMDB when forcing refresh
+                            to_fetch = list(chunk_ids)
+                            queued_from_db = []
+                        else:
+                            # Before calling TMDB, skip IDs already present in our metadata collection to make the sync restart-safe.
+                            # For existing docs missing embeddings, enqueue the stored doc for embedding without re-fetching from TMDB.
+                            try:
+                                existing_cursor = list(tmdb_metadata_collection.find({"id": {"$in": chunk_ids}, "media_type": media_type}, {"_id": 0, "id": 1, "embedding": 1, "embedding_meta": 1}))
+                                existing_ids = {int(d.get("id")) for d in existing_cursor if d.get("id")}
+                            except Exception:
+                                existing_ids = set()
+
+                            to_fetch = [tid for tid in chunk_ids if int(tid) not in existing_ids]
+                            queued_from_db = []
+                            if embed_updated and existing_ids:
+                                try:
+                                    # fetch full docs for embedding candidates (existing docs lacking current embedding model)
+                                    need_emb_cursor = tmdb_metadata_collection.find({"id": {"$in": list(existing_ids)}, "media_type": media_type, "$or": [{"embedding": {"$exists": False}}, {"embedding_meta.embedding_model": {"$ne": EMBED_MODEL_NAME}}]}, {"_id": 0})
+                                    for d in need_emb_cursor:
+                                        queued_from_db.append(d)
+                                except Exception:
+                                    queued_from_db = []
+
+                        details = []
+                        if to_fetch:
+                            details = _fetch_details(media_type, to_fetch, skip_failed_filter=True)
+                        # merge details from TMDB and queued DB docs (only when not force_refresh)
+                        if queued_from_db:
+                            details.extend(queued_from_db)
+
+                        if details:
+                            logger.debug("Export fetch details: media_type=%s requested_ids=%s returned_details=%s", media_type, len(chunk_ids), len(details))
+                        else:
                             logger.warning(
                                 "No details returned for export chunk (media_type=%s requested_ids=%s). These IDs may be marked failed or TMDB returned no data.",
                                 media_type,
@@ -401,9 +441,38 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                             embed_timed_out += emb_summary.get("timed_out", 0)
                             # drain queued items after submission
                             to_embed = []
+                        # update job progress doc
+                        if job_id:
+                            try:
+                                sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}}, upsert=True)
+                            except Exception:
+                                pass
 
                 if chunk_ids:
-                    details = _fetch_details(media_type, chunk_ids, skip_failed_filter=True)
+                    # final chunk: same logic but respect force_refresh
+                    if force_refresh:
+                        to_fetch = list(chunk_ids)
+                        queued_from_db = []
+                    else:
+                        try:
+                            existing_cursor = list(tmdb_metadata_collection.find({"id": {"$in": chunk_ids}, "media_type": media_type}, {"_id": 0, "id": 1, "embedding": 1, "embedding_meta": 1}))
+                            existing_ids = {int(d.get("id")) for d in existing_cursor if d.get("id")}
+                        except Exception:
+                            existing_ids = set()
+                        to_fetch = [tid for tid in chunk_ids if int(tid) not in existing_ids]
+                        queued_from_db = []
+                        if embed_updated and existing_ids:
+                            try:
+                                need_emb_cursor = tmdb_metadata_collection.find({"id": {"$in": list(existing_ids)}, "media_type": media_type, "$or": [{"embedding": {"$exists": False}}, {"embedding_meta.embedding_model": {"$ne": EMBED_MODEL_NAME}}]}, {"_id": 0})
+                                for d in need_emb_cursor:
+                                    queued_from_db.append(d)
+                            except Exception:
+                                queued_from_db = []
+                    details = []
+                    if to_fetch:
+                        details = _fetch_details(media_type, to_fetch, skip_failed_filter=True)
+                    if queued_from_db:
+                        details.extend(queued_from_db)
                     processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
                     total_processed += processed
                     if queued:
@@ -427,6 +496,12 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                     embed_failed += emb_summary.get("failed", 0)
                     embed_timed_out += emb_summary.get("timed_out", 0)
                     to_embed = []
+                # update progress for job after finishing a streamed file
+                if job_id:
+                    try:
+                        sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}}, upsert=True)
+                    except Exception:
+                        pass
 
                 logger.info("Processed export %s: processed=%s cumulative_queued_embeddings=%s", url, total_processed, len(to_embed))
 
@@ -439,9 +514,11 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                     summary["embed_succeeded"] += emb_summary.get("succeeded", 0)
                     summary["embed_failed"] += emb_summary.get("failed", 0)
                     summary["embed_timed_out"] += emb_summary.get("timed_out", 0)
-
-                stream_success = True
-                return summary
+                    if job_id:
+                        try:
+                            sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": 0}}, upsert=True)
+                        except Exception:
+                            pass
 
             except Exception as e:
                 logger.warning("Stream attempt %s/%s failed for %s: %s", stream_attempt, STREAM_RETRIES, url, repr(e), exc_info=True)
@@ -574,11 +651,12 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
             batch_ids = [int(item.get("id")) for item in batch if item.get("id")]
             submitted = len(batch)
             try:
+                # process batch (compute embeddings and update DB)
                 _process_batch(batch)
-                # verify how many docs now have embeddings written
+
+                # verify how many docs now have embeddings written (per (id,media_type) pair)
                 succeeded = 0
                 try:
-                    # build a set of (id, media_type) pairs from the batch
                     pairs = []
                     for item in batch:
                         try:
@@ -587,7 +665,7 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
                             continue
                         m = str(item.get("media_type") or "").lower()
                         pairs.append((_id, m))
-                    # for efficiency, group by id and fetch candidates, then verify per-pair
+
                     ids_in_batch = list({p[0] for p in pairs})
                     if ids_in_batch:
                         cursor = tmdb_metadata_collection.find({"id": {"$in": ids_in_batch}, "embedding": {"$exists": True}}, {"_id": 0, "id": 1, "media_type": 1})
@@ -599,12 +677,11 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
                                 continue
                             mtype = str(d.get("media_type") or "").lower()
                             found.add((did, mtype))
-                        # count how many pairs in 'pairs' are present in found
                         for p in pairs:
                             if p in found:
                                 succeeded += 1
                 except Exception:
-                    # fallback: best effort, try id-only count
+                    # fallback: best-effort id-only count
                     try:
                         written = tmdb_metadata_collection.count_documents({"id": {"$in": batch_ids}, "embedding": {"$exists": True}})
                         succeeded = int(written)
@@ -641,273 +718,229 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
     return summary
 
 
-def sync_tmdb_changes(
-    media_type: str = "movie",
-    window_seconds: int = 60 * 60 * 24 * 7,
-    embed_updated: bool = True,
-):
-    """Sync TMDB changes using the /changes endpoint.
+def sync_tmdb(media_type: str, full_sync: bool = False, embed_updated: bool = True, force_refresh: bool = False, job_id: Optional[str] = None):
+    """Main TMDB sync orchestration function.
 
-    - media_type: "movie" or "tv"
-    - window_seconds: how far back to check changes when running an incremental /changes sync
-      (only used when a stored last-sync timestamp exists). Default: 7 days.
-    - embed_updated: if True and embeddings are available, compute embeddings for updated items (background threads)
-
-    If there's no last sync timestamp stored, performs an initial full sync via TMDB exports or the /discover endpoint.
+    For full refresh, syncs all TMDB IDs via discover, then fetches details and exports.
+    For incremental, only fetches from the changes endpoint since the last sync timestamp.
     """
-    assert media_type in ("movie", "tv"), (
-        f"media_type {media_type} not supported for syncing TMDB changes."
-    )
-    start_ts = _get_last_sync_timestamp(media_type)
+    assert media_type in ("movie", "tv")
+    logger.info("Starting TMDB sync: media_type=%s full_sync=%s", media_type, full_sync)
 
-    if not start_ts:
-        logger.info(
-            "No last sync timestamp found; attempting initial full sync via TMDB export for %s",
-            media_type,
-        )
-        export_summary = None
+    start_time = None
+    # shared accumulator for queued embedding tasks across branches
+    to_embed = []
+    # if job_id provided, initialize job document
+    if job_id:
         try:
-            export_summary = _sync_from_export(media_type, days_back_limit=7, embed_updated=embed_updated)
+            sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"status": "pending", "media_type": media_type, "full_sync": full_sync, "force_refresh": force_refresh, "started_at": int(time.time()), "processed": 0, "embed_queued": 0}}, upsert=True)
         except Exception:
-            logger.exception("Export-based initial sync failed; falling back to discover full sync")
+            pass
+
+    if not full_sync:
+        # incremental sync: fetch last sync time
+        try:
+            last_sync_doc = sync_meta_collection.find_one({"_id": f"tmdb_{media_type}_last_sync"})
+            if last_sync_doc:
+                start_time = last_sync_doc.get("last_sync")
+                logger.info("Incremental sync: starting from last sync time = %s", start_time)
+            else:
+                logger.warning("Incremental sync: no last sync record found, falling back to full sync")
+                full_sync = True
+        except Exception as e:
+            logger.warning("Error fetching last sync time: %s", repr(e))
+            full_sync = True
+
+    if full_sync:
+        # accumulator used only for the full-sync discover path (keeps it separate from incremental accumulator)
+        discover_to_embed = []
+        # full sync: prefer TMDB export-based initial sync which provides full ID exports (recommended)
+        logger.info("Full sync requested: attempting export-based full sync first for %s", media_type)
+        try:
+            export_summary = _sync_from_export(media_type, days_back_limit=7, embed_updated=embed_updated, force_refresh=force_refresh, job_id=job_id)
+        except Exception as e:
+            export_summary = None
+            logger.warning("Export-based full sync attempt failed: %s", repr(e))
 
         if export_summary is not None:
+            logger.info("Export-based full sync succeeded for %s: %s", media_type, export_summary)
+            if job_id:
+                try:
+                    sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"status": "completed", "finished_at": int(time.time()), "summary": export_summary}}, upsert=True)
+                except Exception:
+                    pass
             return export_summary
 
-        logger.info("Falling back to discover-based initial sync for %s", media_type)
+        # exports unavailable or failed -> fallback to discover-based fetch
+        logger.warning("TMDB export files not available; falling back to discover. Discover page limits (500) may prevent fetching all IDs.")
         ids = _fetch_all_ids_by_discover(media_type)
-        total_processed = 0
-        max_ts = int(time.time())
-        to_embed: list[dict] = []
+        if not ids:
+            logger.warning("No IDs found in TMDB discover for %s", media_type)
+            return
 
-        # fetch details in chunks and upsert using helper
-        chunks_processed = 0
+        logger.info("Full sync via discover: found %s IDs (discover pages are limited — consider using TMDB export files for full coverage)", len(ids))
+
+        # chunk and process details for these IDs
+        total_processed = 0
         for i in range(0, len(ids), CHUNK_SIZE):
             chunk = ids[i : i + CHUNK_SIZE]
-            details = _fetch_details(media_type, chunk)
+            # if force_refresh, always fetch from TMDB; otherwise restart-safe: skip IDs that exist in DB
+            details = []
+            queued_from_db = []
+            if force_refresh:
+                # fetch all IDs in the chunk from TMDB
+                details = _fetch_details(media_type, chunk)
+            else:
+                try:
+                    existing_cursor = list(tmdb_metadata_collection.find({"id": {"$in": chunk}, "media_type": media_type}, {"_id": 0, "id": 1, "embedding": 1, "embedding_meta": 1}))
+                    existing_ids = {int(d.get("id")) for d in existing_cursor if d.get("id")}
+                except Exception:
+                    existing_ids = set()
+
+                to_fetch = [tid for tid in chunk if int(tid) not in existing_ids]
+                if embed_updated and existing_ids:
+                    try:
+                        need_emb_cursor = tmdb_metadata_collection.find({"id": {"$in": list(existing_ids)}, "media_type": media_type, "$or": [{"embedding": {"$exists": False}}, {"embedding_meta.embedding_model": {"$ne": EMBED_MODEL_NAME}}]}, {"_id": 0})
+                        for d in need_emb_cursor:
+                            queued_from_db.append(d)
+                    except Exception:
+                        queued_from_db = []
+
+                if to_fetch:
+                    details = _fetch_details(media_type, to_fetch)
+                if queued_from_db:
+                    details.extend(queued_from_db)
+
             processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
             total_processed += processed
             if queued:
-                to_embed.extend(queued)
-            chunks_processed += 1
-            if max_seen and max_seen > max_ts:
-                max_ts = max_seen
-            # periodic progress log for initial discover ingest
-            if chunks_processed % CHUNK_LOG_EVERY == 0:
-                logger.info(
-                    "Initial discover progress: media_type=%s chunks_processed=%s total_ids=%s processed_items=%s",
-                    media_type,
-                    chunks_processed,
-                    len(ids),
-                    total_processed,
-                )
-
-        # set last sync to the max observed timestamp (or now)
-        _set_last_sync_timestamp(media_type, max_ts)
-        logger.info(
-            "Initial full discover sync processed %s %s items; set last_sync=%s",
-            total_processed,
-            media_type,
-            max_ts,
-        )
-
-        # process embeddings if requested
-        summary = {
-            "total_processed": total_processed,
-            "embed_queued": len(to_embed),
-            "embed_submitted": 0,
-            "embed_succeeded": 0,
-            "embed_failed": 0,
-            "embed_timed_out": 0,
-        }
-        if embed_updated and to_embed:
-            emb_summary = _submit_embedding_tasks(to_embed)
-            summary["embed_submitted"] = emb_summary.get("submitted", 0)
-            summary["embed_succeeded"] = emb_summary.get("succeeded", 0)
-            summary["embed_failed"] = emb_summary.get("failed", 0)
-            summary["embed_timed_out"] = emb_summary.get("timed_out", 0)
-        return summary
-
-    # at this point we have a stored last-sync timestamp -> run incremental /changes.
-    # use window_seconds as a safety buffer: start the /changes query from (last_sync - window_seconds)
-    try:
-        changes_start_ts = int(start_ts) - int(window_seconds)
-    except Exception:
-        changes_start_ts = int(start_ts)
-    page = 1
-    total_processed = 0
-    max_ts = start_ts
-    to_embed = []
-
-    while True:
-        # use the changes_start_ts (last_sync - window_seconds) to ensure we pick up any lagging updates
-        data = _fetch_changes(media_type, start_time=changes_start_ts, page=page)
-        if not data or not data.get("results"):
-            break
-        ids = [item.get("id") for item in data["results"] if item.get("id")]
-        # log page-level progress for /changes
-        try:
-            logger.info(
-                "Changes page: media_type=%s page=%s/%s ids_on_page=%s",
-                media_type,
-                data.get("page"),
-                data.get("total_pages"),
-                len(ids),
-            )
-        except Exception:
-            logger.info("Changes page: media_type=%s page=%s ids_on_page=%s", media_type, page, len(ids))
-        # fetch details in chunks
-        chunks_processed = 0
-        for i in range(0, len(ids), CHUNK_SIZE):
-            chunk = ids[i : i + CHUNK_SIZE]
-            details = _fetch_details(media_type, chunk)
-            # filter out unchanged items first
-            details_to_process = []
-            for det in details:
-                if not det:
-                    continue
+                discover_to_embed.extend(queued)
+            # update job progress periodically
+            if job_id:
                 try:
-                    # prefer exact match on (id, media_type) to avoid cross-media collisions
-                    existing = tmdb_metadata_collection.find_one(
-                        {"id": det.get("id"), "media_type": media_type}, {"_id": 0, "updated_at": 1}
-                    )
+                    sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}}, upsert=True)
                 except Exception:
-                    existing = None
+                    pass
 
-                skip_due_to_unchanged = False
-                det_updated_at = det.get("updated_at")
-                if existing and existing.get("updated_at") and det_updated_at:
-                    try:
-                        existing_ts = int(
-                            _dateutil_parser.isoparse(existing.get("updated_at")).timestamp()
-                        )
-                        det_ts = int(_dateutil_parser.isoparse(det_updated_at).timestamp())
-                        if existing_ts == det_ts:
-                            skip_due_to_unchanged = True
-                    except Exception:
-                        skip_due_to_unchanged = False
+        logger.info("Full sync completed: processed %s items", total_processed)
 
-                if skip_due_to_unchanged:
-                    total_processed += 1
-                    # still try to update max_ts if present
-                    try:
-                        if det_updated_at:
-                            ts = int(_dateutil_parser.isoparse(det_updated_at).timestamp())
-                            if ts > max_ts:
-                                max_ts = ts
-                    except Exception:
-                        pass
-                    continue
+        # if any queued embeddings remain from discover, process them
+        if discover_to_embed:
+            logger.info("Processing queued embeddings from full sync (queued_count=%s)", len(discover_to_embed))
+            emb_summary = _submit_embedding_tasks(discover_to_embed)
+            logger.info("Queued embeddings processed: %s", emb_summary)
+            if job_id:
+                try:
+                    sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"embed_queued": 0, "embed_summary": emb_summary}}, upsert=True)
+                except Exception:
+                    pass
+    else:
+        # incremental sync: fetch changes since last sync time
+        page = 1
+        to_embed = []
+        while True:
+            changes = _fetch_changes(media_type, start_time, page)
+            if not changes.get("results"):
+                logger.info("No more changes found for %s", media_type)
+                break
 
-                details_to_process.append(det)
+            logger.info("Processing incremental changes: media_type=%s page=%s", media_type, page)
+            ids = [item.get("id") for item in changes.get("results") if item.get("id")]
+            details = _fetch_details(media_type, ids)
 
-            # process the filtered list using helper
-            processed, max_seen, queued = _process_details_batch(details_to_process, media_type, embed_updated)
-            total_processed += processed
+            processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
             if queued:
                 to_embed.extend(queued)
-            chunks_processed += 1
-            # periodic progress log for changes processing
-            if chunks_processed % CHUNK_LOG_EVERY == 0:
-                logger.info(
-                    "Changes progress: media_type=%s changes_page=%s chunks_processed=%s processed_items=%s",
-                    media_type,
-                    data.get("page"),
-                    chunks_processed,
-                    total_processed,
-                )
-        # paging
-        if data.get("page") >= data.get("total_pages"):
-            break
-        page += 1
 
-    if total_processed:
-        _set_last_sync_timestamp(media_type, max_ts)
-        logger.info(
-            "Processed %s %s items from TMDB changes; set last_sync=%s",
-            total_processed,
-            media_type,
-            max_ts,
-        )
-    else:
-        logger.info("No %s changes processed.", media_type)
+            # update the last sync timestamp
+            if max_seen:
+                _set_last_sync_timestamp(media_type, max_seen)
 
-    # process embeddings for updated items in a small thread pool to avoid blocking the sync too long
-    summary = {
-        "total_processed": total_processed,
-        "embed_queued": len(to_embed),
-        "embed_submitted": 0,
-        "embed_succeeded": 0,
-        "embed_failed": 0,
-        "embed_timed_out": 0,
-    }
+            page += 1
 
-    if embed_updated and to_embed:
-        emb_summary = _submit_embedding_tasks(to_embed)
-        summary["embed_submitted"] = emb_summary.get("submitted", 0)
-        summary["embed_succeeded"] = emb_summary.get("succeeded", 0)
-        summary["embed_failed"] = emb_summary.get("failed", 0)
-        summary["embed_timed_out"] = emb_summary.get("timed_out", 0)
-        logger.info(
-            "Submitted and processed %s embedding tasks (submitted=%s, succeeded=%s, failed=%s, timed_out=%s)",
-            len(to_embed),
-            summary["embed_submitted"],
-            summary["embed_succeeded"],
-            summary["embed_failed"],
-            summary["embed_timed_out"],
-        )
-    return summary
+        logger.info("Incremental sync completed for %s", media_type)
+
+    logger.info("TMDB sync finished: media_type=%s", media_type)
 
 
-def full_tmdb_popular_sync(media_type: str = "movie", pages: int = 5):
-    """Fetch popular movies/TV shows pages and store metadata. Also update `is_popular` flag.
+def sync_tmdb_changes(media_type: str, window_seconds: int = 0, embed_updated: bool = True, job_id: Optional[str] = None) -> dict:
+    """Run an incremental TMDB changes sync.
 
-    - pages: how many pages of popular results to fetch (20 results per page typically)
+    - If no last full-sync timestamp exists, falls back to a `sync_tmdb(full_sync=True)` full import.
+    - Otherwise fetches /{media_type}/changes since the stored last_sync (optionally expanding backwards by `window_seconds`).
+    - Collects fetched details, upserts metadata, queues embeddings, and submits embeddings after processing.
+    Returns summary dict: {processed, embed_submitted, embed_succeeded, embed_failed, last_seen}
     """
     assert media_type in ("movie", "tv")
-    total = 0
-    seen_ids = set()
-    for page in range(1, pages + 1):
-        url = f"{settings.TMDB_API_URL}/{media_type}/popular"
-        params = {"api_key": settings.TMDB_API_KEY, "page": page}
-        r = requests.get(url, params=params)
-        r.raise_for_status()
-        data = r.json()
-        for item in data.get("results", []):
-            item["media_type"] = media_type
-            tmdb_metadata_collection.update_one(
-                {"id": item.get("id"), "media_type": media_type},
-                {"$set": item},
-                upsert=True,
-            )
-            # mark as popular and set timestamp
-            tmdb_metadata_collection.update_one(
-                {"id": item.get("id"), "media_type": media_type},
-                {
-                    "$set": {
-                        "is_popular": True,
-                        "popular_updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                },
-                upsert=True,
-            )
-            seen_ids.add(item.get("id"))
-            total += 1
+    last_sync = _get_last_sync_timestamp(media_type)
+    if not last_sync:
+        logger.info("No last full-sync found for %s; performing full export/discover sync instead.", media_type)
+        return sync_tmdb(media_type, full_sync=True, embed_updated=embed_updated, force_refresh=False, job_id=job_id) or {}
 
-    # unset is_popular for items not seen in this run (but that were previously marked popular)
-    if seen_ids:
-        cursor = tmdb_metadata_collection.find(
-            {"media_type": media_type, "is_popular": True}, {"_id": 0, "id": 1}
-        )
-        for doc in cursor:
-            if doc.get("id") not in seen_ids:
-                tmdb_metadata_collection.update_one(
-                    {"id": doc.get("id"), "media_type": media_type},
-                    {"$set": {"is_popular": False}},
-                )
+    # decide start_time for /changes: by default use last_sync; optionally expand backwards
+    start_time = int(last_sync)
+    if window_seconds and isinstance(window_seconds, int) and window_seconds > 0:
+        start_time = max(0, int(last_sync) - int(window_seconds))
 
-    logger.info(
-        "Inserted/updated %s popular %s items and updated popularity flags",
-        total,
-        media_type,
-    )
+    page = 1
+    total_processed = 0
+    max_seen = 0
+    to_embed = []
+    while True:
+        try:
+            changes = _fetch_changes(media_type, start_time, page)
+        except Exception as e:
+            logger.warning("Failed to fetch changes for %s page %s: %s", media_type, page, repr(e))
+            break
+
+        results = changes.get("results") or []
+        if not results:
+            logger.info("No more changes found for %s (page %s)", media_type, page)
+            break
+
+        ids = [item.get("id") for item in results if item.get("id")]
+        if not ids:
+            page += 1
+            continue
+
+        details = _fetch_details(media_type, ids)
+        processed, seen_ts, queued = _process_details_batch(details, media_type, embed_updated)
+        total_processed += processed
+        if queued:
+            to_embed.extend(queued)
+        if seen_ts and seen_ts > max_seen:
+            max_seen = seen_ts
+
+        # update last_sync incrementally
+        if max_seen:
+            _set_last_sync_timestamp(media_type, max_seen)
+
+        # update job progress
+        if job_id:
+            try:
+                sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed), "last_update": int(time.time())}}, upsert=True)
+            except Exception:
+                pass
+
+        page += 1
+
+    emb_summary = {"submitted": 0, "succeeded": 0, "failed": 0}
+    if embed_updated and to_embed:
+        emb_summary = _submit_embedding_tasks(to_embed)
+        # update job with final embedding status
+        if job_id:
+            try:
+                sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"embed_queued": 0, "embed_summary": emb_summary}}, upsert=True)
+            except Exception:
+                pass
+
+    summary = {
+        "processed": total_processed,
+        "embed_submitted": emb_summary.get("submitted", 0),
+        "embed_succeeded": emb_summary.get("succeeded", 0),
+        "embed_failed": emb_summary.get("failed", 0),
+        "last_seen": max_seen,
+    }
+    logger.info("sync_tmdb_changes summary for %s: %s", media_type, summary)
+    return summary
+

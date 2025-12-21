@@ -119,3 +119,95 @@ class WillLikeResponse(BaseModel):
     score: float
     explanation: str
     item: ItemSummary
+
+
+class AdminEmbedItemPayload(BaseModel):
+    id: int
+    media_type: Optional[str] = "movie"
+
+
+class AdminEmbedFullPayload(BaseModel):
+    batch_size: Optional[int] = 256
+
+
+class AdminFaissRebuildPayload(BaseModel):
+    dim: Optional[int] = 384
+    factory: Optional[str] = "IDMap,IVF100,Flat"
+
+
+class AdminSyncTMDBRequest(BaseModel):
+    media_type: str
+    full_sync: Optional[bool] = False
+    embed_updated: Optional[bool] = True
+    force_refresh: Optional[bool] = False
+
+
+class AdminCancelJobRequest(BaseModel):
+    job_id: str
+
+
+class AdminAckResponse(BaseModel):
+    status: str
+    message: Optional[str] = None
+
+
+class AdminJobAcceptedResponse(BaseModel):
+    status: str
+    job_id: str
+
+
+class AdminFaissRebuildResponse(AdminAckResponse):
+    pid: Optional[int] = None
+    log: Optional[str] = None
+
+
+class SyncStatusResponse(BaseModel):
+    trakt_last_activity: Optional[str] = None
+    tmdb_movie_last_sync: Optional[int] = None
+    tmdb_tv_last_sync: Optional[int] = None
+
+
+class JobStatusModel(BaseModel):
+    status: Optional[str] = None
+    started_at: Optional[int] = None
+    finished_at: Optional[int] = None
+    processed: Optional[int] = None
+    embed_queued: Optional[int] = None
+    last_update: Optional[int] = None
+    result: Optional[dict] = None
+    summary: Optional[dict] = None
+    embed_summary: Optional[dict] = None
+    error: Optional[str] = None
+    trace: Optional[str] = None
+    cancel: Optional[bool] = None
+    cancel_requested_at: Optional[int] = None
+
+
+class HistoryItem(BaseModel):
+    id: Optional[int] = None
+    tmdb_id: Optional[int] = None
+    title: Optional[str] = None
+    name: Optional[str] = None
+    media_type: Optional[str] = None
+    poster_path: Optional[str] = None
+    overview: Optional[str] = None
+    latest_watched_at: Optional[str] = None
+    earliest_watched_at: Optional[str] = None
+    watch_count: Optional[int] = None
+    completion_ratio: Optional[float] = None
+    # allow other stored fields we don't enumerate explicitly
+    model_config = {"extra": "allow"}
+
+
+class TMDBMetadata(BaseModel):
+    id: int
+    media_type: Optional[str] = None
+    title: Optional[str] = None
+    name: Optional[str] = None
+    overview: Optional[str] = None
+    poster_path: Optional[str] = None
+    updated_at: Optional[str] = None
+    embedding: Optional[list] = None
+    embedding_meta: Optional[dict] = None
+    # allow additional TMDB fields without strict schema enforcement
+    model_config = {"extra": "allow"}
