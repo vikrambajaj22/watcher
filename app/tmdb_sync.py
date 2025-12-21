@@ -131,8 +131,30 @@ def _mark_failure(tmdb_id: int, media_type: str, reason: str = ""):
         )
 
 
-def _fetch_details(media_type: str, tmdb_ids: list[int], skip_failed_filter: bool = False):
+def _fetch_details(media_type: str, tmdb_ids: list[int], skip_failed_filter: bool = False, session: Optional[requests.Session] = None):
+    """Fetch details for a list of tmdb_ids. Optionally uses a provided requests.Session
+    which should be configured with retries/backoff for robustness. Returns list of detail dicts
+    for successful fetches.
+    """
     results = []
+    # if no session provided, create a short-lived session with modest retries
+    created_session = False
+    if session is None:
+        session = requests.Session()
+        retry = Retry(
+            total=2,
+            read=2,
+            connect=2,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=("GET",),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        created_session = True
+
     for tmdb_id in tmdb_ids:
         try:
             if not skip_failed_filter and _is_failed(tmdb_id, media_type):
@@ -144,21 +166,31 @@ def _fetch_details(media_type: str, tmdb_ids: list[int], skip_failed_filter: boo
                 continue
 
             url = f"{settings.TMDB_API_URL}/{media_type}/{tmdb_id}"
-            params = {
-                "api_key": settings.TMDB_API_KEY,
-                "append_to_response": "credits,keywords",
-            }
-            r = requests.get(url, params=params, timeout=10)
+            params = {"api_key": settings.TMDB_API_KEY, "append_to_response": "credits,keywords"}
+            r = session.get(url, params=params, timeout=10)
+
+            if r is None:
+                logger.warning("No response object returned for %s %s", media_type, tmdb_id)
+                _mark_failure(tmdb_id, media_type, reason="no_response")
+                continue
 
             if r.status_code == 200:
-                data = r.json()
+                try:
+                    data = r.json()
+                except Exception:
+                    logger.warning("Failed to decode JSON for %s %s", media_type, tmdb_id)
+                    _mark_failure(tmdb_id, media_type, reason="json_decode_error")
+                    continue
                 results.append(data)
-                logger.debug("Fetched details for %s %s (payload_keys=%s)", media_type, tmdb_id, list(data.keys()) if isinstance(data, dict) else None)
+                logger.debug(
+                    "Fetched details for %s %s (payload_keys=%s)",
+                    media_type,
+                    tmdb_id,
+                    list(data.keys()) if isinstance(data, dict) else None,
+                )
                 # on success, clear any previous failure records for this id
                 try:
-                    tmdb_failures_collection.delete_many(
-                        {"id": tmdb_id, "media_type": media_type}
-                    )
+                    tmdb_failures_collection.delete_many({"id": tmdb_id, "media_type": media_type})
                 except Exception as e:
                     logger.warning(
                         "Failed to clear failure records for %s %s: %s",
@@ -169,10 +201,11 @@ def _fetch_details(media_type: str, tmdb_ids: list[int], skip_failed_filter: boo
                     )
             else:
                 logger.warning(
-                    "Failed to fetch %s details for %s: %s",
+                    "Failed to fetch %s details for %s: status=%s body_preview=%s",
                     media_type,
                     tmdb_id,
                     r.status_code,
+                    (r.text[:200] if hasattr(r, "text") and r.text else "<no body>"),
                 )
                 _mark_failure(tmdb_id, media_type, reason=f"status_{r.status_code}")
         except Exception as e:
@@ -181,6 +214,12 @@ def _fetch_details(media_type: str, tmdb_ids: list[int], skip_failed_filter: boo
             )
             _mark_failure(tmdb_id, media_type, reason=repr(e))
             continue
+    # close session if we created it locally
+    if created_session:
+        try:
+            session.close()
+        except Exception:
+            pass
     return results
 
 
@@ -395,11 +434,52 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                         if details:
                             logger.debug("Export fetch details: media_type=%s requested_ids=%s returned_details=%s", media_type, len(chunk_ids), len(details))
                         else:
-                            logger.warning(
-                                "No details returned for export chunk (media_type=%s requested_ids=%s). These IDs may be marked failed or TMDB returned no data.",
-                                media_type,
-                                len(chunk_ids),
-                            )
+                            # Only attempt a retry / warn if we actually requested details from TMDB
+                            if requested_fetch_count > 0:
+                                # Try one short retry using a retrying session to rule out transient network/errors
+                                try:
+                                    time.sleep(0.5)
+                                    retry_sess = _session_with_retries(retries=2, backoff=0.5)
+                                    retry_details = _fetch_details(media_type, to_fetch, skip_failed_filter=True, session=retry_sess)
+                                    if retry_details:
+                                        details = retry_details
+                                        logger.info(
+                                            "Retry succeeded for export chunk: media_type=%s chunk_ids=%s requested_fetch=%s returned_details=%s",
+                                            media_type,
+                                            len(chunk_ids),
+                                            requested_fetch_count,
+                                            len(details),
+                                        )
+                                    else:
+                                        # provide more diagnostic info: sample IDs and how many are permanently failed
+                                        sample_ids = to_fetch[:10]
+                                        try:
+                                            failed_count = tmdb_failures_collection.count_documents({"id": {"$in": sample_ids}, "media_type": media_type, "permanent": True})
+                                        except Exception:
+                                            failed_count = 0
+                                        logger.warning(
+                                            "No details returned for export chunk (media_type=%s chunk_ids=%s requested_fetch=%s). These IDs may be marked failed or TMDB returned no data. sample_ids=%s permanently_failed_in_sample=%s",
+                                            media_type,
+                                            len(chunk_ids),
+                                            requested_fetch_count,
+                                            sample_ids,
+                                            failed_count,
+                                        )
+                                except Exception:
+                                    logger.warning(
+                                        "No details returned for export chunk (media_type=%s chunk_ids=%s requested_fetch=%s). These IDs may be marked failed or TMDB returned no data.",
+                                        media_type,
+                                        len(chunk_ids),
+                                        requested_fetch_count,
+                                    )
+                            else:
+                                # No IDs were requested from TMDB for this chunk (all ids exist in DB and no queued_from_db).
+                                # This is not an error condition; just log debug and continue.
+                                logger.debug(
+                                    "Export chunk skipped fetching details (media_type=%s chunk_ids=%s requested_fetch=0) - ids already exist in DB or no fetch needed.",
+                                    media_type,
+                                    len(chunk_ids),
+                                )
                         processed, max_seen, queued = _process_details_batch(details, media_type, embed_updated)
                         total_processed += processed
                         # collect queued embedding items into the shared to_embed list (cumulative)
