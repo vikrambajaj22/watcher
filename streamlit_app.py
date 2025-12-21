@@ -1353,6 +1353,66 @@ def show_admin_page():
                             st.warning("Polling ended without completion. Check later or view job status.")
 
         st.markdown("---")
+        st.subheader("🔧 Manage Multiple Jobs")
+        st.write("Select from currently non-completed jobs and manage them (view status / cancel / poll).")
+
+        try:
+            jobs_resp = requests.get(f"{API_BASE_URL}/admin/sync/jobs", timeout=5)
+            jobs_list = jobs_resp.json().get('jobs', []) if jobs_resp.status_code == 200 else []
+        except Exception:
+            jobs_list = []
+
+        job_options = [j.get('key') for j in jobs_list]
+        selected_job = None
+        if job_options:
+            sel = st.selectbox('Select job', ['-- choose a job --'] + job_options, key='admin_job_select')
+            if sel and sel != '-- choose a job --':
+                selected_job = sel
+                # find meta for display
+                meta = next((j for j in jobs_list if j.get('key') == sel), {})
+                st.write(f"Job type: {meta.get('job_type')}")
+                st.write(f"Status: {meta.get('status')}")
+                st.write(f"Processed: {meta.get('processed', 0)}")
+                st.write(f"Embeddings queued: {meta.get('embed_queued', 0)}")
+
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    if st.button('Refresh selected job status'):
+                        # determine job_type query param
+                        jt = meta.get('job_type') or ('tmdb' if sel.startswith('tmdb_sync_job:') else 'trakt')
+                        js = poll_job_status(sel, job_type=jt, max_wait=0)
+                        if js:
+                            st.json(js)
+                        else:
+                            st.warning('Job status not available')
+                with c2:
+                    if st.button('Poll until complete (120s)'):
+                        jt = meta.get('job_type') or ('tmdb' if sel.startswith('tmdb_sync_job:') else 'trakt')
+                        with st.spinner('Polling selected job...'):
+                            js = poll_job_status(sel, job_type=jt, max_wait=120, interval=5)
+                            if js:
+                                st.success(f"Job finished: {js.get('status')}")
+                                st.json(js)
+                            else:
+                                st.warning('Polling ended without completion')
+                with c3:
+                    if st.button('Cancel selected job'):
+                        # cancel TMDB only via existing endpoint; Trakt cancel not implemented
+                        jt = meta.get('job_type') or ('tmdb' if sel.startswith('tmdb_sync_job:') else 'trakt')
+                        if jt == 'tmdb' or sel.startswith('tmdb_sync_job:'):
+                            # post to tmdb cancel with job id (strip prefix if necessary)
+                            jid = sel.split(':',1)[1] if ':' in sel else sel
+                            sc, rr = raw_api_post('/admin/sync/tmdb/cancel', {'job_id': jid})
+                            if sc in (200,202):
+                                st.success('Cancel requested')
+                            else:
+                                st.error(f'Cancel request returned: {sc} - {rr}')
+                        else:
+                            st.error('Cancel is supported only for TMDB jobs via this UI')
+        else:
+            st.info('No non-completed jobs found')
+
+        st.markdown("---")
         st.subheader("🔄 TMDB Sync")
         st.write("Trigger TMDB metadata sync (export/discover) and monitor its job status.")
 

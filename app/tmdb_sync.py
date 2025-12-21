@@ -526,10 +526,14 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                             embed_timed_out += emb_summary.get("timed_out", 0)
                             # drain queued items after submission
                             to_embed = []
-                        # update job progress doc
+                        # update job progress doc (only if job exists; avoid recreating deleted jobs)
                         if job_id:
                             try:
-                                sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}}, upsert=True)
+                                key = f"tmdb_sync_job:{job_id}"
+                                if sync_meta_collection.find_one({"_id": key}):
+                                    sync_meta_collection.update_one({"_id": key}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}})
+                                else:
+                                    logger.debug("Skipping progress update for missing job %s", key)
                             except Exception:
                                 pass
 
@@ -584,10 +588,14 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                     embed_failed += emb_summary.get("failed", 0)
                     embed_timed_out += emb_summary.get("timed_out", 0)
                     to_embed = []
-                # update progress for job after finishing a streamed file
+                # update progress for job after finishing a streamed file (only if job exists)
                 if job_id:
                     try:
-                        sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}}, upsert=True)
+                        key = f"tmdb_sync_job:{job_id}"
+                        if sync_meta_collection.find_one({"_id": key}):
+                            sync_meta_collection.update_one({"_id": key}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed)}})
+                        else:
+                            logger.debug("Skipping progress update for missing job %s", key)
                     except Exception:
                         pass
 
@@ -919,7 +927,11 @@ def sync_tmdb(media_type: str, full_sync: bool = False, embed_updated: bool = Tr
             logger.info("Queued embeddings processed: %s", emb_summary)
             if job_id:
                 try:
-                    sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"embed_queued": 0, "embed_summary": emb_summary}}, upsert=True)
+                    key = f"tmdb_sync_job:{job_id}"
+                    if sync_meta_collection.find_one({"_id": key}):
+                        sync_meta_collection.update_one({"_id": key}, {"$set": {"embed_queued": 0, "embed_summary": emb_summary}})
+                    else:
+                        logger.debug("Skipping embed_summary update for missing job %s", key)
                 except Exception:
                     pass
     else:
@@ -1006,7 +1018,11 @@ def sync_tmdb_changes(media_type: str, window_seconds: int = 0, embed_updated: b
         # update job progress
         if job_id:
             try:
-                sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed), "last_update": int(time.time())}}, upsert=True)
+                key = f"tmdb_sync_job:{job_id}"
+                if sync_meta_collection.find_one({"_id": key}):
+                    sync_meta_collection.update_one({"_id": key}, {"$set": {"processed": total_processed, "embed_queued": len(to_embed), "last_update": int(time.time())}})
+                else:
+                    logger.debug("Skipping progress update for missing job %s", key)
             except Exception:
                 pass
 
@@ -1018,7 +1034,11 @@ def sync_tmdb_changes(media_type: str, window_seconds: int = 0, embed_updated: b
         # update job with final embedding status
         if job_id:
             try:
-                sync_meta_collection.update_one({"_id": f"tmdb_sync_job:{job_id}"}, {"$set": {"embed_queued": 0, "embed_summary": emb_summary}}, upsert=True)
+                key = f"tmdb_sync_job:{job_id}"
+                if sync_meta_collection.find_one({"_id": key}):
+                    sync_meta_collection.update_one({"_id": key}, {"$set": {"embed_queued": 0, "embed_summary": emb_summary}})
+                else:
+                    logger.debug("Skipping embed_summary update for missing job %s", key)
             except Exception:
                 pass
 

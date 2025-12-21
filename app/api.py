@@ -503,3 +503,40 @@ def admin_cancel_tmdb(payload: AdminCancelJobRequest):
     except Exception as e:
         logger.error("admin_cancel_tmdb error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/sync/jobs")
+def admin_list_sync_jobs():
+    """Return a list of sync job documents that are not completed.
+
+    This endpoint is used by the UI to let admins select and manage
+    running or recent jobs. It returns a list of documents with fields:
+      - key: the full _id stored in sync_meta (e.g. 'tmdb_sync_job:<uuid>')
+      - job_type: 'tmdb'|'trakt' (derived from key)
+      - status and other stored metadata (processed, embed_queued, started_at, ...)
+    """
+    try:
+        from app.db import sync_meta_collection
+
+        # find job docs whose _id ends with '_sync_job:<id>' and which are not completed
+        # Using regex to roughly match keys like 'tmdb_sync_job:' or 'trakt_sync_job:'
+        cursor = sync_meta_collection.find({"_id": {"$regex": "_sync_job:"}, "status": {"$ne": "completed"}}, {"_id": 1, "status": 1, "processed": 1, "embed_queued": 1, "started_at": 1, "last_update": 1, "cancel": 1})
+        results = []
+        for d in cursor:
+            key = d.get("_id")
+            job_type = None
+            if isinstance(key, str):
+                if key.startswith("tmdb_sync_job:"):
+                    job_type = "tmdb"
+                elif key.startswith("trakt_sync_job:"):
+                    job_type = "trakt"
+            entry = {"key": key, "job_type": job_type}
+            # merge selected metadata fields
+            for f in ("status", "processed", "embed_queued", "started_at", "last_update", "cancel"):
+                if f in d:
+                    entry[f] = d.get(f)
+            results.append(entry)
+        return {"jobs": results}
+    except Exception as e:
+        logger.error("admin_list_sync_jobs error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
