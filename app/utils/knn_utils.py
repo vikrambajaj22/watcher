@@ -54,9 +54,10 @@ def process_knn_results(
     if projection is None:
         projection = {"_id": 0, "id": 1, "title": 1, "name": 1, "original_title": 1, "original_name": 1, "media_type": 1, "poster_path": 1, "overview": 1}
 
-    # collect unique ids (assume each entry is (id, media_type, score))
+    # collect unique (id, media_type) entries while also gathering a set of ids for DB fetch
+    ids_set = set()
     ids = []
-    seen = set()
+    seen_entries = set()
     for entry in vs_res:
         if not (isinstance(entry, (list, tuple)) and len(entry) == 3):
             continue
@@ -64,16 +65,30 @@ def process_knn_results(
             tid = int(entry[0])
         except Exception:
             continue
-        if tid not in seen:
-            seen.add(tid)
-            ids.append(tid)
+        media_type_entry = str(entry[1] or "").lower()
+        key = (tid, media_type_entry)
+        # deduplicate by (id, media_type); keep insertion order in ids list for DB fetch
+        if key not in seen_entries:
+            seen_entries.add(key)
+            if tid not in ids_set:
+                ids_set.add(tid)
+                ids.append(tid)
     if not ids:
         return []
 
     docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, projection))
     # build maps for exact (id, media_type) and fallback by id
-    docs_by_id_media = {(int(d.get("id")), str(d.get("media_type") or "").lower()): d for d in docs}
-    docs_by_id = {d.get("id"): d for d in docs}
+    docs_by_id_media = {}
+    docs_by_id = {}
+    for d in docs:
+        try:
+            _id = int(d.get("id"))
+        except Exception:
+            continue
+        mtype = str(d.get("media_type") or "").lower()
+        docs_by_id_media[(_id, mtype)] = d
+        if _id not in docs_by_id:
+            docs_by_id[_id] = d
 
     results: List[Dict[str, Any]] = []
     requested_media_norm = str(requested_media_type).lower() if requested_media_type else None

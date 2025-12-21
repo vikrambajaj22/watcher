@@ -576,17 +576,41 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
             try:
                 _process_batch(batch)
                 # verify how many docs now have embeddings written
-                if batch_ids:
+                succeeded = 0
+                try:
+                    # build a set of (id, media_type) pairs from the batch
+                    pairs = []
+                    for item in batch:
+                        try:
+                            _id = int(item.get("id"))
+                        except Exception:
+                            continue
+                        m = str(item.get("media_type") or "").lower()
+                        pairs.append((_id, m))
+                    # for efficiency, group by id and fetch candidates, then verify per-pair
+                    ids_in_batch = list({p[0] for p in pairs})
+                    if ids_in_batch:
+                        cursor = tmdb_metadata_collection.find({"id": {"$in": ids_in_batch}, "embedding": {"$exists": True}}, {"_id": 0, "id": 1, "media_type": 1})
+                        found = set()
+                        for d in cursor:
+                            try:
+                                did = int(d.get("id"))
+                            except Exception:
+                                continue
+                            mtype = str(d.get("media_type") or "").lower()
+                            found.add((did, mtype))
+                        # count how many pairs in 'pairs' are present in found
+                        for p in pairs:
+                            if p in found:
+                                succeeded += 1
+                except Exception:
+                    # fallback: best effort, try id-only count
                     try:
-                        written = tmdb_metadata_collection.count_documents(
-                            {"id": {"$in": batch_ids}, "embedding": {"$exists": True}}
-                        )
+                        written = tmdb_metadata_collection.count_documents({"id": {"$in": batch_ids}, "embedding": {"$exists": True}})
+                        succeeded = int(written)
                     except Exception:
-                        written = 0
-                else:
-                    written = submitted
+                        succeeded = 0
 
-                succeeded = int(written)
                 failed = submitted - succeeded
                 summary["submitted"] += submitted
                 summary["succeeded"] += succeeded
