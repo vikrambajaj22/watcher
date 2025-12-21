@@ -330,9 +330,10 @@ def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None
             "embedding_dims": len(embed_list),
         }
         try:
-            selector = {"id": it.get("id")}
-            if it.get("media_type"):
-                selector["media_type"] = it.get("media_type")
+            # require media_type to avoid id-only updates that can collide across media types
+            if not it.get("media_type"):
+                raise ValueError(f"Missing media_type for item id={it.get('id')}; cannot update embedding without media_type")
+            selector = {"id": it.get("id"), "media_type": it.get("media_type")}
             tmdb_metadata_collection.update_one(
                 selector,
                 {"$set": {"embedding": embed_list, "embedding_meta": meta}},
@@ -386,19 +387,29 @@ def build_user_vector_from_history(
 
     # fetch candidate docs that have embeddings; build a map keyed by (id, media_type) and fallback by id
     docs_cursor = tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "media_type": 1, "embedding": 1})
-    docs_exact = {(int(d.get("id")), str(d.get("media_type") or "").lower()): d for d in docs_cursor}
-    # build fallback by id (first seen)
+    docs_exact = {}
     docs_by_id = {}
-    for k, v in docs_exact.items():
-        _id = k[0]
+    for d in docs_cursor:
+        try:
+            _id = int(d.get("id"))
+        except Exception:
+            continue
+        m = str(d.get("media_type") or "").lower()
+        docs_exact[(_id, m)] = d
         if _id not in docs_by_id:
-            docs_by_id[_id] = v
+            docs_by_id[_id] = d
 
     for it in history_items:
         tid = it.get("id")
         if tid is None:
             continue
-        doc = docs_by_id.get(tid)
+        # prefer exact (id, media_type) lookup using history item's media_type when available
+        media_from_history = (str(it.get("media_type") or "").lower()) if it.get("media_type") else None
+        doc = None
+        if media_from_history:
+            doc = docs_exact.get((int(tid), media_from_history))
+        if not doc:
+            doc = docs_by_id.get(int(tid))
         if not doc:
             # no metadata/embedding stored for this id
             continue

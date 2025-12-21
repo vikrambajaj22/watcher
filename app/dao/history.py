@@ -63,9 +63,8 @@ def get_watch_history(media_type=None, include_posters: bool = True):
             try:
                 # single query to fetch poster paths and media_type for all ids
                 cursor = tmdb_metadata_collection.find({"id": {"$in": ids_list}}, {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1})
-                # build two maps: exact (id,media_type) -> poster, and fallback id->poster (first seen)
+                # build exact map keyed by (id, media_type) only
                 poster_map_exact = {}
-                poster_map_fallback = {}
                 for d in cursor:
                     try:
                         _id = int(d.get("id"))
@@ -75,14 +74,10 @@ def get_watch_history(media_type=None, include_posters: bool = True):
                     ppath = d.get("poster_path")
                     if ppath:
                         poster_map_exact[(_id, mtype)] = ppath
-                        # keep a fallback if not set yet
-                        if _id not in poster_map_fallback:
-                            poster_map_fallback[_id] = ppath
             except Exception:
                 poster_map_exact = {}
-                poster_map_fallback = {}
 
-            # attach poster_path to history items where available, prefer exact media_type match
+            # attach poster_path to history items where available, require exact media_type match
             for item in history:
                 tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
                 if not tmdb_id:
@@ -93,8 +88,6 @@ def get_watch_history(media_type=None, include_posters: bool = True):
                     continue
                 media = (item.get("media_type") or "").lower()
                 p = poster_map_exact.get((key_id, media))
-                if not p:
-                    p = poster_map_fallback.get(key_id)
                 if p:
                     item["poster_path"] = p
         enrich_time = time.time() - t0

@@ -58,17 +58,23 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
 
     if payload.tmdb_id is not None:
         # prefer exact (id, input_media_type) match when input_media_type provided in payload
-        query = {"id": payload.tmdb_id}
-        # determine input media type: use explicit input_media_type
         input_mt = getattr(payload, "input_media_type", None)
         if input_mt:
-            query["media_type"] = str(input_mt).lower()
-        doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
-        if not doc:
-            # fallback to id-only if exact match not found
-            doc = tmdb_metadata_collection.find_one({"id": payload.tmdb_id}, {"_id": 0})
-        if not doc:
-            raise ValueError(f"tmdb_id {payload.tmdb_id} not found for input_media_type {input_mt}")
+            query = {"id": payload.tmdb_id, "media_type": str(input_mt).lower()}
+            doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
+            if not doc:
+                raise ValueError(f"tmdb_id {payload.tmdb_id} not found for input_media_type {input_mt}")
+        else:
+            # if input_media_type not provided, fetch all docs for this id
+            docs = list(tmdb_metadata_collection.find({"id": payload.tmdb_id}, {"_id": 0, "media_type": 1, "embedding": 1}))
+            if not docs:
+                raise ValueError(f"tmdb_id {payload.tmdb_id} not found in metadata store")
+            if len(docs) > 1:
+                # ambiguous across media types - require input_media_type to disambiguate
+                raise ValueError(f"tmdb_id {payload.tmdb_id} is ambiguous across media types; please provide input_media_type")
+            doc = docs[0]
+            if not doc.get("media_type"):
+                raise ValueError(f"tmdb_id {payload.tmdb_id} found but media_type missing in metadata; please provide input_media_type")
         emb = doc.get("embedding")
         if emb is None:
             raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id} with input_media_type {input_mt}")

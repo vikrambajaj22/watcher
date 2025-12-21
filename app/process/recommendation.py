@@ -183,7 +183,8 @@ class MediaRecommender:
         top_candidates = [
             {
                 "id": c.get("id"),
-                "title": (c.get("title") or _resolve_title(c.get("id"))),
+                # prefer candidate-provided title, otherwise resolve using the candidate doc (media_type-aware)
+                "title": (c.get("title") or _resolve_title(c.get("id"), doc=c)),
                 "score": c.get("_score"),
                 "media_type": c.get("media_type"),
                 "poster_path": c.get("poster_path"),

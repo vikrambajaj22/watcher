@@ -77,9 +77,8 @@ def process_knn_results(
         return []
 
     docs = list(tmdb_metadata_collection.find({"id": {"$in": ids}}, projection))
-    # build maps for exact (id, media_type) and fallback by id
+    # build map for exact (id, media_type) only (no id-only fallback)
     docs_by_id_media = {}
-    docs_by_id = {}
     for d in docs:
         try:
             _id = int(d.get("id"))
@@ -87,8 +86,6 @@ def process_knn_results(
             continue
         mtype = str(d.get("media_type") or "").lower()
         docs_by_id_media[(_id, mtype)] = d
-        if _id not in docs_by_id:
-            docs_by_id[_id] = d
 
     results: List[Dict[str, Any]] = []
     requested_media_norm = str(requested_media_type).lower() if requested_media_type else None
@@ -109,15 +106,20 @@ def process_knn_results(
         if str(tid_int) in watched_ids:
             continue
 
-        # resolve doc: prefer exact (id, media_type) if present
+        # resolve doc: require exact (id, media_type) match
         doc = None
         if media_type_entry:
             doc = docs_by_id_media.get((tid_int, str(media_type_entry).lower()))
-        if not doc:
-            doc = docs_by_id.get(tid_int)
-        media = (doc.get("media_type") or "").lower() if doc else (str(media_type_entry).lower() if media_type_entry else "")
+        else:
+            # if the vector entry omitted media_type, try to use requested_media_type if provided
+            if requested_media_norm and requested_media_norm != "all":
+                doc = docs_by_id_media.get((tid_int, requested_media_norm))
+        media = (doc.get("media_type") or "").lower() if doc else ""
 
-        # media filtering
+        # media filtering and strict resolution: skip if no exact match or doesn't match requested filter
+        if not doc:
+            # no exact (id,media_type) doc available -> skip candidate
+            continue
         if requested_media_norm and requested_media_norm != "all" and media != requested_media_norm:
             continue
 

@@ -258,6 +258,22 @@ def api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None)
         return None
 
 
+def raw_api_post(endpoint: str, data: Dict) -> tuple[int, Any]:
+    """POST to API and return (status_code, parsed_json_or_text). Does not display Streamlit errors.
+
+    This allows callers to examine 400/422 messages and react in the UI.
+    """
+    url = f"{API_BASE_URL}{endpoint}"
+    try:
+        r = requests.post(url, json=data)
+        try:
+            return r.status_code, r.json()
+        except Exception:
+            return r.status_code, r.text
+    except Exception as e:
+        return 0, str(e)
+
+
 def _set_similar_item(tmdb_id: Optional[int], title: Optional[str], media_type: Optional[str]):
     """Helper to set the similar_item in session_state from button callbacks."""
     try:
@@ -283,7 +299,16 @@ def _check_will_like_inline(tmdb_id: int, media_type: str, result_key: str):
     """
     try:
         payload = {"tmdb_id": int(tmdb_id), "media_type": str(media_type)}
-        res = api_request('/mcp/will-like', method='POST', data=payload)
+        status, res = raw_api_post('/mcp/will-like', payload)
+        # if ambiguous (400), prompt to select media_type and retry
+        if status == 400 and isinstance(res, dict):
+            detail = res.get('detail') or res.get('error') or ''
+            if 'input_media_type' in str(detail) or 'ambiguous' in str(detail).lower():
+                st.warning("The provided TMDB id is ambiguous. Please select the input type to disambiguate and retry.")
+                choice = st.selectbox("Input type", ["movie", "tv"], key=f"will_like_disamb_{int(time.time())}")
+                if st.button("Retry 'Will I Like' with selected type"):
+                    payload["media_type"] = choice
+                    status, res = raw_api_post('/mcp/will-like', payload)
     except Exception as e:
         res = {"error": str(e)}
     st.session_state[result_key] = res
@@ -756,7 +781,16 @@ def show_will_like_page():
         if st.button("🤔 Check Will I Like (by ID)", key="will_check_id"):
             with st.spinner("Checking..."):
                 payload = {"tmdb_id": int(tmdb_id), "media_type": media_type}
-                res = api_request('/mcp/will-like', method='POST', data=payload)
+                status, res = raw_api_post('/mcp/will-like', payload)
+                # if ambiguous (400), prompt to select media_type and retry
+                if status == 400 and isinstance(res, dict):
+                    detail = res.get('detail') or res.get('error') or ''
+                    if 'input_media_type' in str(detail) or 'ambiguous' in str(detail).lower():
+                        st.warning("The provided TMDB id is ambiguous. Please select the input type to disambiguate and retry.")
+                        choice = st.selectbox("Input type", ["movie", "tv"], key=f"will_like_disamb_{int(time.time())}")
+                        if st.button("Retry 'Will I Like' with selected type"):
+                            payload["media_type"] = choice
+                            status, res = raw_api_post('/mcp/will-like', payload)
                 st.session_state['will_like_result'] = res
                 st.session_state['will_like_tmdb_id'] = int(tmdb_id)
 
@@ -1000,13 +1034,17 @@ def search_similar(tmdb_id: Optional[int] = None, title: Optional[str] = None, t
     search_label = f"Searching for items similar to '{source_title}'..." if source_title else "Searching for similar items..."
     # perform the API call and store results in session_state so callbacks won't clear them on rerun
     with st.spinner(search_label):
-        result = api_request("/mcp/knn", method="POST", data=payload)
-    # if this was not an ID-based search, clear any previous persisted source metadata
-    if not tmdb_id and 'similar_source_metadata' in st.session_state:
-        try:
-            del st.session_state['similar_source_metadata']
-        except Exception:
-            pass
+        status, result = raw_api_post("/mcp/knn", payload)
+    # handle ambiguous id (400) responses by prompting the user for input_media_type and retrying
+    if status == 400 and isinstance(result, dict):
+        detail = result.get('detail') or result.get('error') or ''
+        if 'input_media_type' in str(detail) or 'ambiguous' in str(detail).lower():
+            st.warning("The provided TMDB id/title is ambiguous across media types. Please select the input type to disambiguate.")
+            choice = st.selectbox("Input type for the provided item", ["movie", "tv"], key=f"disamb_{int(time.time())}")
+            if st.button("Retry with selected type"):
+                payload["input_media_type"] = choice
+                status2, result2 = raw_api_post("/mcp/knn", payload)
+                status, result = status2, result2
 
     if result and "results" in result:
         st.session_state['similar_results'] = result['results']

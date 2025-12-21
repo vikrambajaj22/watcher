@@ -767,8 +767,9 @@ def sync_tmdb_changes(
                 if not det:
                     continue
                 try:
+                    # prefer exact match on (id, media_type) to avoid cross-media collisions
                     existing = tmdb_metadata_collection.find_one(
-                        {"id": det.get("id")}, {"_id": 0, "updated_at": 1}
+                        {"id": det.get("id"), "media_type": media_type}, {"_id": 0, "updated_at": 1}
                     )
                 except Exception:
                     existing = None

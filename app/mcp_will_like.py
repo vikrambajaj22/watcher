@@ -33,18 +33,12 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
     # resolve by tmdb_id if provided
     if tmdb_id is not None:
         resolved_id = int(tmdb_id)
-        # prefer exact media_type match in DB; include poster_path/backdrop if present
+        # require exact media_type match in DB; include poster_path/backdrop if present
         resolved_doc = tmdb_metadata_collection.find_one(
             {"id": resolved_id, "media_type": media_type},
             {"_id": 0, "embedding": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
         )
-        if not resolved_doc:
-            # fallback to id-only
-            resolved_doc = tmdb_metadata_collection.find_one(
-                {"id": resolved_id},
-                {"_id": 0, "embedding": 1, "media_type": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
-            )
-        # if not in DB, fetch from TMDB and embed/store
+        # if not in DB, fetch from TMDB (using provided media_type) and embed/store
         if not resolved_doc:
             try:
                 md = get_metadata(resolved_id, media_type=media_type)
@@ -136,9 +130,13 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         logger.error("Similarity computation failed: %s", repr(e), exc_info=True)
         raise WillLikeError("similarity computation failed")
 
-    will_like = score >= 0.65
+    will_like = bool(score >= 0.65)
 
-    explanation = f"Similarity score based on your watch history: {score:.3f}."
+    try:
+        formatted_score = "{:.3f}".format(float(score))
+    except Exception:
+        formatted_score = str(score)
+    explanation = f"Similarity score based on your watch history: {formatted_score}."
     if will_like:
         explanation += " This item closely matches your tastes."
     else:
