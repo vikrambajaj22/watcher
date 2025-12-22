@@ -1128,7 +1128,10 @@ def render_similar_results(results, source_title: Optional[str] = None):
                 st.metric("Type", item.get("media_type", "N/A"))
                 _id = item.get("id")
                 _mtype = item.get("media_type")
-                if _id:
+                if _id and _mtype:
+                    tmdb_url = f"https://www.themoviedb.org/{_mtype}/{_id}"
+                    st.markdown(f"[🔗 View on TMDB]({tmdb_url})")
+
                     btn_key = f"will_like_sim_{idx}_{_id}"
                     inline_key = f"will_like_inline_{_id}_{_mtype}"
                     # imperative button handling to avoid callback-ordering issues
