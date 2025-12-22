@@ -28,6 +28,8 @@ print("Created index:", name2)
 
 print("\nCreating compound index: {id:1, media_type:1, has_embedding:1} (background)")
 print("  -> Optimizes: finding existing docs needing embeddings in _fetch_docs_needing_embedding()")
+print("  -> Query: {id: {$in: [...]}, media_type: 'movie', has_embedding: {$ne: true}}")
+print("  -> Note: id + media_type together form the unique key (same ID can exist for movie/tv)")
 name3 = tmdb_metadata_collection.create_index(
     [("id", 1), ("media_type", 1), ("has_embedding", 1)],
     background=True,

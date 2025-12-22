@@ -967,7 +967,6 @@ def sync_tmdb_changes(media_type: str, window_seconds: int = 0, embed_updated: b
     return summary
 
 
-# --- Helper utilities to reduce duplication ---------------------------------
 def _update_job_progress(job_id: Optional[str], processed: int, embed_queued: int, last_update: Optional[int] = None):
     """Update job progress in sync_meta collection if job exists."""
     if not job_id:
@@ -986,11 +985,15 @@ def _update_job_progress(job_id: Optional[str], processed: int, embed_queued: in
 
 
 def _fetch_existing_ids_for_chunk(chunk_ids: list[int], media_type: str) -> set:
-    """Fetch IDs that already exist in DB for a given chunk."""
+    """Fetch IDs that already exist in DB for a given chunk.
+
+    Returns a set of IDs that exist in the database for the given chunk.
+    Only fetches minimal fields (id) to minimize data transfer.
+    """
     try:
         existing_cursor = list(tmdb_metadata_collection.find(
             {"id": {"$in": chunk_ids}, "media_type": media_type},
-            {"_id": 0, "id": 1, "embedding_meta.embedding_model": 1, "has_embedding": 1}
+            {"_id": 0, "id": 1}  # only fetch id field
         ))
         return {int(d.get("id")) for d in existing_cursor if d.get("id")}
     except Exception:
@@ -998,17 +1001,18 @@ def _fetch_existing_ids_for_chunk(chunk_ids: list[int], media_type: str) -> set:
 
 
 def _fetch_docs_needing_embedding(existing_ids: set, media_type: str) -> list:
-    """Fetch existing docs that need embedding (no embedding or outdated model)."""
+    """Fetch existing docs that need embedding (has_embedding is not True).
+
+    The has_embedding field is set to True only when an embedding exists with the current model.
+    If the model changes, embeddings.py will set has_embedding=False, so we only need to check this field.
+    """
     if not existing_ids:
         return []
     try:
         need_q = {
             "id": {"$in": list(existing_ids)},
             "media_type": media_type,
-            "$or": [
-                {"has_embedding": {"$ne": True}},
-                {"embedding_meta.embedding_model": {"$ne": EMBED_MODEL_NAME}}
-            ]
+            "has_embedding": {"$ne": True}
         }
         need_emb_cursor = tmdb_metadata_collection.find(need_q, {"_id": 0})
         return list(need_emb_cursor)
