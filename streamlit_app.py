@@ -1130,7 +1130,7 @@ def render_similar_results(results, source_title: Optional[str] = None):
                 _mtype = item.get("media_type")
                 if _id and _mtype:
                     tmdb_url = f"https://www.themoviedb.org/{_mtype}/{_id}"
-                    st.markdown(f"[🔗 View on TMDB]({tmdb_url})")
+                    st.markdown(f"🔗 [View on TMDB]({tmdb_url})")
 
                     btn_key = f"will_like_sim_{idx}_{_id}"
                     inline_key = f"will_like_inline_{_id}_{_mtype}"
