@@ -54,6 +54,7 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
 - Use explicit exception types whenever possible.
 - Avoid broad `except:` blocks; use `except Exception:` instead.
 - Keep functions focused; avoid multi-purpose large functions.
+- Always reduce code duplication; prefer helper functions or classes.
 
 ---
 

@@ -261,7 +261,7 @@ def embed_item_and_store(item: Dict, weights: Optional[Dict[str, float]] = None)
         selector["media_type"] = item.get("media_type")
     tmdb_metadata_collection.update_one(
         selector,
-        {"$set": {"embedding": embed_list, "embedding_meta": meta}},
+        {"$set": {"embedding": embed_list, "embedding_meta": meta, "has_embedding": True}},
         upsert=True,
     )
     item_copy = dict(item)
@@ -336,7 +336,7 @@ def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None
             selector = {"id": it.get("id"), "media_type": it.get("media_type")}
             tmdb_metadata_collection.update_one(
                 selector,
-                {"$set": {"embedding": embed_list, "embedding_meta": meta}},
+                {"$set": {"embedding": embed_list, "embedding_meta": meta, "has_embedding": True}},
                 upsert=True,
             )
         except Exception as e:
