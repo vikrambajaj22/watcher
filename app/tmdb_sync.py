@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -21,7 +22,7 @@ from app.db import (
 from app.embeddings import EMBED_MODEL_NAME, _process_batch
 from app.utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 # TMDB provides bulk data options via their "/movie/now_playing", "/movie/popular", etc.
 # but better for keeping fresh is using the /movie/changes and /tv/changes endpoints which return ids changed since a timestamp.
@@ -500,8 +501,8 @@ def _sync_from_export(media_type: str, days_back_limit: int = 7, embed_updated: 
                             len(to_embed),
                         )
                         chunk_ids = []
-                        # log progress for large exports
-                        if total_processed % EXPORT_LOG_EVERY_IDS == 0:
+                        # log progress for large exports (skip logging when nothing processed yet to avoid repeated zero messages)
+                        if total_processed and (total_processed % EXPORT_LOG_EVERY_IDS == 0):
                             logger.info(
                                 "Export progress: media_type=%s processed_ids=%s cumulative_queued_embeddings=%s",
                                 media_type,
