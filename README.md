@@ -7,6 +7,7 @@ watcher is a personal movie / TV show recommendation app powered by Trakt, TMDB,
 ## Features
 - 🔐 Trakt OAuth authentication
 - 📺 Browse and sync watch history
+- 📊 **Visual Explorer** - Interactive clustered visualization of watch history
 - ✨ AI-powered recommendations (movies/TV/all)
 - 🔍 Find similar items via KNN search
 - ⚙️ Admin panel for embeddings and FAISS management
@@ -41,6 +42,15 @@ uvicorn app.main:app --reload --port 8080
 - Filter, sort, and search
 - One-click sync from Trakt
 - **Click "Find Similar" on any item!**
+
+### 📊 Visual Explorer
+- **Interactive 2D scatter plot** of your watch history
+- Items clustered by similarity using embeddings
+- Adjustable cluster count (3-15)
+- **AI-generated cluster names** describing each group's theme
+- Click any cluster to see poster grid
+- Find similar items directly from clusters
+- Color-coded clusters with summaries
 
 ### ✨ Recommendations
 - Personalized suggestions (movies/TV/all)

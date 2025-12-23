@@ -1,6 +1,17 @@
+from collections import Counter, defaultdict
+from typing import Dict, List
+import os
+import subprocess
+import sys
+import time as _time
+import traceback as _traceback
+import uuid
+
 from fastapi import APIRouter, BackgroundTasks, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
-from typing import Dict, List
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
 
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.config.settings import settings
@@ -8,43 +19,36 @@ from app.dao.history import get_watch_history, clear_history_cache
 from app.db import tmdb_metadata_collection, sync_meta_collection
 from app.embeddings import embed_item_and_store, embed_all_items
 from app.faiss_index import INDEX_DIR
+from app.mcp_will_like import compute_will_like, WillLikeError
 from app.process.recommendation import MediaRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
-from app.schemas.api import KNNRequest, KNNResponse, WillLikeRequest, WillLikeResponse
 from app.schemas.api import (
     AdminAckResponse,
-    AdminJobAcceptedResponse,
+    AdminCancelJobRequest,
+    AdminEmbedFullPayload,
+    AdminEmbedItemPayload,
+    AdminFaissRebuildPayload,
     AdminFaissRebuildResponse,
-    SyncStatusResponse,
-    JobStatusModel,
+    AdminJobAcceptedResponse,
+    AdminSyncTMDBRequest,
     HistoryItem,
+    JobStatusModel,
+    KNNRequest,
+    KNNResponse,
+    SyncStatusResponse,
     TMDBMetadata,
+    WillLikeRequest,
+    WillLikeResponse,
 )
 from app.schemas.recommendations.recommendations import (
     RecommendationsResponse,
     RecommendRequest,
 )
-from app.trakt_sync import sync_trakt_history
 from app.tmdb_sync import sync_tmdb
-from app.schemas.api import (
-    AdminEmbedItemPayload,
-    AdminEmbedFullPayload,
-    AdminFaissRebuildPayload,
-    AdminSyncTMDBRequest,
-    AdminCancelJobRequest,
-)
-
-import uuid
-import time as _time
-import traceback as _traceback
-
+from app.trakt_sync import sync_trakt_history
+from app.utils.helpers import generate_cluster_name
 from app.utils.llm_orchestrator import call_mcp_knn
-from app.mcp_will_like import compute_will_like, WillLikeError
 from app.utils.logger import get_logger
-
-import subprocess
-import sys
-import os
 
 logger = get_logger(__name__)
 
@@ -583,3 +587,192 @@ def admin_list_sync_jobs():
     except Exception as e:
         logger.error("admin_list_sync_jobs error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/visualize/clusters")
+def get_watch_history_clusters(
+    media_type: str = None,
+    n_clusters: int = Query(default=6, ge=3, le=15)
+):
+    """Generate 2D clustered visualization of watch history using embeddings.
+
+    Query params:
+      - media_type: optional 'movie'|'tv' filter
+      - n_clusters: number of clusters (3-15, default 6)
+
+    Returns:
+      - items: list of items with x, y coordinates, cluster labels, and metadata
+      - cluster_summaries: dict mapping cluster_id to summary info with LLM-generated names
+    """
+    try:
+        # fetch watch history with embeddings
+        history = get_watch_history(media_type=media_type, include_posters=True)
+
+        if not history:
+            logger.warning("No watch history found")
+            return {"items": [], "cluster_summaries": {}}
+
+        logger.info(f"Found {len(history)} items in watch history")
+
+        # collect all (id, media_type) pairs from history
+        id_media_pairs = []
+        for item in history:
+            tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
+            item_media_type = item.get("media_type")
+            if tmdb_id and item_media_type:
+                try:
+                    id_media_pairs.append((int(tmdb_id), item_media_type))
+                except (ValueError, TypeError):
+                    continue
+
+        if not id_media_pairs:
+            logger.warning("No valid TMDB IDs found in watch history")
+            return {"items": [], "cluster_summaries": {}}
+
+        # batch fetch all embeddings from tmdb_metadata
+        unique_ids = list(set(pair[0] for pair in id_media_pairs))
+        logger.info(f"Fetching embeddings for {len(unique_ids)} unique TMDB IDs")
+
+        embeddings_docs = list(tmdb_metadata_collection.find(
+            {"id": {"$in": unique_ids}, "embedding": {"$exists": True}},
+            {"_id": 0, "id": 1, "media_type": 1, "embedding": 1, "genres": 1, "overview": 1}
+        ))
+
+        logger.info(f"Found {len(embeddings_docs)} items with embeddings in tmdb_metadata")
+
+        # create lookup dict keyed by (id, media_type)
+        embeddings_map = {}
+        for doc in embeddings_docs:
+            try:
+                key = (int(doc.get("id")), str(doc.get("media_type", "")).lower())
+                embeddings_map[key] = doc
+            except (ValueError, TypeError):
+                continue
+
+        # filter items that have embeddings
+        items_with_embeddings = []
+        for item in history:
+            tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
+            item_media_type = item.get("media_type")
+
+            if not tmdb_id or not item_media_type:
+                continue
+
+            try:
+                key = (int(tmdb_id), str(item_media_type).lower())
+                doc = embeddings_map.get(key)
+
+                if doc and doc.get("embedding"):
+                    item["embedding"] = doc["embedding"]
+                    # include genres for cluster naming
+                    if doc.get("genres"):
+                        item["genres"] = doc.get("genres")
+                    items_with_embeddings.append(item)
+            except (ValueError, TypeError):
+                continue
+
+        logger.info(f"Matched {len(items_with_embeddings)} items with embeddings")
+
+        if len(items_with_embeddings) < n_clusters:
+            # not enough items with embeddings for clustering
+            logger.warning(f"Only {len(items_with_embeddings)} items with embeddings, requested {n_clusters} clusters")
+            n_clusters = max(2, len(items_with_embeddings) // 2) if len(items_with_embeddings) >= 4 else 1
+
+        if not items_with_embeddings:
+            return {"items": [], "cluster_summaries": {}}
+
+        # extract embeddings matrix
+        embeddings = np.array([item["embedding"] for item in items_with_embeddings], dtype=np.float32)
+
+        # perform clustering
+        if len(items_with_embeddings) > 1:
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(embeddings)
+        else:
+            cluster_labels = np.array([0])
+
+        # dimensionality reduction to 2D using t-SNE
+        if embeddings.shape[0] > 1:
+            reducer = TSNE(n_components=2, random_state=42, perplexity=min(30, embeddings.shape[0] - 1))
+            coords_2d = reducer.fit_transform(embeddings)
+        else:
+            coords_2d = np.array([[0.0, 0.0]])
+
+        # build result items with coordinates and cluster labels
+        result_items = []
+        for idx, item in enumerate(items_with_embeddings):
+            result_items.append({
+                "id": item.get("id") or item.get("ids", {}).get("tmdb"),
+                "title": item.get("title", "Unknown"),
+                "media_type": item.get("media_type"),
+                "poster_path": item.get("poster_path"),
+                "year": item.get("year"),
+                "x": float(coords_2d[idx, 0]),
+                "y": float(coords_2d[idx, 1]),
+                "cluster": int(cluster_labels[idx]),
+                "watch_count": item.get("watch_count", 1),
+                "completion_ratio": item.get("completion_ratio", 0),  # for TV shows
+                "overview": item.get("overview", ""),
+                "genres": item.get("genres", [])
+            })
+
+        # generate cluster summaries
+        cluster_groups = defaultdict(list)
+        for item in result_items:
+            cluster_groups[item["cluster"]].append(item)
+
+        # generate LLM-based cluster names
+        cluster_summaries = {}
+        for cluster_id, cluster_items in cluster_groups.items():
+            titles = [item["title"] for item in cluster_items]
+            media_types = [item["media_type"] for item in cluster_items]
+            movie_count = sum(1 for mt in media_types if mt == "movie")
+            tv_count = sum(1 for mt in media_types if mt == "tv")
+
+            # extract genres from cluster items
+            all_genres = []
+            for item in cluster_items:
+                if item.get("genres"):
+                    for genre in item["genres"]:
+                        # genres can be dicts like {"id": 28, "name": "Action"} or strings
+                        if isinstance(genre, dict):
+                            genre_name = genre.get("name")
+                            if genre_name:
+                                all_genres.append(genre_name)
+                        elif isinstance(genre, str):
+                            all_genres.append(genre)
+
+            # get top genres
+            genre_counts = Counter(all_genres)
+            top_genres = [g for g, _ in genre_counts.most_common(3)]
+
+            # generate cluster name using LLM
+            cluster_name = generate_cluster_name(
+                titles[:20],  # use up to 20 titles
+                top_genres,
+                movie_count,
+                tv_count
+            )
+
+            cluster_summaries[str(cluster_id)] = {
+                "size": len(cluster_items),
+                "sample_titles": titles[:5],
+                "movie_count": movie_count,
+                "tv_count": tv_count,
+                "name": cluster_name,
+                "top_genres": top_genres
+            }
+
+        return {
+            "items": result_items,
+            "cluster_summaries": cluster_summaries,
+            "total_items": len(result_items),
+            "total_in_history": len(history),
+            "n_clusters": n_clusters,
+            "method": "tsne"
+        }
+
+    except Exception as e:
+        logger.error("get_watch_history_clusters error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

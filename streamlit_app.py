@@ -17,10 +17,21 @@ from typing import Optional, Dict, Any
 
 from dateutil import parser
 from app.schemas.api import HistoryItem, TMDBMetadata
+from app.utils.logger import get_logger
 
+logger = get_logger(__name__)
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 TOKEN_FILE = ".env.trakt_token"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"  # w500 for good quality
+
+# tab indices - update these if tab order changes
+TAB_HOME = 0
+TAB_HISTORY = 1
+TAB_VISUAL_EXPLORER = 2
+TAB_RECOMMENDATIONS = 3
+TAB_WILL_I_LIKE = 4
+TAB_SIMILAR_ITEMS = 5
+TAB_ADMIN = 6
 
 st.set_page_config(
     page_title="Watcher - Media Recommendations",
@@ -300,14 +311,14 @@ def _set_similar_item(tmdb_id: Optional[int], title: Optional[str], media_type: 
             'title': title,
             'media_type': media_type,
         }
-        st.session_state.active_tab = 4
+        st.session_state.active_tab = TAB_SIMILAR_ITEMS
     except Exception:
         st.session_state['similar_item'] = {
             'tmdb_id': tmdb_id,
             'title': title,
             'media_type': media_type,
         }
-        st.session_state['active_tab'] = 4
+        st.session_state['active_tab'] = TAB_SIMILAR_ITEMS
 
 
 def _check_will_like_inline(tmdb_id: int, media_type: str, result_key: str):
@@ -388,11 +399,12 @@ def show_dashboard():
     st.markdown("---")
 
     if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = 0
+        st.session_state.active_tab = TAB_HOME
 
     tab_labels = [
         "🏠 Home",
         "📺 Watch History",
+        "📊 Visual Explorer",
         "✨ Recommendations",
         "🤔 Will I Like?",
         "🔍 Similar Items",
@@ -416,17 +428,19 @@ def show_dashboard():
         st.rerun()
 
     # show content based on active tab
-    if st.session_state.active_tab == 0:
+    if st.session_state.active_tab == TAB_HOME:
         show_home_page()
-    elif st.session_state.active_tab == 1:
+    elif st.session_state.active_tab == TAB_HISTORY:
         show_history_page()
-    elif st.session_state.active_tab == 2:
+    elif st.session_state.active_tab == TAB_VISUAL_EXPLORER:
+        show_visual_explorer_page()
+    elif st.session_state.active_tab == TAB_RECOMMENDATIONS:
         show_recommendations_page()
-    elif st.session_state.active_tab == 3:
+    elif st.session_state.active_tab == TAB_WILL_I_LIKE:
         show_will_like_page()
-    elif st.session_state.active_tab == 4:
+    elif st.session_state.active_tab == TAB_SIMILAR_ITEMS:
         show_similar_items_page()
-    elif st.session_state.active_tab == 5:
+    elif st.session_state.active_tab == TAB_ADMIN:
         show_admin_page()
 
 
@@ -436,12 +450,17 @@ def show_home_page():
 
     st.write("Use the tabs above to navigate between different sections:")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.markdown('''### 📺 Watch History
         View your watched movies & shows''')
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown('''### 📊 Visual Explorer
+        See your watch history clustered by similarity''')
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col2:
@@ -450,7 +469,6 @@ def show_home_page():
         Get personalized suggestions''')
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with col3:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.markdown('''### 🔍 Similar Items
         Find similar movies & shows''')
@@ -847,6 +865,217 @@ def show_will_like_page():
                     st.write(f"**Score:** {score:.3f}")
                 st.write(expl)
         st.markdown('---')
+
+
+def show_visual_explorer_page():
+    """Display interactive clustered visualization of watch history."""
+    st.header("📊 Visual Explorer")
+    st.write("Explore your watch history visually - similar items are clustered together!")
+
+    # Controls
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        media_filter = st.selectbox("Media Type", ["All", "Movies", "TV Shows"], key="viz_media_filter")
+    with col2:
+        n_clusters = st.slider("Clusters", min_value=3, max_value=15, value=6, key="viz_n_clusters")
+    with col3:
+        if st.button("🔄 Refresh", type="primary"):
+            st.cache_data.clear()
+
+    # map UI selections to API params
+    media_type_param = None
+    if media_filter == "Movies":
+        media_type_param = "movie"
+    elif media_filter == "TV Shows":
+        media_type_param = "tv"
+
+    # fetch clustered data from backend
+    @st.cache_data(ttl=300, show_spinner=False)
+    def get_cluster_data(media_type, n_clust):
+        endpoint = f"/visualize/clusters?n_clusters={n_clust}"
+        if media_type:
+            endpoint += f"&media_type={media_type}"
+        return api_request(endpoint, method="GET")
+
+    with st.spinner("Clustering your watch history..."):
+        cluster_data = get_cluster_data(media_type_param, n_clusters)
+
+    if not cluster_data or not cluster_data.get("items"):
+        st.warning("⚠️ No items with embeddings found. Please ensure your watch history has been synced and embeddings have been generated.")
+        st.info("💡 Go to Admin Panel → Embeddings to generate embeddings for your watch history.")
+        return
+
+    items = cluster_data.get("items", [])
+    cluster_summaries = cluster_data.get("cluster_summaries", {})
+    total_items = cluster_data.get("total_items", 0)
+    total_in_history = cluster_data.get("total_in_history", 0)
+
+    # display summary metrics
+    st.markdown("---")
+    mcol1, mcol2, mcol3 = st.columns(3)
+    mcol1.metric("📊 Items Visualized", total_items)
+    mcol2.metric("📚 Total in History", total_in_history)
+    mcol3.metric("🎨 Clusters", len(cluster_summaries))
+
+    if total_items < total_in_history:
+        st.info(f"ℹ️ Showing {total_items} of {total_in_history} items (only items with embeddings)")
+
+    st.markdown("---")
+
+    # create interactive scatter plot with Plotly
+    try:
+        import plotly.express as px
+
+        # create explicit color mapping based on cluster ID order
+        # get unique cluster IDs and sort them
+        unique_cluster_ids = sorted(set(item["cluster"] for item in items))
+
+        # map cluster IDs to names in order
+        cluster_id_to_name = {}
+        for cluster_id in unique_cluster_ids:
+            cluster_id_to_name[cluster_id] = cluster_summaries.get(str(cluster_id), {}).get("name", f"Cluster {cluster_id + 1}")
+
+        # create ordered list of cluster names for category ordering
+        ordered_cluster_names = [cluster_id_to_name[cid] for cid in unique_cluster_ids]
+
+        # create color map
+        colors = px.colors.qualitative.Set3
+        color_map = {name: colors[i % len(colors)] for i, name in enumerate(ordered_cluster_names)}
+
+        # prepare data for plotting
+        x_vals = []
+        y_vals = []
+        cluster_name_labels = []
+        hover_texts = []
+
+        for item in items:
+            cluster_name = cluster_id_to_name[item["cluster"]]
+            icon = "🎬" if item["media_type"] == "movie" else "📺"
+
+            x_vals.append(item["x"])
+            y_vals.append(item["y"])
+            cluster_name_labels.append(cluster_name)
+
+            # Build hover text with appropriate metric based on media type
+            hover_text = (
+                f"{icon} <b>{item['title']}</b><br>"
+                f"Type: {item['media_type']}<br>"
+                f"Cluster: {cluster_name}<br>"
+            )
+
+            # show watch count for movies, completion % for TV shows
+            if item["media_type"] == "movie":
+                hover_text += f"Watch Count: {item.get('watch_count', 1)}"
+            else:  # TV show
+                completion = item.get("completion_ratio", 0) * 100
+                hover_text += f"Completion: {completion:.0f}%"
+
+            if item.get("year"):
+                hover_text += f"<br>Year: {item['year']}"
+            hover_texts.append(hover_text)
+
+        # create scatter plot with explicit category orders and color map
+        fig = px.scatter(
+            x=x_vals,
+            y=y_vals,
+            color=cluster_name_labels,
+            labels={"x": "", "y": "", "color": "Cluster"},
+            title=f"Watch History Clusters",
+            category_orders={"color": ordered_cluster_names},  # explicit order
+            color_discrete_map=color_map  # explicit color mapping
+        )
+
+        # plotly creates separate traces for each cluster, so we need to update each trace's hover text
+        # build hover text for each trace (cluster)
+        trace_hover_texts = {name: [] for name in ordered_cluster_names}
+        for i, (cluster_name, hover_text) in enumerate(zip(cluster_name_labels, hover_texts)):
+            trace_hover_texts[cluster_name].append(hover_text)
+
+        # update each trace with its corresponding hover texts
+        for trace in fig.data:
+            trace_name = trace.name
+            if trace_name in trace_hover_texts:
+                trace.update(
+                    hovertemplate='%{hovertext}<extra></extra>',
+                    hovertext=trace_hover_texts[trace_name],
+                    marker=dict(size=12, line=dict(width=1, color='white'))
+                )
+
+        # update layout for better appearance
+        fig.update_layout(
+            height=600,
+            hovermode='closest',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+
+        # display the plot
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Error creating visualization: {e}")
+        logger.error("Plotly visualization error: %s", repr(e), exc_info=True)
+
+    # display cluster summaries
+    st.markdown("---")
+    st.subheader("🎨 Cluster Summaries")
+
+    # sort clusters by size
+    sorted_clusters = sorted(
+        cluster_summaries.items(),
+        key=lambda x: x[1].get("size", 0),
+        reverse=True
+    )
+
+    for cluster_id, summary in sorted_clusters:
+        with st.expander(f"📁 {summary.get('name', f'Cluster {int(cluster_id) + 1}')} ({summary.get('size', 0)} items)"):
+            col1, col2 = st.columns([2, 3])
+
+            with col1:
+                st.write(f"**Movies:** {summary.get('movie_count', 0)}")
+                st.write(f"**TV Shows:** {summary.get('tv_count', 0)}")
+
+            with col2:
+                st.write("**Sample Titles:**")
+                for title in summary.get("sample_titles", []):
+                    st.write(f"• {title}")
+
+            # show poster grid for this cluster
+            cluster_items = [item for item in items if item["cluster"] == int(cluster_id)]
+
+            if st.checkbox(f"Show all items in this cluster", key=f"show_cluster_{cluster_id}"):
+                st.markdown("---")
+
+                # display as grid
+                cols_per_row = 5
+                for i in range(0, len(cluster_items), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j, col in enumerate(cols):
+                        if i + j < len(cluster_items):
+                            item = cluster_items[i + j]
+                            with col:
+                                poster_url = get_poster_url(item.get("poster_path"), item["title"], size="w185")
+                                st.image(poster_url, use_container_width=True)
+                                st.caption(item["title"][:30] + ("..." if len(item["title"]) > 30 else ""))
+
+                                # Add "Find Similar" button
+                                if st.button("🔍", key=f"similar_cluster_{cluster_id}_{item['id']}_{i}_{j}"):
+                                    st.session_state.similar_item = {
+                                        'tmdb_id': item['id'],
+                                        'title': item['title'],
+                                        'media_type': item['media_type'],
+                                    }
+                                    st.session_state.active_tab = TAB_SIMILAR_ITEMS
+                                    st.rerun()
 
 
 def show_similar_items_page():

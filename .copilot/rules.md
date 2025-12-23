@@ -8,6 +8,7 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
 ## Chat Style
 - Use **concise and clear language**.
 - Don't be excessively verbose; prefer brevity while maintaining clarity.
+- Do not generate new markdown files unless explicitly requested.
 
 ---
 
@@ -55,6 +56,7 @@ Copilot should treat these as **binding defaults** unless the existing file’s 
 - Avoid broad `except:` blocks; use `except Exception:` instead.
 - Keep functions focused; avoid multi-purpose large functions.
 - Always reduce code duplication; prefer helper functions or classes.
+- Always put imports at the top of the file.
 
 ---
 
