@@ -364,12 +364,25 @@ def embed_all_items(batch_size: int = 256) -> int:
 
 
 def build_user_vector_from_history(
-    history_items: List[Dict], decay_days: float = 30.0
+    history_items: List[Dict],
+    decay_days: Optional[float] = None,
+    min_weight: float = 0.3
 ) -> Optional[np.ndarray]:
     """Build a user embedding by weighted average of item embeddings. Weights decay by recency.
-    history_items: list of TMDB item docs (must include 'embedding' and 'latest_watched_at' or 'watched_at')
-    decay_days: decay factor in days (larger = slower decay) (default: 30.0)
+
+    Args:
+        history_items: list of TMDB item docs (must include 'embedding' and 'latest_watched_at' or 'watched_at')
+        decay_days: decay factor in days (larger = slower decay). Default from env RECENCY_DECAY_DAYS or 120.0
+        min_weight: minimum weight for older items (prevents total decay). Default 0.3
+
+    With decay_days=120 and min_weight=0.3:
+    - Items watched today: weight = 1.0
+    - Items watched 60 days ago: weight ≈ 0.61
+    - Items watched 120 days ago: weight ≈ 0.37
+    - Items watched 1+ year ago: weight = 0.3 (floor)
     """
+    if decay_days is None:
+        decay_days = float(os.getenv("RECENCY_DECAY_DAYS", "120.0"))
     # history_items are watch-history records (no embeddings). Fetch embeddings
     # from tmdb_metadata_collection using the TMDB ids in the history.
     if not history_items:
@@ -440,8 +453,15 @@ def build_user_vector_from_history(
     embs_arr = np.stack(embs)  # shape: (n_items, embedding_dim)
     ages_arr = np.array(age_days_list, dtype=np.float32)
 
-    # compute exponential decay weights
-    weights = np.exp(-ages_arr / max(1.0, decay_days))  # shape: (n_items,)
+    # compute exponential decay weights with floor
+    # weights decay exponentially but never fall below min_weight
+    decay_weights = np.exp(-ages_arr / max(1.0, decay_days))  # shape: (n_items,)
+    weights = np.maximum(decay_weights, min_weight)  # apply floor
+
+    logger.info(
+        "User vector weights - min: %.3f, max: %.3f, mean: %.3f (decay_days=%.1f, min_weight=%.2f)",
+        weights.min(), weights.max(), weights.mean(), decay_days, min_weight
+    )
 
     # apply weights and sum
     weighted_embs = embs_arr * weights[:, None]

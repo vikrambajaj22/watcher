@@ -17,6 +17,7 @@ def sync_trakt_history():
     seen_shows = {}
     page = 1
     per_page = 100  # trakt's max limit per page is 100
+    unique = set()
     while True:
         params = {"page": page, "limit": per_page}
         response = requests.get(
@@ -39,6 +40,7 @@ def sync_trakt_history():
                 tmdb_movie_id = None
                 if movie and movie.get("ids"):
                     tmdb_movie_id = movie.get("ids", {}).get("tmdb")
+                    unique.add(("movie", tmdb_movie_id))
                 if not tmdb_movie_id:
                     continue
                 movie_entry = seen_movies.setdefault(
@@ -66,6 +68,7 @@ def sync_trakt_history():
                 tmdb_show_id = None
                 if show and show.get("ids"):
                     tmdb_show_id = show.get("ids", {}).get("tmdb")
+                    unique.add(("tv", tmdb_show_id))
                 if not (
                     tmdb_show_id
                     and episode
@@ -99,6 +102,8 @@ def sync_trakt_history():
         if len(page_data) < per_page:
             break
         page += 1
+
+    logger.info("Total unique items fetched from Trakt history: %s", len(unique))
 
     for tmdb_id, movie in seen_movies.items():
         item = movie["item"]

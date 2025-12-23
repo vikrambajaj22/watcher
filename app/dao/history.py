@@ -47,22 +47,39 @@ def get_watch_history(media_type=None, include_posters: bool = True):
     history = list(watch_history_collection.find(query, {"_id": 0}))
     db_fetch_time = time.time() - start
 
+    # deduplicate based on (id, media_type) - database may have duplicates
+    if history:
+        seen_keys = {}
+        deduplicated = []
+        for item in history:
+            key = (item.get("id"), item.get("media_type"))
+            if key not in seen_keys:
+                seen_keys[key] = item
+                deduplicated.append(item)
+        if len(history) != len(deduplicated):
+            logger.warning("Removed %d duplicate entries from watch history (db has duplicates)", len(history) - len(deduplicated))
+        history = deduplicated
+
     if include_posters and history:
         t0 = time.time()
-        ids_set = set()
+        # use (id, media_type) tuples since IDs are NOT unique across media types
+        id_media_pairs = set()
         for item in history:
             tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
-            if tmdb_id:
+            media = item.get("media_type")
+            if tmdb_id and media:
                 try:
-                    ids_set.add(int(tmdb_id))
+                    id_media_pairs.add((int(tmdb_id), media.lower()))
                 except Exception:
                     pass
-        ids_list = list(ids_set)
 
-        if ids_list:
+        # Extract unique IDs for the query (still need to fetch all with same ID but different media_type)
+        unique_ids = list(set(pair[0] for pair in id_media_pairs))
+
+        if unique_ids:
             try:
                 # single query to fetch poster paths and media_type for all ids
-                cursor = tmdb_metadata_collection.find({"id": {"$in": ids_list}}, {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1})
+                cursor = tmdb_metadata_collection.find({"id": {"$in": unique_ids}}, {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1})
                 # build exact map keyed by (id, media_type) only
                 poster_map_exact = {}
                 for d in cursor:

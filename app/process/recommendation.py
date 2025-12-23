@@ -64,18 +64,99 @@ class MediaRecommender:
         recommend_count: int = 5,
         prompt_version: int = 1,
     ):
-        """Generate a prompt for movie recommendations based on watch history."""
+        """Generate a prompt with clean formatting including genres, watch count and/or completion rate."""
         prompt_template = self.prompt_registry.load_prompt_template(
             f"{media_type}_recommender", prompt_version
         )
-        # render candidates as a numbered (1-indexed) list for the prompt
-        candidates_enumerated = []
+
+        watch_ids = [item.get("id") for item in watch_history if item.get("id")]
+        genre_map = {}
+        if watch_ids:
+            try:
+                cursor = tmdb_metadata_collection.find(
+                    {"id": {"$in": watch_ids}},
+                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1}
+                )
+                for doc in cursor:
+                    doc_id = doc.get("id")
+                    doc_media = doc.get("media_type")
+                    genres_list = doc.get("genres", [])
+                    if genres_list:
+                        genre_names = [g.get("name") for g in genres_list if g.get("name")]
+                        if genre_names:
+                            genre_map[(doc_id, doc_media)] = ", ".join(genre_names[:3])
+            except Exception as e:
+                logger.warning("Failed to enrich genres for watch history: %s", repr(e))
+
+        watch_history_formatted = []
+        for item in watch_history:
+            title = item.get("title", "Unknown")
+            year = item.get("year", "")
+            media_type_item = item.get("media_type", "")
+            tmdb_id = item.get("id")
+
+            entry = f'"{title}"'
+            if year:
+                entry += f" ({year})"
+
+            genres = genre_map.get((tmdb_id, media_type_item))
+            if genres:
+                entry += f" [{genres}]"
+
+            # add watch count for movies or completion ratio for TV shows
+            if media_type_item == "movie":
+                watch_count = item.get("watch_count", 1)
+                if watch_count > 1:
+                    entry += f" - watched {watch_count}x"
+            elif media_type_item == "tv":
+                completion_ratio = item.get("completion_ratio")
+                if completion_ratio is not None:
+                    completion_pct = int(completion_ratio * 100)
+                    entry += f" - {completion_pct}% complete"
+
+            watch_history_formatted.append(entry)
+
+        cand_ids = [c.get("id") for c in candidates if c.get("id")]
+        cand_genre_map = {}
+        if cand_ids:
+            try:
+                cursor = tmdb_metadata_collection.find(
+                    {"id": {"$in": cand_ids}},
+                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1}
+                )
+                for doc in cursor:
+                    doc_id = doc.get("id")
+                    doc_media = doc.get("media_type")
+                    genres_list = doc.get("genres", [])
+                    if genres_list:
+                        genre_names = [g.get("name") for g in genres_list if g.get("name")]
+                        if genre_names:
+                            cand_genre_map[(doc_id, doc_media)] = ", ".join(genre_names[:3])
+            except Exception as e:
+                logger.warning("Failed to enrich genres for candidates: %s", repr(e))
+
+        # format candidates as numbered list (no IDs to avoid confusion)
+        candidates_formatted = []
         for i, c in enumerate(candidates, start=1):
-            candidates_enumerated.append({"index": i, "id": c.get("id"), "title": c.get("title"), "score": c.get("score")})
+            title = c.get("title", "Unknown")
+            score = c.get("score")
+            cand_media = c.get("media_type")
+            cand_id = c.get("id")
+
+            entry = f'{i}. "{title}"'
+
+            genres = cand_genre_map.get((cand_id, cand_media))
+            if genres:
+                entry += f" [{genres}]"
+
+            if score is not None:
+                entry += f" (similarity: {score:.3f})"
+
+            candidates_formatted.append(entry)
+
         return prompt_template.render(
-            watch_history=watch_history,
-            candidates=candidates,
-            candidates_enumerated=candidates_enumerated,
+            watch_history_formatted=watch_history_formatted,
+            candidates_formatted=candidates_formatted,
             recommend_count=recommend_count,
         )
 
@@ -204,11 +285,14 @@ class MediaRecommender:
         logger.info("Generated %s recommendation prompt: %s ...", media_type, prompt[:2000])
         messages = [{"role": "user", "content": prompt}]
         try:
+            t_llm_start = time.time()
             response = get_openai_chat_completion(
                 "gpt-4.1-nano",
                 messages=messages,
                 response_format={"type": "json_object"},
             )
+            llm_time = time.time() - t_llm_start
+            logger.info("LLM recommendation generation time: %.3fs", llm_time)
             completion_text = response.choices[0].message.content
             recommendations = json.loads(completion_text).get("recommendations", [])
         except Exception as e:
