@@ -12,14 +12,29 @@ _HISTORY_CACHE = TTLCache(maxsize=128, ttl=300)
 
 def store_watch_history(data):
     if isinstance(data, list):
+        # deduplicate based on (id, media_type) before storing
+        seen_keys = {}
+        deduplicated = []
+        for item in data:
+            key = (item.get("id"), item.get("media_type"))
+            if key not in seen_keys:
+                seen_keys[key] = item
+                deduplicated.append(item)
+
+        if len(data) != len(deduplicated):
+            logger.warning(
+                "Deduplicating watch history before storage: %d items reduced to %d unique items",
+                len(data), len(deduplicated)
+            )
+
         watch_history_collection.delete_many({})
-        watch_history_collection.insert_many(data)
+        watch_history_collection.insert_many(deduplicated)
         # invalidate cache when history changes
         try:
             _HISTORY_CACHE.clear()
         except Exception:
             pass
-        logger.info("Watch history stored successfully.")
+        logger.info("Watch history stored successfully: %d unique items.", len(deduplicated))
     else:
         logger.error("Invalid data format for storing watch history. Expected a list.")
         raise ValueError("Data must be a list of watch history items.")
