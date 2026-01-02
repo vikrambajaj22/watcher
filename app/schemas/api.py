@@ -118,6 +118,7 @@ class WillLikeResponse(BaseModel):
     will_like: bool
     score: float
     explanation: str
+    already_watched: bool = False
     item: ItemSummary
 
 

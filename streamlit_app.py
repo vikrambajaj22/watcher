@@ -524,13 +524,56 @@ def show_history_page():
                 pass
 
     # filters shown above the history list; build them before fetching to keep UI stable
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
     with col1:
         media_filter = st.selectbox("Media Type", ["All", "Movies", "TV Shows"])
     with col2:
         sort_by = st.selectbox("Sort By", ["Latest Watched", "Earliest Watched", "Title", "Watch Count"])
     with col3:
         search = st.text_input("🔍 Search", placeholder="Search titles...")
+    with col4:
+        st.write("")
+        if st.button("🔄 Sync Now", type="primary", use_container_width=True):
+            with st.spinner("Syncing watch history..."):
+                res = start_trakt_sync_shared()
+                st.session_state['history_auto_sync_ts'] = int(time.time())
+
+                # poll for sync completion if job_id was returned
+                job_id = None
+                if isinstance(res, dict):
+                    job_id = res.get('job_id')
+
+                if job_id:
+                    # use a placeholder for status messages that will update in place
+                    status_placeholder = st.empty()
+                    status_placeholder.info("⏳ Sync initiated... Waiting for completion...")
+
+                    interval = 2
+                    waited = 0
+                    max_wait = 120
+                    while waited < max_wait:
+                        try:
+                            url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
+                            r = requests.get(url, timeout=5)
+                            if r.status_code == 200:
+                                js = r.json()
+                                status = js.get('status')
+                                if status == 'completed':
+                                    status_placeholder.success("✅ Watch history synced successfully!")
+                                    time.sleep(0.5)
+                                    clear_caches()
+                                    break
+                                elif status == 'failed':
+                                    status_placeholder.error("❌ Sync failed. Please try again.")
+                                    break
+                        except Exception:
+                            pass
+                        time.sleep(interval)
+                        waited += interval
+                    if waited >= max_wait:
+                        status_placeholder.info("⏳ Sync still running in background. Check back in a moment!")
+                else:
+                    st.success("✅ Sync initiated!")
 
     # determine server-side media_type param and fetch history accordingly (server-side filtering when possible)
     if media_filter == "Movies":
@@ -805,7 +848,20 @@ def show_will_like_page():
     st.header("🤔 Will I Like This?")
     st.write("Check whether an item matches your taste based on your watch history.")
 
-    tab_id, tab_title = st.tabs(["By TMDB ID", "By Title"])
+    tab_title, tab_id = st.tabs(["By Title", "By TMDB ID"])
+
+    with tab_title:
+        st.subheader("Check by Title")
+        title_str = st.text_input("Movie / TV show title", key="will_title_input")
+        media_type_title = st.selectbox("Media Type", ["movie", "tv"], key="will_title_media")
+        if st.button("🤔 Check Will I Like (by Title)", key="will_check_title"):
+            if not title_str:
+                st.error("Please provide a title")
+            else:
+                with st.spinner("Checking..."):
+                    payload = {"title": title_str, "media_type": media_type_title}
+                    res = api_request('/mcp/will-like', method='POST', data=payload)
+                    st.session_state['will_like_result'] = res
 
     with tab_id:
         st.subheader("Check by TMDB ID")
@@ -830,19 +886,6 @@ def show_will_like_page():
                 st.session_state['will_like_result'] = res
                 st.session_state['will_like_tmdb_id'] = int(tmdb_id)
 
-    with tab_title:
-        st.subheader("Check by Title")
-        title_str = st.text_input("Movie / TV show title", key="will_title_input")
-        media_type_title = st.selectbox("Media Type", ["movie", "tv"], key="will_title_media")
-        if st.button("🤔 Check Will I Like (by Title)", key="will_check_title"):
-            if not title_str:
-                st.error("Please provide a title")
-            else:
-                with st.spinner("Checking..."):
-                    payload = {"title": title_str, "media_type": media_type_title}
-                    res = api_request('/mcp/will-like', method='POST', data=payload)
-                    st.session_state['will_like_result'] = res
-
     st.markdown("---")
     # show last computed will-like result if available
     if st.session_state.get('will_like_result'):
@@ -854,14 +897,18 @@ def show_will_like_page():
             score = res.get('score')
             will = res.get('will_like')
             expl = res.get('explanation')
+            already_watched = res.get('already_watched', False)
             col1, col2 = st.columns([1, 3])
             with col1:
                 poster_url = get_poster_url(item.get('poster_path'), (item.get('title') or 'No Title'))
                 st.image(poster_url, use_container_width=True)
             with col2:
-                emoji = '❤️' if will else '🤷'
-                st.markdown(f"### {emoji} Will you like: **{(item.get('title') or 'Unknown')}**")
-                if isinstance(score, (int, float)):
+                if already_watched:
+                    st.markdown(f"### ✅ You have already watched: **{(item.get('title') or 'Unknown')}**")
+                else:
+                    emoji = '❤️' if will else '🤷'
+                    st.markdown(f"### {emoji} Will you like: **{(item.get('title') or 'Unknown')}**")
+                if isinstance(score, (int, float)) and not already_watched:
                     st.write(f"**Score:** {score:.3f}")
                 st.write(expl)
         st.markdown('---')

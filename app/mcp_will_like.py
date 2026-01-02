@@ -111,6 +111,25 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
 
     # build user vector from watch history
     history = get_watch_history(media_type=None, include_posters=False)
+
+    # check if user has already watched this item
+    already_watched = False
+    if resolved_id and history:
+        already_watched = any(
+            int(h.get("id")) == int(resolved_id) and h.get("media_type") == media_type
+            for h in history
+        )
+
+    # skip similarity computation if already watched
+    if already_watched:
+        return {
+            "will_like": False,
+            "score": 1.0,
+            "explanation": "You have already watched this item.",
+            "already_watched": True,
+            "item": {"id": int(resolved_id) if resolved_id else None, "title": resolved_title, "media_type": media_type, "overview": resolved_overview, "poster_path": resolved_poster},
+        }
+
     user_vec = build_user_vector_from_history(history)
     if user_vec is None:
         raise WillLikeError("not enough history embeddings to build user profile")
@@ -136,6 +155,8 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         formatted_score = "{:.3f}".format(float(score))
     except Exception:
         formatted_score = str(score)
+
+    # build explanation
     explanation = f"Similarity score based on your watch history: {formatted_score}."
     if will_like:
         explanation += " This item closely matches your tastes."
@@ -146,5 +167,6 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         "will_like": will_like,
         "score": score,
         "explanation": explanation,
+        "already_watched": False,
         "item": {"id": int(resolved_id) if resolved_id else None, "title": resolved_title, "media_type": media_type, "overview": resolved_overview, "poster_path": resolved_poster},
     }

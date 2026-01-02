@@ -1,8 +1,11 @@
 import hashlib
 import json
+import os
+import time
 
 import requests
 
+from app.auth.trakt_auth import refresh_token
 from app.config.settings import settings
 from app.dao.history import get_watch_history, store_watch_history
 from app.tmdb_client import get_metadata
@@ -11,7 +14,36 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _ensure_valid_token():
+    """Refresh Trakt token if it's expired or about to expire."""
+    token_file = ".env.trakt_token"
+    if not os.path.exists(token_file):
+        logger.warning("Token file not found. Sync will fail.")
+        return
+
+    try:
+        with open(token_file) as f:
+            data = json.load(f)
+
+        created_at = data.get("created_at", 0)
+        expires_in = data.get("expires_in", 604800)  # default 7 days
+        current_time = int(time.time())
+        token_age = current_time - created_at
+
+        # refresh if token is expired or will expire within 1 hour (3600 seconds)
+        if token_age > (expires_in - 3600):
+            logger.info("Token expired or expiring soon (age: %s seconds, expires_in: %s). Refreshing...", token_age, expires_in)
+            refresh_token()
+            logger.info("Token refreshed successfully.")
+    except Exception as e:
+        logger.error("Error checking/refreshing token: %s", repr(e), exc_info=True)
+        # continue anyway - let the API call fail if token is actually invalid
+
+
 def sync_trakt_history():
+    # ensure token is valid before syncing
+    _ensure_valid_token()
+
     all_history = []
     seen_movies = {}
     seen_shows = {}
