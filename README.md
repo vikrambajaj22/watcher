@@ -225,17 +225,7 @@ curl -X POST "${API_BASE_URL:-http://localhost:8080}/mcp/knn" \
 
 ## Deployment
 
-### GCP Cloud Run
-```bash
-gcloud builds submit --tag gcr.io/PROJECT_ID/watcher
-
-gcloud run deploy watcher \
-  --image gcr.io/PROJECT_ID/watcher \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars TRAKT_CLIENT_ID=xxx,TRAKT_CLIENT_SECRET=xxx,TRAKT_REDIRECT_URI=xxx,TMDB_API_KEY=xxx,MONGODB_URI=xxx,MONGODB_DB_NAME=watcher,OPENAI_API_KEY=xxx
-```
+TBD
 
 ## License
 MIT
