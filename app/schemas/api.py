@@ -164,8 +164,8 @@ class AdminFaissRebuildResponse(AdminAckResponse):
 
 class SyncStatusResponse(BaseModel):
     trakt_last_activity: Optional[str] = None
-    tmdb_movie_last_sync: Optional[int] = None
-    tmdb_tv_last_sync: Optional[int] = None
+    tmdb_movie_last_sync: Optional[str] = None
+    tmdb_tv_last_sync: Optional[str] = None
 
 
 class JobStatusModel(BaseModel):

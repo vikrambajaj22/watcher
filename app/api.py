@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from typing import Dict, List
 import os
 import subprocess
@@ -10,6 +11,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 import numpy as np
+from pymongo import DESCENDING
 from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 
@@ -421,26 +423,43 @@ def admin_sync_status():
     Response shape:
     {
         "trakt_last_activity": <iso string or null>,
-        "tmdb_movie_last_sync": <epoch int or null>,
-        "tmdb_tv_last_sync": <epoch int or null>
+        "tmdb_movie_last_sync": <iso string or null>,
+        "tmdb_tv_last_sync": <iso string or null>
     }
     """
     try:
         from app.db import sync_meta_collection
 
-        def _get(key):
+        def _get(key, media_type: str = None):
             try:
-                doc = sync_meta_collection.find_one({"_id": key})
+                filter = {
+                    "_id": {"$regex": f"^{key}"},
+                    "status": "completed",
+                }
+                if media_type:
+                    filter["media_type"] = media_type
+                doc = sync_meta_collection.find(
+                    filter,
+                    {
+                        "_id": 0,
+                        "finished_at": 1,
+                    },
+                ).sort("finished_at", DESCENDING).limit(1)
+                doc = list(doc)
                 if not doc:
                     return None
-                return doc.get("last_sync") or doc.get("last_activity")
+                # convert timestamp to iso string
+                finished_at = doc[0]["finished_at"]
+                if finished_at:
+                    return datetime.fromtimestamp(finished_at, tz=timezone.utc).isoformat()
+                return finished_at
             except Exception:
                 return None
 
         status = {
-            "trakt_last_activity": _get("trakt_last_activity"),
-            "tmdb_movie_last_sync": _get("tmdb_movie_last_sync"),
-            "tmdb_tv_last_sync": _get("tmdb_tv_last_sync"),
+            "trakt_last_activity": _get("trakt_sync_job"),
+            "tmdb_movie_last_sync": _get("tmdb_sync_job", "movie"),
+            "tmdb_tv_last_sync": _get("tmdb_sync_job", "tv"),
         }
         return SyncStatusResponse(**status)
     except Exception as e:
