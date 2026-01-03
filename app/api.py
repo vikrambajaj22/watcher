@@ -249,6 +249,32 @@ def trakt_auth_callback(request: Request):
         return RedirectResponse("/auth/trakt/start")
 
 
+@router.get("/auth/status")
+def auth_status() -> Dict[str, str]:
+    """Return current authentication status."""
+    try:
+        if settings.TRAKT_ACCESS_TOKEN:
+            return {
+                "authenticated": "true"
+            }
+        return {"authenticated": "false"}
+    except Exception as e:
+        logger.error("auth_status error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/auth/logout")
+def auth_logout():
+    """Log out the current user by deleting the stored token file."""
+    try:
+        if settings.TRAKT_ACCESS_TOKEN:
+            os.remove(settings.TRAKT_TOKEN_FILE)
+        return {"status": "logged_out"}
+    except Exception as e:
+        logger.error("auth_logout error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/admin/embed/item", response_model=AdminAckResponse, status_code=202)
 def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemPayload):
     """Trigger embedding of a single TMDB item in background. Expects JSON: {"id": <int>, "media_type": "movie"}"""
@@ -326,7 +352,8 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
             getattr(p, "pid", None),
             log_path,
         )
-        return AdminFaissRebuildResponse(status="accepted", message="faiss rebuild started", pid=getattr(p, "pid", None), log=log_path)
+        return AdminFaissRebuildResponse(status="accepted", message="faiss rebuild started",
+                                         pid=getattr(p, "pid", None), log=log_path)
     except Exception as e:
         logger.error("admin_faiss_rebuild error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -489,7 +516,8 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
         job_id = str(uuid.uuid4())
         job_key = f"tmdb_sync_job:{job_id}"
         started_at = int(_time.time())
-        sync_meta_collection.update_one({"_id": job_key}, {"$set": {"status": "pending", "started_at": started_at, "media_type": media_type}}, upsert=True)
+        sync_meta_collection.update_one({"_id": job_key}, {
+            "$set": {"status": "pending", "started_at": started_at, "media_type": media_type}}, upsert=True)
 
         def _run_tmdb_job(jid: str, mtype: str, full: bool, embed_u: bool, force: bool):
             key = f"tmdb_sync_job:{jid}"
@@ -499,25 +527,33 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
                 if existing and (existing.get("cancel") or existing.get("status") == "canceled"):
                     # ensure canceled state persisted with finished_at
                     try:
-                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "canceled", "finished_at": int(_time.time())}})
+                        sync_meta_collection.update_one({"_id": key}, {
+                            "$set": {"status": "canceled", "finished_at": int(_time.time())}})
                     except Exception:
                         pass
                     return
 
-                sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "running", "last_update": int(_time.time())}})
+                sync_meta_collection.update_one({"_id": key},
+                                                {"$set": {"status": "running", "last_update": int(_time.time())}})
                 res = sync_tmdb(mtype, full_sync=full, embed_updated=embed_u, force_refresh=force, job_id=jid)
                 # if the sync reported it was canceled, mark job as canceled; otherwise complete it
                 try:
                     current = sync_meta_collection.find_one({"_id": key}) or {}
                     already_canceled = bool(current.get("cancel") or current.get("status") == "canceled")
                     if already_canceled or (isinstance(res, dict) and res.get("canceled")):
-                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "canceled", "finished_at": int(_time.time()), "result": res}}, upsert=True)
+                        sync_meta_collection.update_one({"_id": key}, {
+                            "$set": {"status": "canceled", "finished_at": int(_time.time()), "result": res}},
+                                                        upsert=True)
                     else:
-                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}}, upsert=True)
+                        sync_meta_collection.update_one({"_id": key}, {
+                            "$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}},
+                                                        upsert=True)
                 except Exception:
                     # best-effort final update
                     try:
-                        sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}}, upsert=True)
+                        sync_meta_collection.update_one({"_id": key}, {
+                            "$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}},
+                                                        upsert=True)
                     except Exception:
                         pass
             except Exception as e:
@@ -528,12 +564,16 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
                     if already_canceled:
                         # preserve canceled state and record the error in result/error fields
                         try:
-                            sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "canceled", "finished_at": int(_time.time()), "error": str(e), "trace": _traceback.format_exc()}}, upsert=True)
+                            sync_meta_collection.update_one({"_id": key}, {
+                                "$set": {"status": "canceled", "finished_at": int(_time.time()), "error": str(e),
+                                         "trace": _traceback.format_exc()}}, upsert=True)
                         except Exception:
                             pass
                     else:
                         try:
-                            sync_meta_collection.update_one({"_id": key}, {"$set": {"status": "failed", "finished_at": int(_time.time()), "error": str(e), "trace": _traceback.format_exc()}}, upsert=True)
+                            sync_meta_collection.update_one({"_id": key}, {
+                                "$set": {"status": "failed", "finished_at": int(_time.time()), "error": str(e),
+                                         "trace": _traceback.format_exc()}}, upsert=True)
                         except Exception:
                             pass
                 except Exception:
@@ -561,7 +601,9 @@ def admin_cancel_tmdb(payload: AdminCancelJobRequest):
         # If job hasn't started (pending) mark it canceled immediately
         status = doc.get("status")
         if status in (None, "pending", "running"):
-            sync_meta_collection.update_one({"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": now, "status": "canceled", "finished_at": now}}, upsert=True)
+            sync_meta_collection.update_one({"_id": key}, {
+                "$set": {"cancel": True, "cancel_requested_at": now, "status": "canceled", "finished_at": now}},
+                                            upsert=True)
             return AdminAckResponse(status="accepted", message="job canceled")
         # Otherwise (already completed/failed/canceled), just set the cancel flag for record
         sync_meta_collection.update_one({"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": now}})
@@ -586,7 +628,9 @@ def admin_list_sync_jobs():
 
         # find job docs whose _id ends with '_sync_job:<id>' and which are not completed
         # Using regex to roughly match keys like 'tmdb_sync_job:' or 'trakt_sync_job:'
-        cursor = sync_meta_collection.find({"_id": {"$regex": "_sync_job:"}, "status": {"$ne": "completed"}}, {"_id": 1, "status": 1, "processed": 1, "embed_queued": 1, "started_at": 1, "last_update": 1, "cancel": 1})
+        cursor = sync_meta_collection.find({"_id": {"$regex": "_sync_job:"}, "status": {"$ne": "completed"}},
+                                           {"_id": 1, "status": 1, "processed": 1, "embed_queued": 1, "started_at": 1,
+                                            "last_update": 1, "cancel": 1})
         results = []
         for d in cursor:
             key = d.get("_id")
@@ -610,8 +654,8 @@ def admin_list_sync_jobs():
 
 @router.get("/visualize/clusters")
 def get_watch_history_clusters(
-    media_type: str = None,
-    n_clusters: int = Query(default=6, ge=3, le=15)
+        media_type: str = None,
+        n_clusters: int = Query(default=6, ge=3, le=15)
 ):
     """Generate 2D clustered visualization of watch history using embeddings.
 
@@ -794,4 +838,3 @@ def get_watch_history_clusters(
     except Exception as e:
         logger.error("get_watch_history_clusters error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-

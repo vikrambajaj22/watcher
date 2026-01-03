@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     TRAKT_CLIENT_ID: str
     TRAKT_CLIENT_SECRET: str
+    TRAKT_TOKEN_FILE: str = ".env.trakt_token"
     TRAKT_REDIRECT_URI: str
     TMDB_API_KEY: str
     OPENAI_API_KEY: str
@@ -26,9 +27,8 @@ class Settings(BaseSettings):
 
     @property
     def TRAKT_ACCESS_TOKEN(self):
-        token_file = ".env.trakt_token"
-        if os.path.exists(token_file):
-            with open(token_file) as f:
+        if os.path.exists(self.TRAKT_TOKEN_FILE):
+            with open(self.TRAKT_TOKEN_FILE) as f:
                 data = json.load(f)
                 return data.get("access_token", "")
         return ""

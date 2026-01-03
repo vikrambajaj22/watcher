@@ -64,7 +64,7 @@ rich==13.9.4
 rpds-py==0.30.0
 ruff==0.14.7
 safetensors==0.6.2
-scikit-learn==1.7.2
+scikit-learn==1.6.1
 scipy==1.16.3
 sentence-transformers==5.1.2
 six==1.17.0

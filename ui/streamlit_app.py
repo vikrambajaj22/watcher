@@ -18,7 +18,6 @@ from typing import Optional, Dict, Any
 from dateutil import parser
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
-TOKEN_FILE = ".env.trakt_token"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"  # w500 for good quality
 
 # tab indices - update these if tab order changes
@@ -66,8 +65,16 @@ st.markdown("""
 
 
 def is_authenticated() -> bool:
-    """Check if user has a valid Trakt token."""
-    return os.path.exists(TOKEN_FILE)
+    """Check if user has a valid Trakt token using /auth/status."""
+    try:
+        url = f"{API_BASE_URL}/auth/status"
+        r = requests.get(url)
+        if r.status_code == 200:
+            js = r.json()
+            return js.get('authenticated', False)
+        return False
+    except Exception:
+        return False
 
 
 def get_poster_url(poster_path: Optional[str], fallback_text: str = "No Poster", size: str = "w500") -> str:
@@ -85,18 +92,6 @@ def get_poster_url(poster_path: Optional[str], fallback_text: str = "No Poster",
         return f"https://image.tmdb.org/t/p/{size}{poster_path}"
     else:
         return f"https://via.placeholder.com/500x750/667eea/ffffff?text={fallback_text.replace(' ', '+')}"
-
-
-def get_token_info() -> Optional[Dict[str, Any]]:
-    """Get token information from file."""
-    if not is_authenticated():
-        return None
-    try:
-        with open(TOKEN_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        st.error(f"Error reading token: {e}")
-        return None
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -387,8 +382,12 @@ def show_dashboard():
     with col2:
         if is_authenticated():
             if st.button("→ Logout", use_container_width=True):
-                if os.path.exists(TOKEN_FILE):
-                    os.remove(TOKEN_FILE)
+                # call /auth/logout and clear session
+                try:
+                    url = f"{API_BASE_URL}/auth/logout"
+                    requests.post(url)
+                except Exception:
+                    pass
                 st.rerun()
         else:
             st.warning("⚠️ Not Authenticated")
@@ -1476,14 +1475,6 @@ def show_admin_page():
                 clear_caches()
             except Exception:
                 pass
-
-        st.subheader("🔑 Token Information")
-        if st.button("Show Token Info"):
-            token_info = get_token_info()
-            if token_info:
-                st.json(token_info)
-            else:
-                st.info("No token information available")
 
     with tab_embedding:
         st.subheader("🧠 Embedding Management")
