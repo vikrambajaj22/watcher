@@ -250,14 +250,14 @@ def trakt_auth_callback(request: Request):
 
 
 @router.get("/auth/status")
-def auth_status() -> Dict[str, str]:
+def auth_status() -> Dict[str, bool]:
     """Return current authentication status."""
     try:
-        if settings.TRAKT_ACCESS_TOKEN:
+        if settings.TRAKT_ACCESS_TOKEN != "":
             return {
-                "authenticated": "true"
+                "authenticated": True
             }
-        return {"authenticated": "false"}
+        return {"authenticated": False}
     except Exception as e:
         logger.error("auth_status error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -71,7 +71,7 @@ def is_authenticated() -> bool:
         r = requests.get(url)
         if r.status_code == 200:
             js = r.json()
-            return js.get('authenticated', False)
+            return js.get("authenticated", False)
         return False
     except Exception:
         return False
@@ -378,14 +378,15 @@ def show_dashboard():
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.image("static/ui/images/watcher-logo.jpeg", width=100)
+        st.image("ui/static/images/watcher-logo.jpeg", width=100)
     with col2:
         if is_authenticated():
             if st.button("→ Logout", use_container_width=True):
                 # call /auth/logout and clear session
                 try:
                     url = f"{API_BASE_URL}/auth/logout"
-                    requests.post(url)
+                    requests.get(url)
+                    st.session_state.clear()
                 except Exception:
                     pass
                 st.rerun()
