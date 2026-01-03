@@ -33,10 +33,13 @@ class MediaRecommender:
                             "id",
                             "title",
                             "year",
+                            "media_type",
                             "watch_count",
+                            "completion_ratio",
                             "watched_at",
                             "earliest_watched_at",
                             "latest_watched_at",
+                            "rewatch_engagement",
                         ]
                     }
                 )
@@ -103,16 +106,20 @@ class MediaRecommender:
             if genres:
                 entry += f" [{genres}]"
 
-            # add watch count for movies or completion ratio for TV shows
+            rewatch_eng = item.get("rewatch_engagement")
+
+            # add watch count for movies or completion ratio for TV shows, and engagement if available
             if media_type_item == "movie":
                 watch_count = item.get("watch_count", 1)
-                if watch_count > 1:
-                    entry += f" - watched {watch_count}x"
+                engagement_display = f"{rewatch_eng:.1f}x" if rewatch_eng else f"{watch_count}x"
+                entry += f" - watched {engagement_display}"
             elif media_type_item == "tv":
                 completion_ratio = item.get("completion_ratio")
                 if completion_ratio is not None:
                     completion_pct = int(completion_ratio * 100)
                     entry += f" - {completion_pct}% complete"
+                if rewatch_eng and rewatch_eng > 0:
+                    entry += f" (engagement: {rewatch_eng:.1f}x)"
 
             watch_history_formatted.append(entry)
 
@@ -122,7 +129,7 @@ class MediaRecommender:
             try:
                 cursor = tmdb_metadata_collection.find(
                     {"id": {"$in": cand_ids}},
-                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1}
+                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1, "rewatch_engagement": 1}
                 )
                 for doc in cursor:
                     doc_id = doc.get("id")
@@ -133,7 +140,7 @@ class MediaRecommender:
                         if genre_names:
                             cand_genre_map[(doc_id, doc_media)] = ", ".join(genre_names[:3])
             except Exception as e:
-                logger.warning("Failed to enrich genres for candidates: %s", repr(e))
+                logger.warning("Failed to enrich genres/engagement for candidates: %s", repr(e))
 
         # format candidates as numbered list (no IDs to avoid confusion)
         candidates_formatted = []
@@ -154,6 +161,8 @@ class MediaRecommender:
 
             candidates_formatted.append(entry)
 
+        logger.info("WATCH HISTORY FORMATTED: %s ...", watch_history_formatted[:5])
+        logger.info("CANDIDATES FORMATTED: %s ...", candidates_formatted[:5])
         return prompt_template.render(
             watch_history_formatted=watch_history_formatted,
             candidates_formatted=candidates_formatted,
@@ -282,7 +291,7 @@ class MediaRecommender:
             recommend_count=recommend_count,
             prompt_version=1,
         )
-        logger.info("Generated %s recommendation prompt: %s ...", media_type, prompt[:2000])
+        logger.info("Generated %s recommendation prompt: %s ...", media_type, prompt[:2500])
         messages = [{"role": "user", "content": prompt}]
         try:
             t_llm_start = time.time()

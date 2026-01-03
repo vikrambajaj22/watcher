@@ -528,7 +528,7 @@ def show_history_page():
     with col1:
         media_filter = st.selectbox("Media Type", ["All", "Movies", "TV Shows"])
     with col2:
-        sort_by = st.selectbox("Sort By", ["Latest Watched", "Earliest Watched", "Title", "Watch Count"])
+        sort_by = st.selectbox("Sort By", ["Latest Watched", "Earliest Watched", "Title", "Watch Count", "Rewatch Engagement"])
     with col3:
         search = st.text_input("🔍 Search", placeholder="Search titles...")
     with col4:
@@ -713,6 +713,8 @@ def show_history_page():
             history_data = sorted(history_data, key=lambda x: x.get("title", ""))
         elif sort_by == "Watch Count":
             history_data = sorted(history_data, key=lambda x: x.get("watch_count", 0), reverse=True)
+        elif sort_by == "Rewatch Engagement":
+            history_data = sorted(history_data, key=lambda x: x.get("rewatch_engagement", 0), reverse=True)
 
         if not history_data:
             st.warning("No items match your filters.")
@@ -743,6 +745,9 @@ def show_history_page():
                     else:
                         completion = item.get("completion_ratio", 0) * 100
                         st.metric("Completion", f"{completion:.0f}%")
+                    rewatch_eng = item.get("rewatch_engagement", 0)
+                    if rewatch_eng > 0:
+                        st.caption(f"🔁 Rewatch: {rewatch_eng:.1f}x")
 
                 with col4:
                     st.write(f"Last: {item.get('latest_watched_at', 'N/A')[:10]}")

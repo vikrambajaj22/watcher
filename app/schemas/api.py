@@ -196,6 +196,7 @@ class HistoryItem(BaseModel):
     earliest_watched_at: Optional[str] = None
     watch_count: Optional[int] = None
     completion_ratio: Optional[float] = None
+    rewatch_engagement: Optional[float] = None
     # allow other stored fields we don't enumerate explicitly
     model_config = {"extra": "allow"}
 

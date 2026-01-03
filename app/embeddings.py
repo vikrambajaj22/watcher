@@ -392,6 +392,7 @@ def build_user_vector_from_history(
     # collect embeddings and timestamps
     embs = []
     age_days_list = []
+    rewatch_engagement_list = []
 
     # gather ids referenced in history and fetch embeddings in bulk
     ids = [it.get("id") for it in history_items if it.get("id") is not None]
@@ -445,6 +446,13 @@ def build_user_vector_from_history(
                 age_days = 0.0
         age_days_list.append(age_days)
 
+        # collect rewatch engagement metric (default to 1.0 if not present)
+        # rewatch_engagement already represents the engagement multiplier (1.0 = single watch, 2.0 = double, etc.)
+        rewatch_eng = it.get("rewatch_engagement", 1.0)
+        if rewatch_eng is None or rewatch_eng < 0:
+            rewatch_eng = 1.0
+        rewatch_engagement_list.append(rewatch_eng)
+
     if not embs:
         logger.warning("No embeddings found for user history items (after fetching deom tmdb_metadata_collection)")
         return None
@@ -452,14 +460,18 @@ def build_user_vector_from_history(
     logger.info("Loaded %d embeddings from user history for user vector computation", len(embs))
     embs_arr = np.stack(embs)  # shape: (n_items, embedding_dim)
     ages_arr = np.array(age_days_list, dtype=np.float32)
+    rewatch_arr = np.array(rewatch_engagement_list, dtype=np.float32)
 
     # compute exponential decay weights with floor
     # weights decay exponentially but never fall below min_weight
     decay_weights = np.exp(-ages_arr / max(1.0, decay_days))  # shape: (n_items,)
     weights = np.maximum(decay_weights, min_weight)  # apply floor
 
+    # apply rewatch engagement multiplier to weights to amplify signals from rewatched items
+    weights = weights * rewatch_arr
+
     logger.info(
-        "User vector weights - min: %.3f, max: %.3f, mean: %.3f (decay_days=%.1f, min_weight=%.2f)",
+        "User vector weights - min: %.3f, max: %.3f, mean: %.3f (decay_days=%.1f, min_weight=%.2f, with rewatch multiplier)",
         weights.min(), weights.max(), weights.mean(), decay_days, min_weight
     )
 

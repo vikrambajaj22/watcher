@@ -152,6 +152,8 @@ def sync_trakt_history():
         movie_data["watch_count"] = movie["count"]
         movie_data["earliest_watched_at"] = movie["earliest"]
         movie_data["latest_watched_at"] = movie["latest"]
+        # for movies, rewatch_engagement = watch_count (they're always 100% completion)
+        movie_data["rewatch_engagement"] = float(movie["count"])
         all_history.append(movie_data)
 
     for tmdb_id, show in seen_shows.items():
@@ -207,6 +209,15 @@ def sync_trakt_history():
         show_data["episode_watch_count"] = show["episode_watch_total"]
         show_data["earliest_watched_at"] = show["earliest"]
         show_data["latest_watched_at"] = show["latest"]
+        # rewatch_engagement for TV shows
+        # = average_watches_per_episode * completion_ratio
+        # this represents the effective engagement multiplier
+        if watched_episodes > 0:
+            avg_watches_per_episode = show["episode_watch_total"] / watched_episodes
+            rewatch_engagement = avg_watches_per_episode * show_data["completion_ratio"]
+        else:
+            rewatch_engagement = 0.0
+        show_data["rewatch_engagement"] = rewatch_engagement
         # calculate season completion counts
         season_completion_count = {}
         # build a mapping: season -> [episode watch counts]
@@ -259,6 +270,7 @@ def sync_trakt_history():
                     "movie",
                     item.get("id"),
                     item.get("watch_count"),
+                    item.get("rewatch_engagement"),
                     item.get("earliest_watched_at"),
                     item.get("latest_watched_at"),
                 )
@@ -276,6 +288,7 @@ def sync_trakt_history():
                     "tv",
                     item.get("id"),
                     item.get("watch_count"),
+                    item.get("rewatch_engagement"),
                     item.get("episode_watch_count"),
                     item.get("watched_episodes"),
                     item.get("total_episodes"),
