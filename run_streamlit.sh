@@ -12,5 +12,5 @@ echo ""
 export API_BASE_URL=${API_BASE_URL:-"http://localhost:8080"}
 
 # Run streamlit
-streamlit run streamlit_app.py --server.port 8501 --server.address localhost
+streamlit run ui/streamlit_app.py --server.port 8501 --server.address localhost
 

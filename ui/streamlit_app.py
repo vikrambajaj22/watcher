@@ -16,10 +16,7 @@ import time
 from typing import Optional, Dict, Any
 
 from dateutil import parser
-from app.schemas.api import HistoryItem, TMDBMetadata
-from app.utils.logger import get_logger
 
-logger = get_logger(__name__)
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 TOKEN_FILE = ".env.trakt_token"
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"  # w500 for good quality
@@ -119,12 +116,12 @@ def cached_api_get(endpoint: str) -> Optional[Dict]:
                 if endpoint.startswith('/history'):
                     # expect a list of history items
                     if isinstance(js, list):
-                        validated = [HistoryItem.model_validate(item).model_dump() for item in js]
+                        validated = [item for item in js]
                         return validated
                 if endpoint.startswith('/admin/tmdb/') or endpoint.startswith('/admin/tmdb'):
                     # admin tmdb returns a list of metadata docs
                     if isinstance(js, list):
-                        validated = [TMDBMetadata.model_validate(item).model_dump() for item in js]
+                        validated = [item for item in js]
                         return validated
             except Exception:
                 # validation failure shouldn't block UI; fall back to raw JSON
@@ -1075,7 +1072,6 @@ def show_visual_explorer_page():
 
     except Exception as e:
         st.error(f"Error creating visualization: {e}")
-        logger.error("Plotly visualization error: %s", repr(e), exc_info=True)
 
     # display cluster summaries
     st.markdown("---")

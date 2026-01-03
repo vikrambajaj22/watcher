@@ -15,7 +15,7 @@ font = "sans serif"
 
 # Notes:
 # - The three-dot menu still controls the UI when Streamlit is run normally in the browser
-#   (run with `streamlit run streamlit_app.py`). Some hosting or embed modes hide the
+#   (run with `streamlit run ui/streamlit_app.py`). Some hosting or embed modes hide the
 #   menu; this file ensures a theme is applied regardless.
 # - To override locally, create ~/.streamlit/config.toml with your preferred settings.
 
