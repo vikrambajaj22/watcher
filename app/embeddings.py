@@ -39,9 +39,8 @@ def _select_device() -> str:
         return EMBED_DEVICE
     if torch.cuda.is_available():
         return "cuda"
-    # pyTorch mps backend for Apple silicon
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return "mps"
+    # do not auto-select MPS by default because it can be unstable on some PyTorch builds.
+    # if you explicitly want MPS, set EMBED_DEVICE=mps in the environment.
     return "cpu"
 
 
@@ -59,9 +58,19 @@ def _get_model() -> SentenceTransformer:
             _model = SentenceTransformer(EMBED_MODEL_NAME, device="cpu")
             # IMPORTANT: run a dummy encode to force layer materialization and warmup before threaded use
             _model.encode(["dummy"], show_progress_bar=False)
-            # now move safely to GPU device if needed
+            # now attempt to move to selected device if it's not CPU.
+            # some backends (notably macOS MPS) can be unstable depending on PyTorch build.
+            # try to move the model but fall back to CPU on any failure to avoid process crashes.
             if device != "cpu":
-                _model.to(device)
+                try:
+                    _model.to(device)
+                    logger.info("Moved embedding model to device %s", device)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to move embedding model to device %s; continuing on CPU. Error: %s",
+                        device,
+                        repr(e),
+                    )
     return _model
 
 

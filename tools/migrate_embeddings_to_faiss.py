@@ -33,7 +33,7 @@ from app.faiss_index import build_faiss_index, load_sidecars
 
 print("Starting FAISS rebuild (this will compute embeddings for all metadata docs).")
 start = time.time()
-idx = build_faiss_index(args.dim, batch_size=args.batch)
+idx = build_faiss_index(args.dim, batch_size=args.batch, reuse_sidecars=False)
 elapsed = time.time() - start
 if idx is None:
     print("FAISS rebuild failed or produced no index.")
