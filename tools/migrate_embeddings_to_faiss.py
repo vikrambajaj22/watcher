@@ -56,8 +56,8 @@ from app.faiss_index import LABELS_FILE, VECS_FILE
 if os.path.exists(LABELS_FILE) and os.path.exists(VECS_FILE):
     import numpy as np
 
-    labels = np.load(LABELS_FILE)
-    vecs = np.load(VECS_FILE)
+    labels = np.load(LABELS_FILE, allow_pickle=True)
+    vecs = np.load(VECS_FILE, allow_pickle=True)
     print(f"Sidecars: labels={labels.shape}, vecs={vecs.shape}")
 else:
     print("Sidecars missing after rebuild; aborting migration")
