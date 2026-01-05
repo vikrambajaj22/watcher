@@ -22,14 +22,17 @@ class MediaRecommender:
     def __init__(self):
         self.prompt_registry = PromptRegistry("app/prompts/recommend")
 
-    def format_watch_history(self, watch_history: list[dict], media_type: str = "movie"):
+    def format_watch_history(
+        self, watch_history: list[dict], media_type: str = "movie"
+    ):
         """Format watch history and keep the TMDB id for deduplication."""
         formatted_watch_history = []
         for item in watch_history:
             if item.get("action") == "watch":
                 formatted_watch_history.append(
                     {
-                        k: item.get(k) for k in [
+                        k: item.get(k)
+                        for k in [
                             "id",
                             "title",
                             "year",
@@ -49,11 +52,15 @@ class MediaRecommender:
         """Load watch history from the database."""
         try:
             # allow None to mean all media types
-            watch_history = get_watch_history(media_type=media_type, include_posters=False)
+            watch_history = get_watch_history(
+                media_type=media_type, include_posters=False
+            )
             watch_history = self.format_watch_history(
                 watch_history=watch_history, media_type=media_type
             )
-            logger.info("Loaded %s watch history %s items.", len(watch_history), media_type)
+            logger.info(
+                "Loaded %s watch history %s items.", len(watch_history), media_type
+            )
             return watch_history
         except Exception as e:
             logger.error("Failed to load watch history: %s", repr(e), exc_info=True)
@@ -78,14 +85,16 @@ class MediaRecommender:
             try:
                 cursor = tmdb_metadata_collection.find(
                     {"id": {"$in": watch_ids}},
-                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1}
+                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1},
                 )
                 for doc in cursor:
                     doc_id = doc.get("id")
                     doc_media = doc.get("media_type")
                     genres_list = doc.get("genres", [])
                     if genres_list:
-                        genre_names = [g.get("name") for g in genres_list if g.get("name")]
+                        genre_names = [
+                            g.get("name") for g in genres_list if g.get("name")
+                        ]
                         if genre_names:
                             genre_map[(doc_id, doc_media)] = ", ".join(genre_names[:3])
             except Exception as e:
@@ -111,7 +120,9 @@ class MediaRecommender:
             # add watch count for movies or completion ratio for TV shows, and engagement if available
             if media_type_item == "movie":
                 watch_count = item.get("watch_count", 1)
-                engagement_display = f"{rewatch_eng:.1f}x" if rewatch_eng else f"{watch_count}x"
+                engagement_display = (
+                    f"{rewatch_eng:.1f}x" if rewatch_eng else f"{watch_count}x"
+                )
                 entry += f" - watched {engagement_display}"
             elif media_type_item == "tv":
                 completion_ratio = item.get("completion_ratio")
@@ -129,18 +140,30 @@ class MediaRecommender:
             try:
                 cursor = tmdb_metadata_collection.find(
                     {"id": {"$in": cand_ids}},
-                    {"_id": 0, "id": 1, "media_type": 1, "genres": 1, "rewatch_engagement": 1}
+                    {
+                        "_id": 0,
+                        "id": 1,
+                        "media_type": 1,
+                        "genres": 1,
+                        "rewatch_engagement": 1,
+                    },
                 )
                 for doc in cursor:
                     doc_id = doc.get("id")
                     doc_media = doc.get("media_type")
                     genres_list = doc.get("genres", [])
                     if genres_list:
-                        genre_names = [g.get("name") for g in genres_list if g.get("name")]
+                        genre_names = [
+                            g.get("name") for g in genres_list if g.get("name")
+                        ]
                         if genre_names:
-                            cand_genre_map[(doc_id, doc_media)] = ", ".join(genre_names[:3])
+                            cand_genre_map[(doc_id, doc_media)] = ", ".join(
+                                genre_names[:3]
+                            )
             except Exception as e:
-                logger.warning("Failed to enrich genres/engagement for candidates: %s", repr(e))
+                logger.warning(
+                    "Failed to enrich genres/engagement for candidates: %s", repr(e)
+                )
 
         # format candidates as numbered list (no IDs to avoid confusion)
         candidates_formatted = []
@@ -183,7 +206,9 @@ class MediaRecommender:
         watch_history = self.load_watch_history(media_type=history_media_type)
 
         # build a set of watched ids to exclude from recommendations
-        watched_ids = {str(item.get("id")) for item in watch_history if item.get("id") is not None}
+        watched_ids = {
+            str(item.get("id")) for item in watch_history if item.get("id") is not None
+        }
 
         def _resolve_title(candidate_id, doc=None):
             # prefer doc-provided title/name fields, else fetch from DB as a last resort
@@ -202,7 +227,16 @@ class MediaRecommender:
                 # if caller-provided doc has a media_type, use it to disambiguate
                 if doc and doc.get("media_type"):
                     query["media_type"] = doc.get("media_type")
-                d = tmdb_metadata_collection.find_one(query, {"_id": 0, "title": 1, "name": 1, "original_title": 1, "original_name": 1})
+                d = tmdb_metadata_collection.find_one(
+                    query,
+                    {
+                        "_id": 0,
+                        "title": 1,
+                        "name": 1,
+                        "original_title": 1,
+                        "original_name": 1,
+                    },
+                )
                 if d:
                     return (
                         d.get("title")
@@ -229,10 +263,14 @@ class MediaRecommender:
                 try:
                     res = vector_query(user_vec, k=k)
                 except Exception as e:
-                    logger.warning("FAISS/vector query failed: %s", repr(e), exc_info=True)
+                    logger.warning(
+                        "FAISS/vector query failed: %s", repr(e), exc_info=True
+                    )
                     res = []
                 q_time = time.time() - t_q
-                logger.info("Vector store query time: %.3fs results=%s", q_time, len(res))
+                logger.info(
+                    "Vector store query time: %.3fs results=%s", q_time, len(res)
+                )
 
                 # process knn results via shared helper (prefer exact id+media matches and apply filters)
                 requested_media_type = None if media_type == "all" else media_type
@@ -267,7 +305,9 @@ class MediaRecommender:
             )
 
         top_candidates = (
-            candidates_filtered[: max(recommend_count * 5, 20)] if candidates_filtered else []
+            candidates_filtered[: max(recommend_count * 5, 20)]
+            if candidates_filtered
+            else []
         )
         # ensure titles are resolved for any candidates (in case some lacked title in-memory)
         top_candidates = [
@@ -282,7 +322,11 @@ class MediaRecommender:
             }
             for c in top_candidates
         ]
-        logger.info("Generated %s candidates for recommendation: %s", len(top_candidates), top_candidates)
+        logger.info(
+            "Generated %s candidates for recommendation: %s",
+            len(top_candidates),
+            top_candidates,
+        )
 
         prompt = self.get_recommendation_prompt(
             watch_history=watch_history,
@@ -291,7 +335,9 @@ class MediaRecommender:
             recommend_count=recommend_count,
             prompt_version=1,
         )
-        logger.info("Generated %s recommendation prompt: %s ...", media_type, prompt[:2500])
+        logger.info(
+            "Generated %s recommendation prompt: %s ...", media_type, prompt[:2500]
+        )
         messages = [{"role": "user", "content": prompt}]
         try:
             t_llm_start = time.time()
@@ -310,12 +356,22 @@ class MediaRecommender:
             )
             raise
 
-        logger.info("Generated %s recommendations: %s", len(recommendations), recommendations)
+        logger.info(
+            "Generated %s recommendations: %s", len(recommendations), recommendations
+        )
         # validate LLM-returned ids against the candidate docs fetched earlier
         valid_recs = []
         unknown_ids = []
 
-        def _build_rec_obj(rid, title, reasoning=None, metadata=None, media_type=None, poster_path=None, overview=None):
+        def _build_rec_obj(
+            rid,
+            title,
+            reasoning=None,
+            metadata=None,
+            media_type=None,
+            poster_path=None,
+            overview=None,
+        ):
             # Build metadata dict with poster_path and overview if not already provided
             if metadata is None:
                 metadata = {}
@@ -347,20 +403,29 @@ class MediaRecommender:
                 unknown_ids.append(idx_int)
                 continue
             # accept LLM-provided reasoning and metadata fields if present
-            reasoning = r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
-            metadata = r.get("metadata") if isinstance(r.get("metadata"), dict) else None
-            valid_recs.append(_build_rec_obj(
-                cand.get("id"),
-                cand.get("title"),
-                reasoning=reasoning,
-                metadata=metadata,
-                media_type=cand.get("media_type"),
-                poster_path=cand.get("poster_path"),
-                overview=cand.get("overview")
-            ))
+            reasoning = (
+                r.get("reasoning") if isinstance(r.get("reasoning"), str) else None
+            )
+            metadata = (
+                r.get("metadata") if isinstance(r.get("metadata"), dict) else None
+            )
+            valid_recs.append(
+                _build_rec_obj(
+                    cand.get("id"),
+                    cand.get("title"),
+                    reasoning=reasoning,
+                    metadata=metadata,
+                    media_type=cand.get("media_type"),
+                    poster_path=cand.get("poster_path"),
+                    overview=cand.get("overview"),
+                )
+            )
 
         if unknown_ids:
-            logger.warning("LLM returned unknown recommendation ids (hallucination?): %s", unknown_ids)
+            logger.warning(
+                "LLM returned unknown recommendation ids (hallucination?): %s",
+                unknown_ids,
+            )
 
         # if LLM didn't provide enough valid recommendations, fill from top_candidates (deterministic fallback)
         already = {r["id"] for r in valid_recs}
@@ -370,15 +435,19 @@ class MediaRecommender:
             if cid_str in already:
                 continue
             score = c.get("score")
-            reasoning = f"Fallback recommendation (score={score}) based on candidate ranking."
-            valid_recs.append(_build_rec_obj(
-                cid,
-                c.get("title"),
-                reasoning=reasoning,
-                media_type=c.get("media_type"),
-                poster_path=c.get("poster_path"),
-                overview=c.get("overview")
-            ))
+            reasoning = (
+                f"Fallback recommendation (score={score}) based on candidate ranking."
+            )
+            valid_recs.append(
+                _build_rec_obj(
+                    cid,
+                    c.get("title"),
+                    reasoning=reasoning,
+                    media_type=c.get("media_type"),
+                    poster_path=c.get("poster_path"),
+                    overview=c.get("overview"),
+                )
+            )
             if len(valid_recs) >= recommend_count:
                 break
 

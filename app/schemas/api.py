@@ -36,7 +36,9 @@ class KNNRequest(BaseModel):
 
         # normalize and validate results_media_type
         if not self.results_media_type:
-            raise ValueError("results_media_type is required and must be one of: 'movie', 'tv', 'all'")
+            raise ValueError(
+                "results_media_type is required and must be one of: 'movie', 'tv', 'all'"
+            )
         if str(self.results_media_type).lower() not in allowed_results:
             raise ValueError("results_media_type must be one of: 'movie', 'tv', 'all'")
         self.results_media_type = str(self.results_media_type).lower()
@@ -49,7 +51,9 @@ class KNNRequest(BaseModel):
 
         # when a tmdb_id or title is provided, require input_media_type to disambiguate movie vs tv
         if (self.tmdb_id is not None or self.title) and not self.input_media_type:
-            raise ValueError("input_media_type is required when providing a tmdb_id or title; specify 'movie' or 'tv'")
+            raise ValueError(
+                "input_media_type is required when providing a tmdb_id or title; specify 'movie' or 'tv'"
+            )
 
         return self
 
@@ -79,6 +83,7 @@ class KNNResultItem(BaseModel):
 
 class KNNResponse(BaseModel):
     """Response from /mcp/knn endpoint."""
+
     results: List[KNNResultItem]
 
 
@@ -86,6 +91,7 @@ class WillLikeRequest(BaseModel):
     """Payload for the /mcp/will-like endpoint.
     Provide exactly one of: tmdb_id or title, along with media_type.
     """
+
     tmdb_id: Optional[int] = None
     title: Optional[str] = None
     media_type: str
@@ -115,6 +121,7 @@ class ItemSummary(BaseModel):
 
 class WillLikeResponse(BaseModel):
     """Response from /mcp/will-like endpoint."""
+
     will_like: bool
     score: float
     explanation: str
@@ -229,4 +236,3 @@ class AdminFaissUpsertPayload(BaseModel):
 class AdminFaissUpsertResponse(BaseModel):
     status: str
     message: Optional[str] = None
-

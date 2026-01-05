@@ -15,7 +15,9 @@ class WillLikeError(Exception):
     pass
 
 
-def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: str) -> Dict[str, Any]:
+def compute_will_like(
+    tmdb_id: Optional[int], title: Optional[str], media_type: str
+) -> Dict[str, Any]:
     """Resolve an item (by id or title), ensure it has an embedding, build user vector,
     compute cosine similarity and return a result dict.
 
@@ -36,14 +38,28 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         # require exact media_type match in DB; include poster_path/backdrop if present
         resolved_doc = tmdb_metadata_collection.find_one(
             {"id": resolved_id, "media_type": media_type},
-            {"_id": 0, "embedding": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
+            {
+                "_id": 0,
+                "embedding": 1,
+                "title": 1,
+                "overview": 1,
+                "poster_path": 1,
+                "backdrop_path": 1,
+                "name": 1,
+                "original_title": 1,
+                "original_name": 1,
+            },
         )
         # if not in DB, fetch from TMDB (using provided media_type) and embed/store
         if not resolved_doc:
             try:
                 md = get_metadata(resolved_id, media_type=media_type)
             except Exception as e:
-                logger.warning("Failed to fetch metadata from TMDB for id %s: %s", resolved_id, repr(e))
+                logger.warning(
+                    "Failed to fetch metadata from TMDB for id %s: %s",
+                    resolved_id,
+                    repr(e),
+                )
                 md = None
             if md:
                 md["media_type"] = media_type
@@ -56,10 +72,26 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         # db case-insensitive regex on title or name
         try:
             regex = {"$regex": title, "$options": "i"}
-            docs = list(tmdb_metadata_collection.find(
-                {"media_type": media_type, "$or": [{"title": regex}, {"name": regex}]},
-                {"_id": 0, "id": 1, "embedding": 1, "title": 1, "overview": 1, "poster_path": 1, "backdrop_path": 1, "name": 1, "original_title": 1, "original_name": 1}
-            ).limit(1))
+            docs = list(
+                tmdb_metadata_collection.find(
+                    {
+                        "media_type": media_type,
+                        "$or": [{"title": regex}, {"name": regex}],
+                    },
+                    {
+                        "_id": 0,
+                        "id": 1,
+                        "embedding": 1,
+                        "title": 1,
+                        "overview": 1,
+                        "poster_path": 1,
+                        "backdrop_path": 1,
+                        "name": 1,
+                        "original_title": 1,
+                        "original_name": 1,
+                    },
+                ).limit(1)
+            )
             if docs:
                 resolved_doc = docs[0]
                 resolved_id = resolved_doc.get("id")
@@ -72,7 +104,9 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
             try:
                 md = search_by_title(title, media_type=media_type)
             except Exception as e:
-                logger.warning("TMDB search_by_title failed for '%s': %s", title, repr(e))
+                logger.warning(
+                    "TMDB search_by_title failed for '%s': %s", title, repr(e)
+                )
                 md = None
             if md:
                 md["media_type"] = media_type
@@ -87,24 +121,40 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
     item_emb = None
     if resolved_doc:
         item_emb = resolved_doc.get("embedding")
-        resolved_title = resolved_doc.get("title") or resolved_doc.get("name") or resolved_doc.get("original_title") or resolved_doc.get("original_name")
+        resolved_title = (
+            resolved_doc.get("title")
+            or resolved_doc.get("name")
+            or resolved_doc.get("original_title")
+            or resolved_doc.get("original_name")
+        )
         resolved_overview = resolved_doc.get("overview")
-        resolved_poster = resolved_doc.get("poster_path") or resolved_doc.get("backdrop_path")
+        resolved_poster = resolved_doc.get("poster_path") or resolved_doc.get(
+            "backdrop_path"
+        )
 
     if not item_emb and resolved_id:
         try:
             md = get_metadata(int(resolved_id), media_type=media_type)
         except Exception as e:
-            logger.warning("Failed to fetch metadata for id %s: %s", resolved_id, repr(e))
+            logger.warning(
+                "Failed to fetch metadata for id %s: %s", resolved_id, repr(e)
+            )
             md = None
         if not md:
             raise WillLikeError("failed to fetch metadata from TMDB")
         md["media_type"] = media_type
         item_with_emb = embed_item(md)
         item_emb = item_with_emb.get("embedding")
-        resolved_title = item_with_emb.get("title") or item_with_emb.get("name") or item_with_emb.get("original_title") or item_with_emb.get("original_name")
+        resolved_title = (
+            item_with_emb.get("title")
+            or item_with_emb.get("name")
+            or item_with_emb.get("original_title")
+            or item_with_emb.get("original_name")
+        )
         resolved_overview = item_with_emb.get("overview")
-        resolved_poster = item_with_emb.get("poster_path") or item_with_emb.get("backdrop_path")
+        resolved_poster = item_with_emb.get("poster_path") or item_with_emb.get(
+            "backdrop_path"
+        )
 
     if not item_emb:
         raise WillLikeError("item embedding could not be obtained")
@@ -127,7 +177,13 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
             "score": 1.0,
             "explanation": "You have already watched this item.",
             "already_watched": True,
-            "item": {"id": int(resolved_id) if resolved_id else None, "title": resolved_title, "media_type": media_type, "overview": resolved_overview, "poster_path": resolved_poster},
+            "item": {
+                "id": int(resolved_id) if resolved_id else None,
+                "title": resolved_title,
+                "media_type": media_type,
+                "overview": resolved_overview,
+                "poster_path": resolved_poster,
+            },
         }
 
     user_vec = build_user_vector_from_history(history)
@@ -168,5 +224,11 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         "score": score,
         "explanation": explanation,
         "already_watched": False,
-        "item": {"id": int(resolved_id) if resolved_id else None, "title": resolved_title, "media_type": media_type, "overview": resolved_overview, "poster_path": resolved_poster},
+        "item": {
+            "id": int(resolved_id) if resolved_id else None,
+            "title": resolved_title,
+            "media_type": media_type,
+            "overview": resolved_overview,
+            "poster_path": resolved_poster,
+        },
     }

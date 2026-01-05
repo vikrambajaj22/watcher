@@ -29,12 +29,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         default="IDMap,IVF100,Flat",
         help="FAISS index factory string",
     )
-    parser.add_argument("--force-regenerate", action="store_true", help="Force recompute all embeddings (ignore existing sidecars)")
+    parser.add_argument(
+        "--force-regenerate",
+        action="store_true",
+        help="Force recompute all embeddings (ignore existing sidecars)",
+    )
     args = parser.parse_args(argv)
 
     logger.info("Starting FAISS rebuild (dim=%s, factory=%s)", args.dim, args.factory)
     try:
-        idx = rebuild_index(dim=args.dim, factory=args.factory, reuse_sidecars=(not args.force_regenerate))
+        idx = rebuild_index(
+            dim=args.dim,
+            factory=args.factory,
+            reuse_sidecars=(not args.force_regenerate),
+        )
         if idx is None:
             logger.info("Rebuild finished: no index created (no embeddings?)")
         else:

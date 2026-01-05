@@ -5,6 +5,7 @@ annotated candidate documents by fetching metadata from Mongo and applying
 media-type filtering, watched-id exclusion, and exact (id,media_type)
 resolution.
 """
+
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from app.db import tmdb_metadata_collection
@@ -52,7 +53,17 @@ def process_knn_results(
 
     # default projection
     if projection is None:
-        projection = {"_id": 0, "id": 1, "title": 1, "name": 1, "original_title": 1, "original_name": 1, "media_type": 1, "poster_path": 1, "overview": 1}
+        projection = {
+            "_id": 0,
+            "id": 1,
+            "title": 1,
+            "name": 1,
+            "original_title": 1,
+            "original_name": 1,
+            "media_type": 1,
+            "poster_path": 1,
+            "overview": 1,
+        }
 
     # collect unique (id, media_type) entries while also gathering a set of ids for DB fetch
     ids_set = set()
@@ -88,7 +99,9 @@ def process_knn_results(
         docs_by_id_media[(_id, mtype)] = d
 
     results: List[Dict[str, Any]] = []
-    requested_media_norm = str(requested_media_type).lower() if requested_media_type else None
+    requested_media_norm = (
+        str(requested_media_type).lower() if requested_media_type else None
+    )
 
     for entry in vs_res:
         # expect (id, media_type, score)
@@ -120,7 +133,11 @@ def process_knn_results(
         if not doc:
             # no exact (id,media_type) doc available -> skip candidate
             continue
-        if requested_media_norm and requested_media_norm != "all" and media != requested_media_norm:
+        if (
+            requested_media_norm
+            and requested_media_norm != "all"
+            and media != requested_media_norm
+        ):
             continue
 
         candidate = {
@@ -136,5 +153,7 @@ def process_knn_results(
         if len(results) >= k:
             break
 
-    logger.info("process_knn_results: returned %s candidates (requested k=%s)", len(results), k)
+    logger.info(
+        "process_knn_results: returned %s candidates (requested k=%s)", len(results), k
+    )
     return results

@@ -52,7 +52,9 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
         except Exception as e:
             md = None
         if not md or not md.get("id"):
-            raise ValueError(f"title '{payload.title}' could not be resolved to a TMDB item (type={input_mt})")
+            raise ValueError(
+                f"title '{payload.title}' could not be resolved to a TMDB item (type={input_mt})"
+            )
         # set resolved tmdb_id and let tmdb_id flow continue
         payload.tmdb_id = md.get("id")
 
@@ -63,21 +65,35 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
             query = {"id": payload.tmdb_id, "media_type": str(input_mt).lower()}
             doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
             if not doc:
-                raise ValueError(f"tmdb_id {payload.tmdb_id} not found for input_media_type {input_mt}")
+                raise ValueError(
+                    f"tmdb_id {payload.tmdb_id} not found for input_media_type {input_mt}"
+                )
         else:
             # if input_media_type not provided, fetch all docs for this id
-            docs = list(tmdb_metadata_collection.find({"id": payload.tmdb_id}, {"_id": 0, "media_type": 1, "embedding": 1}))
+            docs = list(
+                tmdb_metadata_collection.find(
+                    {"id": payload.tmdb_id}, {"_id": 0, "media_type": 1, "embedding": 1}
+                )
+            )
             if not docs:
-                raise ValueError(f"tmdb_id {payload.tmdb_id} not found in metadata store")
+                raise ValueError(
+                    f"tmdb_id {payload.tmdb_id} not found in metadata store"
+                )
             if len(docs) > 1:
                 # ambiguous across media types - require input_media_type to disambiguate
-                raise ValueError(f"tmdb_id {payload.tmdb_id} is ambiguous across media types; please provide input_media_type")
+                raise ValueError(
+                    f"tmdb_id {payload.tmdb_id} is ambiguous across media types; please provide input_media_type"
+                )
             doc = docs[0]
             if not doc.get("media_type"):
-                raise ValueError(f"tmdb_id {payload.tmdb_id} found but media_type missing in metadata; please provide input_media_type")
+                raise ValueError(
+                    f"tmdb_id {payload.tmdb_id} found but media_type missing in metadata; please provide input_media_type"
+                )
         emb = doc.get("embedding")
         if emb is None:
-            raise ValueError(f"embedding missing for tmdb_id {payload.tmdb_id} with input_media_type {input_mt}")
+            raise ValueError(
+                f"embedding missing for tmdb_id {payload.tmdb_id} with input_media_type {input_mt}"
+            )
         return np.array(emb, dtype=np.float32)
 
     if payload.text is not None:
@@ -87,14 +103,20 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
             enriched = enrich_text_for_embedding(payload.text)
             logger.info("Enriched input text '%s': %s", payload.text, enriched)
         except Exception as e:
-            logger.exception("Text enrichment failed, falling back to original text: %s", repr(e), exc_info=True)
+            logger.exception(
+                "Text enrichment failed, falling back to original text: %s",
+                repr(e),
+                exc_info=True,
+            )
             enriched = payload.text
         return embed_text([enriched])[0]
 
     raise ValueError("invalid payload; provide tmdb_id, title or text")
 
 
-def enrich_text_for_embedding(text: str, model: str = "gpt-4.1-nano", max_tokens: int = 150) -> str:
+def enrich_text_for_embedding(
+    text: str, model: str = "gpt-4.1-nano", max_tokens: int = 150
+) -> str:
     """Use an LLM to enrich a free-text query with likely genres, actors, and other
     relevant descriptors before embedding.
 
@@ -109,9 +131,7 @@ def enrich_text_for_embedding(text: str, model: str = "gpt-4.1-nano", max_tokens
 
     resp = client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "system", "content": system_prompt}
-        ],
+        messages=[{"role": "system", "content": system_prompt}],
         temperature=0.0,
         max_tokens=max_tokens,
     )

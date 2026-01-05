@@ -32,7 +32,11 @@ def _ensure_valid_token():
 
         # refresh if token is expired or will expire within 1 hour (3600 seconds)
         if token_age > (expires_in - 3600):
-            logger.info("Token expired or expiring soon (age: %s seconds, expires_in: %s). Refreshing...", token_age, expires_in)
+            logger.info(
+                "Token expired or expiring soon (age: %s seconds, expires_in: %s). Refreshing...",
+                token_age,
+                expires_in,
+            )
             refresh_token()
             logger.info("Token refreshed successfully.")
     except Exception as e:

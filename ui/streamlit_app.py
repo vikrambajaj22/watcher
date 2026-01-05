@@ -7,6 +7,7 @@ Features:
 - Admin Panel (Embeddings & FAISS)
 - Similar Items via KNN
 """
+
 import numpy as np
 import streamlit as st
 import requests
@@ -33,12 +34,11 @@ st.set_page_config(
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        'About': "# Watcher\nMovie & TV Recommendation System"
-    }
+    menu_items={"About": "# Watcher\nMovie & TV Recommendation System"},
 )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* hide footer only */
     footer {
@@ -60,7 +60,9 @@ st.markdown("""
         width: 100%;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 def is_authenticated() -> bool:
@@ -76,7 +78,9 @@ def is_authenticated() -> bool:
         return False
 
 
-def get_poster_url(poster_path: Optional[str], fallback_text: str = "No Poster", size: str = "w500") -> str:
+def get_poster_url(
+    poster_path: Optional[str], fallback_text: str = "No Poster", size: str = "w500"
+) -> str:
     """Get TMDB poster URL or fallback to placeholder.
 
     Args:
@@ -107,12 +111,14 @@ def cached_api_get(endpoint: str) -> Optional[Dict]:
             js = response.json()
             # validate responses for typed endpoints
             try:
-                if endpoint.startswith('/history'):
+                if endpoint.startswith("/history"):
                     # expect a list of history items
                     if isinstance(js, list):
                         validated = [item for item in js]
                         return validated
-                if endpoint.startswith('/admin/tmdb/') or endpoint.startswith('/admin/tmdb'):
+                if endpoint.startswith("/admin/tmdb/") or endpoint.startswith(
+                    "/admin/tmdb"
+                ):
                     # admin tmdb returns a list of metadata docs
                     if isinstance(js, list):
                         validated = [item for item in js]
@@ -173,10 +179,10 @@ def format_ts(ts: Any) -> str:
         return "Never"
     try:
         if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
-            return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(ts)))
 
         dt = parser.isoparse(ts)
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return str(ts)
 
@@ -202,11 +208,11 @@ def start_trakt_sync_shared(admin=False) -> Optional[Dict]:
         res = api_request("/admin/sync/trakt", method="POST", data={})
         job_id = None
         if isinstance(res, dict):
-            job_id = res.get('job_id')
+            job_id = res.get("job_id")
         if job_id:
-            key = 'admin_last_sync_job_id' if admin else 'last_sync_job_id'
-            polled_key = 'admin_last_sync_polled' if admin else 'last_sync_polled'
-            inprog_key = 'sync_in_progress'
+            key = "admin_last_sync_job_id" if admin else "last_sync_job_id"
+            polled_key = "admin_last_sync_polled" if admin else "last_sync_polled"
+            inprog_key = "sync_in_progress"
             st.session_state[key] = job_id
             st.session_state[inprog_key] = True
             st.session_state[polled_key] = False
@@ -218,7 +224,9 @@ def start_trakt_sync_shared(admin=False) -> Optional[Dict]:
         return {"error": str(e)}
 
 
-def poll_job_status(job_id: str, job_type: str = "trakt", max_wait: int = 60, interval: int = 2) -> Optional[dict]:
+def poll_job_status(
+    job_id: str, job_type: str = "trakt", max_wait: int = 60, interval: int = 2
+) -> Optional[dict]:
     """Poll /admin/sync/job/{job_id} until finished or timeout.
 
     Returns the job JSON when finished, or None if not finished within max_wait or request fails.
@@ -232,8 +240,8 @@ def poll_job_status(job_id: str, job_type: str = "trakt", max_wait: int = 60, in
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
                 js = r.json()
-                status = js.get('status')
-                if status in ('completed', 'failed'):
+                status = js.get("status")
+                if status in ("completed", "failed"):
                     return js
             else:
                 # unexpected status -> treat as transient
@@ -252,7 +260,9 @@ def poll_job_status(job_id: str, job_type: str = "trakt", max_wait: int = 60, in
         waited += interval
 
 
-def api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Optional[Dict]:
+def api_request(
+    endpoint: str, method: str = "GET", data: Optional[Dict] = None
+) -> Optional[Dict]:
     """Make API request to backend."""
     # Use cache for GET requests
     if method == "GET" and data is None:
@@ -294,22 +304,24 @@ def raw_api_post(endpoint: str, data: Dict) -> tuple[int, Any]:
         return 0, str(e)
 
 
-def _set_similar_item(tmdb_id: Optional[int], title: Optional[str], media_type: Optional[str]):
+def _set_similar_item(
+    tmdb_id: Optional[int], title: Optional[str], media_type: Optional[str]
+):
     """Helper to set the similar_item in session_state from button callbacks."""
     try:
         st.session_state.similar_item = {
-            'tmdb_id': tmdb_id,
-            'title': title,
-            'media_type': media_type,
+            "tmdb_id": tmdb_id,
+            "title": title,
+            "media_type": media_type,
         }
         st.session_state.active_tab = TAB_SIMILAR_ITEMS
     except Exception:
-        st.session_state['similar_item'] = {
-            'tmdb_id': tmdb_id,
-            'title': title,
-            'media_type': media_type,
+        st.session_state["similar_item"] = {
+            "tmdb_id": tmdb_id,
+            "title": title,
+            "media_type": media_type,
         }
-        st.session_state['active_tab'] = TAB_SIMILAR_ITEMS
+        st.session_state["active_tab"] = TAB_SIMILAR_ITEMS
 
 
 def _check_will_like_inline(tmdb_id: int, media_type: str, result_key: str):
@@ -319,21 +331,27 @@ def _check_will_like_inline(tmdb_id: int, media_type: str, result_key: str):
     """
     try:
         payload = {"tmdb_id": int(tmdb_id), "media_type": str(media_type)}
-        status, res = raw_api_post('/mcp/will-like', payload)
+        status, res = raw_api_post("/mcp/will-like", payload)
         # if ambiguous (400), prompt to select media_type and retry
         if status == 400 and isinstance(res, dict):
-            detail = res.get('detail') or res.get('error') or ''
-            if 'input_media_type' in str(detail) or 'ambiguous' in str(detail).lower():
-                st.warning("The provided TMDB id is ambiguous. Please select the input type to disambiguate and retry.")
-                choice = st.selectbox("Input type", ["movie", "tv"], key=f"will_like_disamb_{int(time.time())}")
+            detail = res.get("detail") or res.get("error") or ""
+            if "input_media_type" in str(detail) or "ambiguous" in str(detail).lower():
+                st.warning(
+                    "The provided TMDB id is ambiguous. Please select the input type to disambiguate and retry."
+                )
+                choice = st.selectbox(
+                    "Input type",
+                    ["movie", "tv"],
+                    key=f"will_like_disamb_{int(time.time())}",
+                )
                 if st.button("Retry 'Will I Like' with selected type"):
                     payload["media_type"] = choice
-                    status, res = raw_api_post('/mcp/will-like', payload)
+                    status, res = raw_api_post("/mcp/will-like", payload)
     except Exception as e:
         res = {"error": str(e)}
     st.session_state[result_key] = res
     # mark that we should restore similar results on next run and show inline result
-    st.session_state['_restore_similar'] = True
+    st.session_state["_restore_similar"] = True
 
 
 def _safe_rerun():
@@ -394,7 +412,7 @@ def show_dashboard():
 
     st.markdown("---")
 
-    if 'active_tab' not in st.session_state:
+    if "active_tab" not in st.session_state:
         st.session_state.active_tab = TAB_HOME
 
     tab_labels = [
@@ -404,7 +422,7 @@ def show_dashboard():
         "✨ Recommendations",
         "🤔 Will I Like?",
         "🔍 Similar Items",
-        "⚙️ Admin Panel"
+        "⚙️ Admin Panel",
     ]
 
     selected = st.radio(
@@ -412,7 +430,7 @@ def show_dashboard():
         options=tab_labels,
         index=st.session_state.active_tab,
         horizontal=True,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
     )
 
     st.markdown("---")
@@ -450,25 +468,25 @@ def show_home_page():
 
     with col1:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('''### 📺 Watch History
-        View your watched movies & shows''')
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("""### 📺 Watch History
+        View your watched movies & shows""")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('''### 📊 Visual Explorer
-        See your watch history clustered by similarity''')
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("""### 📊 Visual Explorer
+        See your watch history clustered by similarity""")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('''### ✨ Recommendations
-        Get personalized suggestions''')
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("""### ✨ Recommendations
+        Get personalized suggestions""")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('''### 🔍 Similar Items
-        Find similar movies & shows''')
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("""### 🔍 Similar Items
+        Find similar movies & shows""")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -483,10 +501,12 @@ def show_history_page():
     except Exception:
         sync_status = {}
 
-    last_trakt = format_ts(sync_status.get('trakt_last_activity'))
-    last_tmdb_movie = format_ts(sync_status.get('tmdb_movie_last_sync'))
-    last_tmdb_tv = format_ts(sync_status.get('tmdb_tv_last_sync'))
-    st.caption(f"Last sync — Trakt: {last_trakt} | TMDB(movie): {last_tmdb_movie} | TMDB(tv): {last_tmdb_tv}")
+    last_trakt = format_ts(sync_status.get("trakt_last_activity"))
+    last_tmdb_movie = format_ts(sync_status.get("tmdb_movie_last_sync"))
+    last_tmdb_tv = format_ts(sync_status.get("tmdb_tv_last_sync"))
+    st.caption(
+        f"Last sync — Trakt: {last_trakt} | TMDB(movie): {last_tmdb_movie} | TMDB(tv): {last_tmdb_tv}"
+    )
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -494,7 +514,7 @@ def show_history_page():
     with col2:
         # auto-trigger a background Trakt sync periodically (aligned with history cache TTL)
         # throttle to once per 300s (the cached_api_get TTL) to avoid spamming the API on every rerun
-        last_sync_ts = st.session_state.get('history_auto_sync_ts', 0)
+        last_sync_ts = st.session_state.get("history_auto_sync_ts", 0)
         try:
             last_sync_ts = float(last_sync_ts)
         except Exception:
@@ -503,15 +523,15 @@ def show_history_page():
         if time.time() - last_sync_ts > 300:
             try:
                 res = start_trakt_sync_shared()
-                st.session_state['history_auto_sync_ts'] = int(time.time())
+                st.session_state["history_auto_sync_ts"] = int(time.time())
                 # if backend returned a job_id, store and poll it
                 job_id = None
                 if isinstance(res, dict):
-                    job_id = res.get('job_id')
+                    job_id = res.get("job_id")
                 if job_id:
-                    st.session_state['last_sync_job_id'] = job_id
-                    st.session_state['sync_in_progress'] = True
-                    st.session_state['last_sync_polled'] = False
+                    st.session_state["last_sync_job_id"] = job_id
+                    st.session_state["sync_in_progress"] = True
+                    st.session_state["last_sync_polled"] = False
                 else:
                     # fallback: clear cache so UI will pick up changes later
                     clear_caches()
@@ -524,7 +544,16 @@ def show_history_page():
     with col1:
         media_filter = st.selectbox("Media Type", ["All", "Movies", "TV Shows"])
     with col2:
-        sort_by = st.selectbox("Sort By", ["Latest Watched", "Earliest Watched", "Title", "Watch Count", "Rewatch Engagement"])
+        sort_by = st.selectbox(
+            "Sort By",
+            [
+                "Latest Watched",
+                "Earliest Watched",
+                "Title",
+                "Watch Count",
+                "Rewatch Engagement",
+            ],
+        )
     with col3:
         search = st.text_input("🔍 Search", placeholder="Search titles...")
     with col4:
@@ -532,42 +561,52 @@ def show_history_page():
         if st.button("🔄 Sync Now", type="primary", use_container_width=True):
             with st.spinner("Syncing watch history..."):
                 res = start_trakt_sync_shared()
-                st.session_state['history_auto_sync_ts'] = int(time.time())
+                st.session_state["history_auto_sync_ts"] = int(time.time())
 
                 # poll for sync completion if job_id was returned
                 job_id = None
                 if isinstance(res, dict):
-                    job_id = res.get('job_id')
+                    job_id = res.get("job_id")
 
                 if job_id:
                     # use a placeholder for status messages that will update in place
                     status_placeholder = st.empty()
-                    status_placeholder.info("⏳ Sync initiated... Waiting for completion...")
+                    status_placeholder.info(
+                        "⏳ Sync initiated... Waiting for completion..."
+                    )
 
                     interval = 2
                     waited = 0
                     max_wait = 120
                     while waited < max_wait:
                         try:
-                            url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
+                            url = (
+                                f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
+                            )
                             r = requests.get(url, timeout=5)
                             if r.status_code == 200:
                                 js = r.json()
-                                status = js.get('status')
-                                if status == 'completed':
-                                    status_placeholder.success("✅ Watch history synced successfully!")
+                                status = js.get("status")
+                                if status == "completed":
+                                    status_placeholder.success(
+                                        "✅ Watch history synced successfully!"
+                                    )
                                     time.sleep(0.5)
                                     clear_caches()
                                     break
-                                elif status == 'failed':
-                                    status_placeholder.error("❌ Sync failed. Please try again.")
+                                elif status == "failed":
+                                    status_placeholder.error(
+                                        "❌ Sync failed. Please try again."
+                                    )
                                     break
                         except Exception:
                             pass
                         time.sleep(interval)
                         waited += interval
                     if waited >= max_wait:
-                        status_placeholder.info("⏳ Sync still running in background. Check back in a moment!")
+                        status_placeholder.info(
+                            "⏳ Sync still running in background. Check back in a moment!"
+                        )
                 else:
                     st.success("✅ Sync initiated!")
 
@@ -586,8 +625,8 @@ def show_history_page():
 
     # after fetching history_data, clear any transient sync-in-progress UI flags
     try:
-        if history_data and st.session_state.get('sync_in_progress'):
-            for k in ['sync_in_progress', 'last_sync_job_id', 'last_sync_polled']:
+        if history_data and st.session_state.get("sync_in_progress"):
+            for k in ["sync_in_progress", "last_sync_job_id", "last_sync_polled"]:
                 if k in st.session_state:
                     try:
                         del st.session_state[k]
@@ -610,7 +649,9 @@ def show_history_page():
             total_movies = sum(1 for it in overall if it.get("media_type") == "movie")
             total_shows = sum(1 for it in overall if it.get("media_type") == "tv")
         else:
-            total_movies = sum(1 for it in history_data if it.get("media_type") == "movie")
+            total_movies = sum(
+                1 for it in history_data if it.get("media_type") == "movie"
+            )
             total_shows = sum(1 for it in history_data if it.get("media_type") == "tv")
     except Exception:
         total_movies = sum(1 for it in history_data if it.get("media_type") == "movie")
@@ -621,9 +662,9 @@ def show_history_page():
     mcol2.metric("📺 Shows Watched", total_shows)
 
     # if a sync job was scheduled, probe job status and poll if needed; once completed, clear job flags
-    if st.session_state.get('sync_in_progress', False):
-        job_id = st.session_state.get('last_sync_job_id')
-        polled = st.session_state.get('last_sync_polled', False)
+    if st.session_state.get("sync_in_progress", False):
+        job_id = st.session_state.get("last_sync_job_id")
+        polled = st.session_state.get("last_sync_polled", False)
 
         # quick probe: if we've already polled once but flags still set, do a single status check and clear if finished
         if job_id and polled:
@@ -632,18 +673,18 @@ def show_history_page():
                 r = requests.get(url, timeout=3)
                 if r.status_code == 200:
                     js = r.json()
-                    status = js.get('status')
-                    if status in ('completed', 'failed'):
+                    status = js.get("status")
+                    if status in ("completed", "failed"):
                         # job finished - clear cache and session flags, then rerun to reflect updates
                         clear_caches()
-                        st.session_state['sync_in_progress'] = False
+                        st.session_state["sync_in_progress"] = False
                         # remove job id and polled marker so UI won't show sync messages
                         try:
-                            del st.session_state['last_sync_job_id']
+                            del st.session_state["last_sync_job_id"]
                         except Exception:
                             pass
                         try:
-                            del st.session_state['last_sync_polled']
+                            del st.session_state["last_sync_polled"]
                         except Exception:
                             pass
                         _safe_rerun()
@@ -666,18 +707,18 @@ def show_history_page():
                         r = requests.get(url, timeout=5)
                         if r.status_code == 200:
                             js = r.json()
-                            status = js.get('status')
-                            if status in ('completed', 'failed'):
+                            status = js.get("status")
+                            if status in ("completed", "failed"):
                                 # job finished - clear cache and session flags, then rerun to reflect updates
                                 clear_caches()
-                                st.session_state['sync_in_progress'] = False
+                                st.session_state["sync_in_progress"] = False
                                 # remove job id and polled marker so UI won't show sync messages
                                 try:
-                                    del st.session_state['last_sync_job_id']
+                                    del st.session_state["last_sync_job_id"]
                                 except Exception:
                                     pass
                                 try:
-                                    del st.session_state['last_sync_polled']
+                                    del st.session_state["last_sync_polled"]
                                 except Exception:
                                     pass
                                 _safe_rerun()
@@ -687,30 +728,39 @@ def show_history_page():
                     time.sleep(interval)
                     waited += interval
                 # mark polled even if not completed to avoid repeated polling in this render loop
-                st.session_state['last_sync_polled'] = True
+                st.session_state["last_sync_polled"] = True
         else:
             # no job id or already cleared — ensure flag is off
-            st.session_state['sync_in_progress'] = False
+            st.session_state["sync_in_progress"] = False
 
     st.markdown("---")
 
     with st.spinner("Loading history..."):
         if search:
             history_data = [
-                item for item in history_data
+                item
+                for item in history_data
                 if search.lower() in item.get("title", "").lower()
             ]
 
         if sort_by == "Latest Watched":
-            history_data = sorted(history_data, key=lambda x: x.get("latest_watched_at", ""), reverse=True)
+            history_data = sorted(
+                history_data, key=lambda x: x.get("latest_watched_at", ""), reverse=True
+            )
         elif sort_by == "Earliest Watched":
-            history_data = sorted(history_data, key=lambda x: x.get("earliest_watched_at", ""))
+            history_data = sorted(
+                history_data, key=lambda x: x.get("earliest_watched_at", "")
+            )
         elif sort_by == "Title":
             history_data = sorted(history_data, key=lambda x: x.get("title", ""))
         elif sort_by == "Watch Count":
-            history_data = sorted(history_data, key=lambda x: x.get("watch_count", 0), reverse=True)
+            history_data = sorted(
+                history_data, key=lambda x: x.get("watch_count", 0), reverse=True
+            )
         elif sort_by == "Rewatch Engagement":
-            history_data = sorted(history_data, key=lambda x: x.get("rewatch_engagement", 0), reverse=True)
+            history_data = sorted(
+                history_data, key=lambda x: x.get("rewatch_engagement", 0), reverse=True
+            )
 
         if not history_data:
             st.warning("No items match your filters.")
@@ -724,14 +774,18 @@ def show_history_page():
                 col1, col2, col3, col4, col5 = st.columns([1, 3, 1, 1, 1])
 
                 with col1:
-                    poster_url = get_poster_url(item.get("poster_path"), item.get("title", "No Title"))
+                    poster_url = get_poster_url(
+                        item.get("poster_path"), item.get("title", "No Title")
+                    )
                     st.image(poster_url, use_container_width=True)
 
                 with col2:
                     icon = "🎬" if item["media_type"] == "movie" else "📺"
                     st.markdown(f"### {icon} {(item.get('title') or 'Unknown')}")
                     if item["media_type"] == "tv":
-                        st.write(f"Episodes: {item.get('watched_episodes', 0)}/{item.get('total_episodes', '?')}")
+                        st.write(
+                            f"Episodes: {item.get('watched_episodes', 0)}/{item.get('total_episodes', '?')}"
+                        )
                     else:
                         st.write(f"Year: {item.get('year', 'N/A')}")
 
@@ -750,9 +804,9 @@ def show_history_page():
 
                 with col5:
                     # avoid closure capture by binding current item values into the button args
-                    _tmdb_id = item.get('tmdb_id') or item.get('id')
-                    _title = item.get('title')
-                    _mtype = item.get('media_type')
+                    _tmdb_id = item.get("tmdb_id") or item.get("id")
+                    _title = item.get("title")
+                    _mtype = item.get("media_type")
                     st.button(
                         "🔍 Find Similar",
                         key=f"similar_hist_{idx}",
@@ -768,23 +822,21 @@ def show_recommendations_page():
 
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.write("Get personalized movie and TV show recommendations based on your watch history")
+        st.write(
+            "Get personalized movie and TV show recommendations based on your watch history"
+        )
 
     col1, col2 = st.columns(2)
     with col1:
         media_type = st.selectbox(
             "What would you like recommendations for?",
             ["All", "Movies", "TV Shows"],
-            index=0
+            index=0,
         )
     with col2:
         recommend_count = st.slider("Number of recommendations", 1, 20, 5)
 
-    media_type_map = {
-        "All": "all",
-        "Movies": "movie",
-        "TV Shows": "tv"
-    }
+    media_type_map = {"All": "all", "Movies": "movie", "TV Shows": "tv"}
 
     if st.button("🎯 Get Recommendations", type="primary", use_container_width=True):
         api_media_type = media_type_map[media_type]
@@ -793,40 +845,58 @@ def show_recommendations_page():
             result = cached_recommendations(api_media_type, recommend_count)
 
             if result and "recommendations" in result:
-                st.success(f"✅ Found {len(result['recommendations'])} recommendations!")
+                st.success(
+                    f"✅ Found {len(result['recommendations'])} recommendations!"
+                )
 
                 st.markdown("---")
 
                 for idx, rec in enumerate(result["recommendations"], 1):
                     with st.container():
-                        st.markdown(f'<div class="recommendation-card">', unsafe_allow_html=True)
+                        st.markdown(
+                            f'<div class="recommendation-card">', unsafe_allow_html=True
+                        )
 
                         col1, col2 = st.columns([1, 3])
 
                         with col1:
-                            poster_path = rec.get('metadata', {}).get('poster_path') if rec.get('metadata') else None
-                            poster_url = get_poster_url(poster_path, (rec.get('title') or 'No Title'))
-                            st.image(
-                                poster_url,
-                                use_container_width=True
+                            poster_path = (
+                                rec.get("metadata", {}).get("poster_path")
+                                if rec.get("metadata")
+                                else None
                             )
+                            poster_url = get_poster_url(
+                                poster_path, (rec.get("title") or "No Title")
+                            )
+                            st.image(poster_url, use_container_width=True)
 
                         with col2:
-                            media_icon = "🎬" if rec.get('media_type') == 'movie' else "📺" if rec.get(
-                                'media_type') == 'tv' else "🎭"
-                            st.markdown(f"### {idx}. {media_icon} {(rec.get('title') or 'Unknown Title')}")
-                            st.markdown(f"**Reasoning:** {rec.get('reasoning', 'No reasoning provided')}")
+                            media_icon = (
+                                "🎬"
+                                if rec.get("media_type") == "movie"
+                                else "📺"
+                                if rec.get("media_type") == "tv"
+                                else "🎭"
+                            )
+                            st.markdown(
+                                f"### {idx}. {media_icon} {(rec.get('title') or 'Unknown Title')}"
+                            )
+                            st.markdown(
+                                f"**Reasoning:** {rec.get('reasoning', 'No reasoning provided')}"
+                            )
 
-                            if rec.get('metadata'):
+                            if rec.get("metadata"):
                                 if rec.get("metadata").get("overview"):
-                                    st.markdown(f"**Overview:** {rec['metadata']['overview'][:500]}...")
+                                    st.markdown(
+                                        f"**Overview:** {rec['metadata']['overview'][:500]}..."
+                                    )
 
                             col_a, col_b = st.columns(2)
                             with col_a:
                                 # bind rec values explicitly to avoid loop closure issues
-                                _tmdb_id = rec.get('id')
-                                _title = rec.get('title') or 'Unknown Title'
-                                _mtype = rec.get('media_type', 'movie')
+                                _tmdb_id = rec.get("id")
+                                _title = rec.get("title") or "Unknown Title"
+                                _mtype = rec.get("media_type", "movie")
                                 st.button(
                                     f"🔍 Find Similar",
                                     key=f"similar_rec_{idx}",
@@ -834,13 +904,14 @@ def show_recommendations_page():
                                     args=(_tmdb_id, _title, _mtype),
                                 )
                             with col_b:
-                                tmdb_id = rec.get('id')
+                                tmdb_id = rec.get("id")
                                 if tmdb_id:
-                                    media_type_for_link = rec.get('media_type', 'movie')
+                                    media_type_for_link = rec.get("media_type", "movie")
                                     st.markdown(
-                                        f"[View on TMDB](https://www.themoviedb.org/{media_type_for_link}/{tmdb_id})")
+                                        f"[View on TMDB](https://www.themoviedb.org/{media_type_for_link}/{tmdb_id})"
+                                    )
 
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        st.markdown("</div>", unsafe_allow_html=True)
                         st.markdown("---")
 
 
@@ -854,78 +925,105 @@ def show_will_like_page():
     with tab_title:
         st.subheader("Check by Title")
         title_str = st.text_input("Movie / TV show title", key="will_title_input")
-        media_type_title = st.selectbox("Media Type", ["movie", "tv"], key="will_title_media")
+        media_type_title = st.selectbox(
+            "Media Type", ["movie", "tv"], key="will_title_media"
+        )
         if st.button("🤔 Check Will I Like (by Title)", key="will_check_title"):
             if not title_str:
                 st.error("Please provide a title")
             else:
                 with st.spinner("Checking..."):
                     payload = {"title": title_str, "media_type": media_type_title}
-                    res = api_request('/mcp/will-like', method='POST', data=payload)
-                    st.session_state['will_like_result'] = res
+                    res = api_request("/mcp/will-like", method="POST", data=payload)
+                    st.session_state["will_like_result"] = res
 
     with tab_id:
         st.subheader("Check by TMDB ID")
         col1, col2 = st.columns([3, 1])
         with col1:
-            tmdb_id = st.number_input("TMDB ID", min_value=1, value=550, key="will_tmdb_id")
+            tmdb_id = st.number_input(
+                "TMDB ID", min_value=1, value=550, key="will_tmdb_id"
+            )
         with col2:
-            media_type = st.selectbox("Media Type", ["movie", "tv"], key="will_id_media")
+            media_type = st.selectbox(
+                "Media Type", ["movie", "tv"], key="will_id_media"
+            )
         if st.button("🤔 Check Will I Like (by ID)", key="will_check_id"):
             with st.spinner("Checking..."):
                 payload = {"tmdb_id": int(tmdb_id), "media_type": media_type}
-                status, res = raw_api_post('/mcp/will-like', payload)
+                status, res = raw_api_post("/mcp/will-like", payload)
                 # if ambiguous (400), prompt to select media_type and retry
                 if status == 400 and isinstance(res, dict):
-                    detail = res.get('detail') or res.get('error') or ''
-                    if 'input_media_type' in str(detail) or 'ambiguous' in str(detail).lower():
-                        st.warning("The provided TMDB id is ambiguous. Please select the input type to disambiguate and retry.")
-                        choice = st.selectbox("Input type", ["movie", "tv"], key=f"will_like_disamb_{int(time.time())}")
+                    detail = res.get("detail") or res.get("error") or ""
+                    if (
+                        "input_media_type" in str(detail)
+                        or "ambiguous" in str(detail).lower()
+                    ):
+                        st.warning(
+                            "The provided TMDB id is ambiguous. Please select the input type to disambiguate and retry."
+                        )
+                        choice = st.selectbox(
+                            "Input type",
+                            ["movie", "tv"],
+                            key=f"will_like_disamb_{int(time.time())}",
+                        )
                         if st.button("Retry 'Will I Like' with selected type"):
                             payload["media_type"] = choice
-                            status, res = raw_api_post('/mcp/will-like', payload)
-                st.session_state['will_like_result'] = res
-                st.session_state['will_like_tmdb_id'] = int(tmdb_id)
+                            status, res = raw_api_post("/mcp/will-like", payload)
+                st.session_state["will_like_result"] = res
+                st.session_state["will_like_tmdb_id"] = int(tmdb_id)
 
     st.markdown("---")
     # show last computed will-like result if available
-    if st.session_state.get('will_like_result'):
-        res = st.session_state.get('will_like_result')
-        if isinstance(res, dict) and 'error' in res:
+    if st.session_state.get("will_like_result"):
+        res = st.session_state.get("will_like_result")
+        if isinstance(res, dict) and "error" in res:
             st.warning(f"Will I like? check failed: {res.get('error')}")
         else:
-            item = res.get('item', {})
-            score = res.get('score')
-            will = res.get('will_like')
-            expl = res.get('explanation')
-            already_watched = res.get('already_watched', False)
+            item = res.get("item", {})
+            score = res.get("score")
+            will = res.get("will_like")
+            expl = res.get("explanation")
+            already_watched = res.get("already_watched", False)
             col1, col2 = st.columns([1, 3])
             with col1:
-                poster_url = get_poster_url(item.get('poster_path'), (item.get('title') or 'No Title'))
+                poster_url = get_poster_url(
+                    item.get("poster_path"), (item.get("title") or "No Title")
+                )
                 st.image(poster_url, use_container_width=True)
             with col2:
                 if already_watched:
-                    st.markdown(f"### ✅ You have already watched: **{(item.get('title') or 'Unknown')}**")
+                    st.markdown(
+                        f"### ✅ You have already watched: **{(item.get('title') or 'Unknown')}**"
+                    )
                 else:
-                    emoji = '❤️' if will else '🤷'
-                    st.markdown(f"### {emoji} Will you like: **{(item.get('title') or 'Unknown')}**")
+                    emoji = "❤️" if will else "🤷"
+                    st.markdown(
+                        f"### {emoji} Will you like: **{(item.get('title') or 'Unknown')}**"
+                    )
                 if isinstance(score, (int, float)) and not already_watched:
                     st.write(f"**Score:** {score:.3f}")
                 st.write(expl)
-        st.markdown('---')
+        st.markdown("---")
 
 
 def show_visual_explorer_page():
     """Display interactive clustered visualization of watch history."""
     st.header("📊 Visual Explorer")
-    st.write("Explore your watch history visually - similar items are clustered together!")
+    st.write(
+        "Explore your watch history visually - similar items are clustered together!"
+    )
 
     # Controls
     col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
-        media_filter = st.selectbox("Media Type", ["All", "Movies", "TV Shows"], key="viz_media_filter")
+        media_filter = st.selectbox(
+            "Media Type", ["All", "Movies", "TV Shows"], key="viz_media_filter"
+        )
     with col2:
-        n_clusters = st.slider("Clusters", min_value=3, max_value=15, value=6, key="viz_n_clusters")
+        n_clusters = st.slider(
+            "Clusters", min_value=3, max_value=15, value=6, key="viz_n_clusters"
+        )
     with col3:
         if st.button("🔄 Refresh", type="primary"):
             st.cache_data.clear()
@@ -949,8 +1047,12 @@ def show_visual_explorer_page():
         cluster_data = get_cluster_data(media_type_param, n_clusters)
 
     if not cluster_data or not cluster_data.get("items"):
-        st.warning("⚠️ No items with embeddings found. Please ensure your watch history has been synced and embeddings have been generated.")
-        st.info("💡 Go to Admin Panel → Embeddings to generate embeddings for your watch history.")
+        st.warning(
+            "⚠️ No items with embeddings found. Please ensure your watch history has been synced and embeddings have been generated."
+        )
+        st.info(
+            "💡 Go to Admin Panel → Embeddings to generate embeddings for your watch history."
+        )
         return
 
     items = cluster_data.get("items", [])
@@ -966,7 +1068,9 @@ def show_visual_explorer_page():
     mcol3.metric("🎨 Clusters", len(cluster_summaries))
 
     if total_items < total_in_history:
-        st.info(f"ℹ️ Showing {total_items} of {total_in_history} items (only items with embeddings)")
+        st.info(
+            f"ℹ️ Showing {total_items} of {total_in_history} items (only items with embeddings)"
+        )
 
     st.markdown("---")
 
@@ -981,14 +1085,19 @@ def show_visual_explorer_page():
         # map cluster IDs to names in order
         cluster_id_to_name = {}
         for cluster_id in unique_cluster_ids:
-            cluster_id_to_name[cluster_id] = cluster_summaries.get(str(cluster_id), {}).get("name", f"Cluster {cluster_id + 1}")
+            cluster_id_to_name[cluster_id] = cluster_summaries.get(
+                str(cluster_id), {}
+            ).get("name", f"Cluster {cluster_id + 1}")
 
         # create ordered list of cluster names for category ordering
         ordered_cluster_names = [cluster_id_to_name[cid] for cid in unique_cluster_ids]
 
         # create color map
         colors = px.colors.qualitative.Set3
-        color_map = {name: colors[i % len(colors)] for i, name in enumerate(ordered_cluster_names)}
+        color_map = {
+            name: colors[i % len(colors)]
+            for i, name in enumerate(ordered_cluster_names)
+        }
 
         # prepare data for plotting
         x_vals = []
@@ -1030,13 +1139,15 @@ def show_visual_explorer_page():
             labels={"x": "", "y": "", "color": "Cluster"},
             title=f"Watch History Clusters",
             category_orders={"color": ordered_cluster_names},  # explicit order
-            color_discrete_map=color_map  # explicit color mapping
+            color_discrete_map=color_map,  # explicit color mapping
         )
 
         # plotly creates separate traces for each cluster, so we need to update each trace's hover text
         # build hover text for each trace (cluster)
         trace_hover_texts = {name: [] for name in ordered_cluster_names}
-        for i, (cluster_name, hover_text) in enumerate(zip(cluster_name_labels, hover_texts)):
+        for i, (cluster_name, hover_text) in enumerate(
+            zip(cluster_name_labels, hover_texts)
+        ):
             trace_hover_texts[cluster_name].append(hover_text)
 
         # update each trace with its corresponding hover texts
@@ -1044,26 +1155,22 @@ def show_visual_explorer_page():
             trace_name = trace.name
             if trace_name in trace_hover_texts:
                 trace.update(
-                    hovertemplate='%{hovertext}<extra></extra>',
+                    hovertemplate="%{hovertext}<extra></extra>",
                     hovertext=trace_hover_texts[trace_name],
-                    marker=dict(size=12, line=dict(width=1, color='white'))
+                    marker=dict(size=12, line=dict(width=1, color="white")),
                 )
 
         # update layout for better appearance
         fig.update_layout(
             height=600,
-            hovermode='closest',
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
+            hovermode="closest",
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
             yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
             legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            )
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
         )
 
         # display the plot
@@ -1078,13 +1185,13 @@ def show_visual_explorer_page():
 
     # sort clusters by size
     sorted_clusters = sorted(
-        cluster_summaries.items(),
-        key=lambda x: x[1].get("size", 0),
-        reverse=True
+        cluster_summaries.items(), key=lambda x: x[1].get("size", 0), reverse=True
     )
 
     for cluster_id, summary in sorted_clusters:
-        with st.expander(f"📁 {summary.get('name', f'Cluster {int(cluster_id) + 1}')} ({summary.get('size', 0)} items)"):
+        with st.expander(
+            f"📁 {summary.get('name', f'Cluster {int(cluster_id) + 1}')} ({summary.get('size', 0)} items)"
+        ):
             col1, col2 = st.columns([2, 3])
 
             with col1:
@@ -1097,9 +1204,13 @@ def show_visual_explorer_page():
                     st.write(f"• {title}")
 
             # show poster grid for this cluster
-            cluster_items = [item for item in items if item["cluster"] == int(cluster_id)]
+            cluster_items = [
+                item for item in items if item["cluster"] == int(cluster_id)
+            ]
 
-            if st.checkbox(f"Show all items in this cluster", key=f"show_cluster_{cluster_id}"):
+            if st.checkbox(
+                f"Show all items in this cluster", key=f"show_cluster_{cluster_id}"
+            ):
                 st.markdown("---")
 
                 # display as grid
@@ -1110,16 +1221,24 @@ def show_visual_explorer_page():
                         if i + j < len(cluster_items):
                             item = cluster_items[i + j]
                             with col:
-                                poster_url = get_poster_url(item.get("poster_path"), item["title"], size="w185")
+                                poster_url = get_poster_url(
+                                    item.get("poster_path"), item["title"], size="w185"
+                                )
                                 st.image(poster_url, use_container_width=True)
-                                st.caption(item["title"][:30] + ("..." if len(item["title"]) > 30 else ""))
+                                st.caption(
+                                    item["title"][:30]
+                                    + ("..." if len(item["title"]) > 30 else "")
+                                )
 
                                 # Add "Find Similar" button
-                                if st.button("🔍", key=f"similar_cluster_{cluster_id}_{item['id']}_{i}_{j}"):
+                                if st.button(
+                                    "🔍",
+                                    key=f"similar_cluster_{cluster_id}_{item['id']}_{i}_{j}",
+                                ):
                                     st.session_state.similar_item = {
-                                        'tmdb_id': item['id'],
-                                        'title': item['title'],
-                                        'media_type': item['media_type'],
+                                        "tmdb_id": item["id"],
+                                        "title": item["title"],
+                                        "media_type": item["media_type"],
                                     }
                                     st.session_state.active_tab = TAB_SIMILAR_ITEMS
                                     st.rerun()
@@ -1130,57 +1249,60 @@ def show_similar_items_page():
     st.header("🔍 Find Similar Items")
 
     # if we previously performed an inline check, restore persisted results now so the UI shows results + inline output
-    if st.session_state.get('_restore_similar'):
-        persisted = st.session_state.get('_persisted_similar_results')
+    if st.session_state.get("_restore_similar"):
+        persisted = st.session_state.get("_persisted_similar_results")
         if persisted is not None:
-            st.session_state['similar_results'] = list(persisted)
+            st.session_state["similar_results"] = list(persisted)
         try:
-            del st.session_state['_restore_similar']
+            del st.session_state["_restore_similar"]
         except Exception:
             pass
 
     # if results were cleared by a rerun (e.g. after a button callback), try to restore from persisted backup
-    if st.session_state.get('similar_results') is None:
-        persisted = st.session_state.get('_persisted_similar_results')
+    if st.session_state.get("similar_results") is None:
+        persisted = st.session_state.get("_persisted_similar_results")
         if persisted is not None:
-            st.session_state['similar_results'] = list(persisted)
+            st.session_state["similar_results"] = list(persisted)
             # render immediately
-            render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
+            render_similar_results(
+                st.session_state.get("similar_results", []),
+                st.session_state.get("similar_source_title"),
+            )
             return
 
         # if no persisted copy, try to re-run last search payload
-        if st.session_state.get('last_search_payload'):
-            payload = st.session_state.get('last_search_payload')
+        if st.session_state.get("last_search_payload"):
+            payload = st.session_state.get("last_search_payload")
             try:
                 search_similar(
-                    tmdb_id=payload.get('tmdb_id'),
-                    title=payload.get('title'),
-                    text=payload.get('text'),
-                    input_media_type=payload.get('input_media_type'),
-                    results_media_type=payload.get('results_media_type', 'all'),
-                    k=payload.get('k', 10),
-                    source_title=st.session_state.get('similar_source_title')
+                    tmdb_id=payload.get("tmdb_id"),
+                    title=payload.get("title"),
+                    text=payload.get("text"),
+                    input_media_type=payload.get("input_media_type"),
+                    results_media_type=payload.get("results_media_type", "all"),
+                    k=payload.get("k", 10),
+                    source_title=st.session_state.get("similar_source_title"),
                 )
             except Exception:
                 # if re-run fails, clear last payload to avoid loops
                 try:
-                    del st.session_state['last_search_payload']
+                    del st.session_state["last_search_payload"]
                 except Exception:
                     pass
 
     # check if we came here from watch history or recommendations
-    if 'similar_item' in st.session_state:
+    if "similar_item" in st.session_state:
         item = st.session_state.similar_item
         st.info(f"🎯 Finding items similar to: **{item['title']}**")
 
         # when coming from history/recommendations, the triggering item provides its media_type as its type
         # treat that as the input_media_type (the ID's type) and keep results filter as 'all' by default
         search_similar(
-            tmdb_id=item['tmdb_id'],
-            input_media_type=item['media_type'],
-            results_media_type='all',
+            tmdb_id=item["tmdb_id"],
+            input_media_type=item["media_type"],
+            results_media_type="all",
             k=10,
-            source_title=item['title']
+            source_title=item["title"],
         )
 
         # remove the trigger and render stored results (search_similar writes to session_state)
@@ -1190,8 +1312,11 @@ def show_similar_items_page():
             pass
         st.markdown("---")
         # render persisted results if any
-        if st.session_state.get('similar_results') is not None:
-            render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
+        if st.session_state.get("similar_results") is not None:
+            render_similar_results(
+                st.session_state.get("similar_results", []),
+                st.session_state.get("similar_source_title"),
+            )
             return
 
     st.write("Find movies and TV shows similar to what you're looking for")
@@ -1200,28 +1325,47 @@ def show_similar_items_page():
     debug = st.checkbox("Show debug info (session state)", key="similar_debug_toggle")
     if debug:
         st.write("session_state keys:", list(st.session_state.keys()))
-        st.write({
-            'similar_results': st.session_state.get('similar_results'),
-            'last_search_payload': st.session_state.get('last_search_payload'),
-            'similar_source_title': st.session_state.get('similar_source_title'),
-        })
+        st.write(
+            {
+                "similar_results": st.session_state.get("similar_results"),
+                "last_search_payload": st.session_state.get("last_search_payload"),
+                "similar_source_title": st.session_state.get("similar_source_title"),
+            }
+        )
 
-    tab_id, tab_title, tab_text = st.tabs(["By TMDB ID", "By Title", "By Text Description"])
+    tab_id, tab_title, tab_text = st.tabs(
+        ["By TMDB ID", "By Title", "By Text Description"]
+    )
 
     # --- By TMDB ID ---
     with tab_id:
         st.subheader("Search by TMDB ID")
         col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
         with col1:
-            tmdb_id = st.number_input("Enter TMDB ID", min_value=1, value=550, key="tmdb_id_input")
+            tmdb_id = st.number_input(
+                "Enter TMDB ID", min_value=1, value=550, key="tmdb_id_input"
+            )
         with col2:
             # input media type: used to resolve the TMDB id (movie or tv)
-            input_media = st.selectbox("ID Type", ["movie", "tv"], key="tmdb_input_media", help="Type of the provided TMDB ID (movie or tv)")
+            input_media = st.selectbox(
+                "ID Type",
+                ["movie", "tv"],
+                key="tmdb_input_media",
+                help="Type of the provided TMDB ID (movie or tv)",
+            )
         with col3:
             # results media type: filter applied to KNN results
-            results_media = st.selectbox("Results Type", ["movie", "tv", "all"], index=2, key="tmdb_results_media", help="Filter results to movie/tv/all")
+            results_media = st.selectbox(
+                "Results Type",
+                ["movie", "tv", "all"],
+                index=2,
+                key="tmdb_results_media",
+                help="Filter results to movie/tv/all",
+            )
         with col4:
-            k = st.number_input("Results", min_value=1, max_value=50, value=10, key="tmdb_k")
+            k = st.number_input(
+                "Results", min_value=1, max_value=50, value=10, key="tmdb_k"
+            )
 
         if st.button("🔍 Find Similar by ID", type="primary"):
             # resolve metadata using the backend API (/admin/tmdb/<id>)
@@ -1241,20 +1385,30 @@ def show_similar_items_page():
                 if not md:
                     raise Exception("metadata not found")
 
-                source_title = md.get('title') or md.get('name')
-                st.session_state['similar_source_metadata'] = md
+                source_title = md.get("title") or md.get("name")
+                st.session_state["similar_source_metadata"] = md
                 if source_title:
-                    st.info(f"Searching similar to: {source_title} (TMDB id={tmdb_id}, id_type={input_media})")
+                    st.info(
+                        f"Searching similar to: {source_title} (TMDB id={tmdb_id}, id_type={input_media})"
+                    )
             except Exception as e:
-                st.warning(f"Could not fetch metadata for TMDB id {tmdb_id} (type={input_media}): {e}")
-                if 'similar_source_metadata' in st.session_state:
+                st.warning(
+                    f"Could not fetch metadata for TMDB id {tmdb_id} (type={input_media}): {e}"
+                )
+                if "similar_source_metadata" in st.session_state:
                     try:
-                        del st.session_state['similar_source_metadata']
+                        del st.session_state["similar_source_metadata"]
                     except Exception:
                         pass
 
             # Use results_media as the results_media_type filter for returned items; pass input_media_type for ID resolution
-            search_similar(tmdb_id=tmdb_id, input_media_type=input_media, results_media_type=results_media, k=k, source_title=source_title)
+            search_similar(
+                tmdb_id=tmdb_id,
+                input_media_type=input_media,
+                results_media_type=results_media,
+                k=k,
+                source_title=source_title,
+            )
 
     # --- By Title ---
     with tab_title:
@@ -1264,19 +1418,37 @@ def show_similar_items_page():
             title_in = st.text_input("Title (TMDB search)", key="title_in")
         with col2:
             # input media type for the title lookup
-            title_input_media = st.selectbox("Title Type", ["movie", "tv"], key="title_input_media", help="Search TMDB in this type for the provided title")
+            title_input_media = st.selectbox(
+                "Title Type",
+                ["movie", "tv"],
+                key="title_input_media",
+                help="Search TMDB in this type for the provided title",
+            )
         with col3:
             # results media type filter
-            title_results_media = st.selectbox("Results Type", ["movie", "tv", "all"], index=2, key="title_results_media")
+            title_results_media = st.selectbox(
+                "Results Type",
+                ["movie", "tv", "all"],
+                index=2,
+                key="title_results_media",
+            )
         with col4:
-            k_title = st.number_input("Results", min_value=1, max_value=50, value=10, key="title_k")
+            k_title = st.number_input(
+                "Results", min_value=1, max_value=50, value=10, key="title_k"
+            )
 
         if st.button("🔎 Resolve Title & Find Similar", type="primary"):
             if not title_in:
                 st.error("Please provide a title to search")
             else:
                 # delegate title resolution to the backend /mcp/knn API
-                search_similar(title=title_in, input_media_type=title_input_media, results_media_type=title_results_media, k=k_title, source_title=title_in)
+                search_similar(
+                    title=title_in,
+                    input_media_type=title_input_media,
+                    results_media_type=title_results_media,
+                    k=k_title,
+                    source_title=title_in,
+                )
 
     # --- By Text Description (free-text embeddings) ---
     with tab_text:
@@ -1284,32 +1456,47 @@ def show_similar_items_page():
         text_query = st.text_area(
             "Describe what you're looking for",
             placeholder="e.g., 'mind-bending thriller with a twist ending' or 'heartwarming family drama'",
-            key="text_query"
+            key="text_query",
         )
         col1, col2 = st.columns([3, 1])
         with col1:
             # results media type filter only — this is the output filter
-            text_results_media = st.selectbox("Results Type", ["movie", "tv", "all"], index=2, key="text_results_media")
+            text_results_media = st.selectbox(
+                "Results Type",
+                ["movie", "tv", "all"],
+                index=2,
+                key="text_results_media",
+            )
         with col2:
-            k_text = st.number_input("Results", min_value=1, max_value=50, value=10, key="text_k")
+            k_text = st.number_input(
+                "Results", min_value=1, max_value=50, value=10, key="text_k"
+            )
 
         if st.button("🔍 Find Similar by Description", type="primary") and text_query:
             # free-text search uses only the output filter
-            search_similar(text=text_query, results_media_type=text_results_media, k=k_text)
+            search_similar(
+                text=text_query, results_media_type=text_results_media, k=k_text
+            )
 
     # if results exist in session state (from previous search), render them here so callbacks don't clear the page
-    if st.session_state.get('similar_results') is not None:
-        render_similar_results(st.session_state.get('similar_results', []), st.session_state.get('similar_source_title'))
+    if st.session_state.get("similar_results") is not None:
+        render_similar_results(
+            st.session_state.get("similar_results", []),
+            st.session_state.get("similar_source_title"),
+        )
 
 
-def search_similar(tmdb_id: Optional[int] = None, title: Optional[str] = None, text: Optional[str] = None,
-                    input_media_type: Optional[str] = None, results_media_type: str = "all",
-                    k: int = 10, source_title: Optional[str] = None):
+def search_similar(
+    tmdb_id: Optional[int] = None,
+    title: Optional[str] = None,
+    text: Optional[str] = None,
+    input_media_type: Optional[str] = None,
+    results_media_type: str = "all",
+    k: int = 10,
+    source_title: Optional[str] = None,
+):
     """Search for similar items using the KNN endpoint."""
-    payload = {
-        "k": k,
-        "results_media_type": results_media_type
-    }
+    payload = {"k": k, "results_media_type": results_media_type}
 
     if tmdb_id:
         payload["tmdb_id"] = tmdb_id
@@ -1325,34 +1512,44 @@ def search_similar(tmdb_id: Optional[int] = None, title: Optional[str] = None, t
         st.error("Please provide either a TMDB ID or text description")
         return
 
-    search_label = f"Searching for items similar to '{source_title}'..." if source_title else "Searching for similar items..."
+    search_label = (
+        f"Searching for items similar to '{source_title}'..."
+        if source_title
+        else "Searching for similar items..."
+    )
     # perform the API call and store results in session_state so callbacks won't clear them on rerun
     with st.spinner(search_label):
         status, result = raw_api_post("/mcp/knn", payload)
     # handle ambiguous id (400) responses by prompting the user for input_media_type and retrying
     if status == 400 and isinstance(result, dict):
-        detail = result.get('detail') or result.get('error') or ''
-        if 'input_media_type' in str(detail) or 'ambiguous' in str(detail).lower():
-            st.warning("The provided TMDB id/title is ambiguous across media types. Please select the input type to disambiguate.")
-            choice = st.selectbox("Input type for the provided item", ["movie", "tv"], key=f"disamb_{int(time.time())}")
+        detail = result.get("detail") or result.get("error") or ""
+        if "input_media_type" in str(detail) or "ambiguous" in str(detail).lower():
+            st.warning(
+                "The provided TMDB id/title is ambiguous across media types. Please select the input type to disambiguate."
+            )
+            choice = st.selectbox(
+                "Input type for the provided item",
+                ["movie", "tv"],
+                key=f"disamb_{int(time.time())}",
+            )
             if st.button("Retry with selected type"):
                 payload["input_media_type"] = choice
                 status2, result2 = raw_api_post("/mcp/knn", payload)
                 status, result = status2, result2
 
     if result and "results" in result:
-        st.session_state['similar_results'] = result['results']
+        st.session_state["similar_results"] = result["results"]
         # keep a persisted backup so inline callbacks / reruns can restore results
-        st.session_state['_persisted_similar_results'] = list(result['results'])
-        st.session_state['similar_source_title'] = source_title
+        st.session_state["_persisted_similar_results"] = list(result["results"])
+        st.session_state["similar_source_title"] = source_title
         # persist the payload so we can re-run automatically after reruns (e.g., inline button clicks)
-        st.session_state['last_search_payload'] = payload
+        st.session_state["last_search_payload"] = payload
         # header/success is rendered by render_similar_results to avoid duplicate banners
     elif result:
-        st.session_state['similar_results'] = []
-        st.session_state['_persisted_similar_results'] = []
-        st.session_state['similar_source_title'] = source_title
-        st.session_state['last_search_payload'] = payload
+        st.session_state["similar_results"] = []
+        st.session_state["_persisted_similar_results"] = []
+        st.session_state["similar_source_title"] = source_title
+        st.session_state["last_search_payload"] = payload
         st.warning("No similar items found. Try adjusting your search.")
 
 
@@ -1360,13 +1557,13 @@ def render_similar_results(results, source_title: Optional[str] = None):
     """Render similar results list (reads inline will-like keys from session_state)."""
     # Determine a display title: prefer explicit source_title argument, then persisted metadata title
     display_title = source_title
-    metadata = st.session_state.get('similar_source_metadata')
+    metadata = st.session_state.get("similar_source_metadata")
     metadata_title = None
     metadata_poster = None
     if not display_title and metadata:
-        metadata_title = (metadata.get('title') or metadata.get('name'))
+        metadata_title = metadata.get("title") or metadata.get("name")
         display_title = metadata_title
-        metadata_poster = metadata.get('poster_path')
+        metadata_poster = metadata.get("poster_path")
 
     if display_title:
         st.markdown(f"### 🔍 Results similar to: **{display_title}**")
@@ -1384,7 +1581,9 @@ def render_similar_results(results, source_title: Optional[str] = None):
             col1, col2, col3 = st.columns([1, 3, 1])
 
             with col1:
-                poster_url = get_poster_url(item.get("poster_path"), (item.get("title") or "Unknown"))
+                poster_url = get_poster_url(
+                    item.get("poster_path"), (item.get("title") or "Unknown")
+                )
                 st.image(poster_url, use_container_width=True)
 
             with col2:
@@ -1396,7 +1595,7 @@ def render_similar_results(results, source_title: Optional[str] = None):
                 if "score" in item:
                     d = item.get("score")
                     sigma = 1.0
-                    score = np.exp(-d / (2 * sigma ** 2))
+                    score = np.exp(-d / (2 * sigma**2))
                     st.progress(float(score))
 
             with col3:
@@ -1420,15 +1619,17 @@ def render_similar_results(results, source_title: Optional[str] = None):
                     # render inline result if present
                     res = st.session_state.get(inline_key)
                     if res:
-                        if isinstance(res, dict) and 'error' in res:
+                        if isinstance(res, dict) and "error" in res:
                             st.warning(f"Will I like? check failed: {res.get('error')}")
                         else:
-                            item2 = res.get('item', {})
-                            score = res.get('score')
-                            will = res.get('will_like')
-                            expl = res.get('explanation')
-                            emoji = '❤️' if will else '🤷'
-                            st.markdown(f"**{emoji} {(item2.get('title') or 'Unknown')}**")
+                            item2 = res.get("item", {})
+                            score = res.get("score")
+                            will = res.get("will_like")
+                            expl = res.get("explanation")
+                            emoji = "❤️" if will else "🤷"
+                            st.markdown(
+                                f"**{emoji} {(item2.get('title') or 'Unknown')}**"
+                            )
                             if isinstance(score, (int, float)):
                                 st.write(f"Score: {score:.3f}")
                             st.write(expl)
@@ -1440,13 +1641,15 @@ def show_admin_page():
     """Display admin panel for management tasks."""
     st.header("⚙️ Admin Panel")
     st.warning("⚠️ These actions can be resource-intensive. Use with caution.")
-    tab_status, tab_sync, tab_embedding, tab_faiss, tab_state = st.tabs([
-        "📊 Status",
-        "🔄 Manual Sync",
-        "🧠 Embeddings",
-        "📇 FAISS Index",
-        "♻️ State/Cache Management",
-    ])
+    tab_status, tab_sync, tab_embedding, tab_faiss, tab_state = st.tabs(
+        [
+            "📊 Status",
+            "🔄 Manual Sync",
+            "🧠 Embeddings",
+            "📇 FAISS Index",
+            "♻️ State/Cache Management",
+        ]
+    )
 
     with tab_status:
         st.subheader("System Status")
@@ -1456,7 +1659,10 @@ def show_admin_page():
             is_online = api_status is not None and api_status.get("status") == "ok"
             st.metric("API Status", "🟢 Online" if is_online else "🔴 Offline")
         with col2:
-            st.metric("Auth Status", "✅ Authenticated" if is_authenticated() else "❌ Not Authenticated")
+            st.metric(
+                "Auth Status",
+                "✅ Authenticated" if is_authenticated() else "❌ Not Authenticated",
+            )
 
         st.markdown("---")
 
@@ -1465,7 +1671,6 @@ def show_admin_page():
             s = cached_sync_status() or {}
         except Exception:
             s = {}
-
 
         st.caption(
             f"Last sync — Trakt: {format_ts(s.get('trakt_last_activity'))} | TMDB(movie): {format_ts(s.get('tmdb_movie_last_sync'))} | TMDB(tv): {format_ts(s.get('tmdb_tv_last_sync'))}"
@@ -1478,51 +1683,81 @@ def show_admin_page():
 
     with tab_embedding:
         st.subheader("🧠 Embeddings & FAISS")
-        st.write("FAISS index generation and embedding computation are coupled: triggering an embedding action will rebuild the FAISS index, compute embeddings from metadata, and write sidecar files.")
+        st.write(
+            "FAISS index generation and embedding computation are coupled: triggering an embedding action will rebuild the FAISS index, compute embeddings from metadata, and write sidecar files."
+        )
 
         st.markdown("#### Rebuild FAISS (for a single item — performs a full rebuild)")
         col1, col2 = st.columns(2)
         with col1:
             embed_id = st.number_input("TMDB ID", min_value=1, key="embed_id")
         with col2:
-            embed_media_type = st.selectbox("Media Type", ["movie", "tv"], key="embed_media")
+            embed_media_type = st.selectbox(
+                "Media Type", ["movie", "tv"], key="embed_media"
+            )
 
-        force_regen = st.checkbox("Force regenerate all embeddings (ignore existing sidecars)", value=False, key="force_regen")
+        force_regen = st.checkbox(
+            "Force regenerate all embeddings (ignore existing sidecars)",
+            value=False,
+            key="force_regen",
+        )
 
         if st.button("🎯 Rebuild FAISS (single item)"):
-            with st.spinner("Triggering FAISS rebuild (will compute embeddings for all items)..."):
+            with st.spinner(
+                "Triggering FAISS rebuild (will compute embeddings for all items)..."
+            ):
                 result = api_request(
                     "/admin/embed/item",
                     method="POST",
-                    data={"id": embed_id, "media_type": embed_media_type, "force_regenerate": force_regen}
+                    data={
+                        "id": embed_id,
+                        "media_type": embed_media_type,
+                        "force_regenerate": force_regen,
+                    },
                 )
                 if result:
-                    st.success("✅ FAISS rebuild started (this will compute embeddings from metadata and write sidecars).")
+                    st.success(
+                        "✅ FAISS rebuild started (this will compute embeddings from metadata and write sidecars)."
+                    )
                     st.json(result)
 
         # Incremental single-item upsert (fast) - attempts to add/update only one vector without full rebuild
         if st.button("⚡ Incremental index (fast) - upsert single item"):
             with st.spinner("Upserting single item into FAISS sidecars/index..."):
-                res = api_request("/admin/faiss/upsert-item", method="POST", data={"id": int(embed_id), "media_type": embed_media_type, "force_regenerate": force_regen})
+                res = api_request(
+                    "/admin/faiss/upsert-item",
+                    method="POST",
+                    data={
+                        "id": int(embed_id),
+                        "media_type": embed_media_type,
+                        "force_regenerate": force_regen,
+                    },
+                )
                 if res:
-                    if res.get('status') in ('updated','added'):
-                        st.success(f"✅ Incremental upsert successful: {res.get('status')}")
-                    elif res.get('status') in ('rebuild_required', 'rebuild_scheduled'):
-                        st.warning("⚠️ Incremental upsert not possible; a full rebuild is required. Use Rebuild FAISS (single item) or Rebuild FAISS (all items).")
+                    if res.get("status") in ("updated", "added"):
+                        st.success(
+                            f"✅ Incremental upsert successful: {res.get('status')}"
+                        )
+                    elif res.get("status") in ("rebuild_required", "rebuild_scheduled"):
+                        st.warning(
+                            "⚠️ Incremental upsert not possible; a full rebuild is required. Use Rebuild FAISS (single item) or Rebuild FAISS (all items)."
+                        )
                     else:
                         st.info(res)
 
         st.markdown("---")
 
         st.markdown("#### Rebuild FAISS for all items")
-        st.warning("⚠️ This will compute embeddings for all items and rebuild the FAISS index. This may take a while.")
+        st.warning(
+            "⚠️ This will compute embeddings for all items and rebuild the FAISS index. This may take a while."
+        )
 
         if st.button("🚀 Rebuild FAISS (all items)", type="primary"):
             with st.spinner("Starting FAISS rebuild..."):
                 result = api_request(
                     "/admin/embed/full",
                     method="POST",
-                    data={"force_regenerate": force_regen}
+                    data={"force_regenerate": force_regen},
                 )
                 if result:
                     st.success("✅ FAISS rebuild started!")
@@ -1548,19 +1783,23 @@ def show_admin_page():
                 if status.get("sidecar_meta"):
                     meta = status.get("sidecar_meta")
                     try:
-                        st.write(f"**Model:** {meta.get('embedding_model', 'unknown')}  ")
+                        st.write(
+                            f"**Model:** {meta.get('embedding_model', 'unknown')}  "
+                        )
                         st.write(f"**Vectors:** {meta.get('num_vectors', 'n/a')}  ")
                         st.write(f"**Dims:** {meta.get('embedding_dims', 'n/a')}  ")
-                        ts = meta.get('embedding_ts')
+                        ts = meta.get("embedding_ts")
                         if ts:
                             try:
-                                st.write(f"**Built:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))}")
+                                st.write(
+                                    f"**Built:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))}"
+                                )
                             except Exception:
                                 st.write(meta)
                         else:
                             st.write(meta)
                     except Exception:
-                        st.write(status.get('sidecar_meta'))
+                        st.write(status.get("sidecar_meta"))
         except Exception:
             pass
 
@@ -1571,9 +1810,13 @@ def show_admin_page():
 
         col1, col2 = st.columns(2)
         with col1:
-            dim = st.number_input("Embedding Dimensions", min_value=1, value=384, key="faiss_dim")
+            dim = st.number_input(
+                "Embedding Dimensions", min_value=1, value=384, key="faiss_dim"
+            )
         with col2:
-            factory = st.text_input("Factory String", value="IDMap,IVF100,Flat", key="faiss_factory")
+            factory = st.text_input(
+                "Factory String", value="IDMap,IVF100,Flat", key="faiss_factory"
+            )
 
         st.info("""
         **Factory String Examples:**
@@ -1589,7 +1832,7 @@ def show_admin_page():
                 result = api_request(
                     "/admin/faiss/rebuild",
                     method="POST",
-                    data={"dim": dim, "factory": factory}
+                    data={"dim": dim, "factory": factory},
                 )
                 if result:
                     st.success("✅ FAISS rebuild started!")
@@ -1615,7 +1858,12 @@ def show_admin_page():
                     st.error(f"Failed to clear recommendations cache: {e}")
         with col_b:
             if st.button("Clear Persisted Similar Results"):
-                for k in ['similar_results', '_persisted_similar_results', 'similar_source_title', 'last_search_payload']:
+                for k in [
+                    "similar_results",
+                    "_persisted_similar_results",
+                    "similar_source_title",
+                    "last_search_payload",
+                ]:
                     if k in st.session_state:
                         try:
                             del st.session_state[k]
@@ -1624,11 +1872,13 @@ def show_admin_page():
                 st.success("Cleared Persisted Similar Search state")
             if st.button("Clear FAISS Cache"):
                 with st.spinner("Clearing FAISS in-process cache..."):
-                    res = api_request('/admin/faiss/clear-cache', method='POST', data={})
-                    if res and res.get('status') == 'cleared':
-                        st.success('Cleared FAISS cache in this process')
+                    res = api_request(
+                        "/admin/faiss/clear-cache", method="POST", data={}
+                    )
+                    if res and res.get("status") == "cleared":
+                        st.success("Cleared FAISS cache in this process")
                     else:
-                        st.error(f'Failed to clear FAISS cache: {res}')
+                        st.error(f"Failed to clear FAISS cache: {res}")
 
     with tab_sync:
         st.subheader("🔄 Manual Trakt Sync")
@@ -1636,66 +1886,82 @@ def show_admin_page():
 
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown("Use this to start a manual Trakt sync (runs on the backend). The UI can poll the job status until completion.")
+            st.markdown(
+                "Use this to start a manual Trakt sync (runs on the backend). The UI can poll the job status until completion."
+            )
         with col2:
             if st.button("Start Trakt Sync", type="primary"):
                 with st.spinner("Starting Trakt sync..."):
                     res = start_trakt_sync_shared(admin=True)
-                    if isinstance(res, dict) and res.get('job_id'):
+                    if isinstance(res, dict) and res.get("job_id"):
                         st.success(f"Sync started (job_id={res.get('job_id')})")
                     else:
                         st.error(f"Sync request failed: {res}")
 
-        job_id = st.session_state.get('admin_last_sync_job_id')
+        job_id = st.session_state.get("admin_last_sync_job_id")
         if job_id:
             st.markdown(f"**Last job id:** {job_id}")
             col_a, col_b = st.columns(2)
             with col_a:
                 if st.button("Check job status now"):
-                    js = poll_job_status(job_id, job_type='trakt', max_wait=0)
+                    js = poll_job_status(job_id, job_type="trakt", max_wait=0)
                     if js:
                         st.json(js)
-                        if js.get('status') in ('completed', 'failed'):
+                        if js.get("status") in ("completed", "failed"):
                             clear_caches()
                             try:
-                                del st.session_state['admin_last_sync_job_id']
+                                del st.session_state["admin_last_sync_job_id"]
                             except Exception:
                                 pass
                     else:
-                        st.warning("Job status not available (still running or not found)")
+                        st.warning(
+                            "Job status not available (still running or not found)"
+                        )
             with col_b:
                 if st.button("Poll until complete (60s)"):
                     with st.spinner("Polling job status until completion..."):
-                        js = poll_job_status(job_id, job_type='trakt', max_wait=60, interval=2)
+                        js = poll_job_status(
+                            job_id, job_type="trakt", max_wait=60, interval=2
+                        )
                         if js:
                             st.success(f"Job finished: {js.get('status')}")
                             clear_caches()
                             try:
-                                del st.session_state['admin_last_sync_job_id']
+                                del st.session_state["admin_last_sync_job_id"]
                             except Exception:
                                 pass
                             st.json(js)
                         else:
-                            st.warning("Polling ended without completion. Check later or view job status.")
+                            st.warning(
+                                "Polling ended without completion. Check later or view job status."
+                            )
 
         st.markdown("---")
         st.subheader("🔧 Manage Multiple Jobs")
-        st.write("Select from currently non-completed jobs and manage them (view status / cancel / poll).")
+        st.write(
+            "Select from currently non-completed jobs and manage them (view status / cancel / poll)."
+        )
 
         try:
             jobs_resp = requests.get(f"{API_BASE_URL}/admin/sync/jobs", timeout=5)
-            jobs_list = jobs_resp.json().get('jobs', []) if jobs_resp.status_code == 200 else []
+            jobs_list = (
+                jobs_resp.json().get("jobs", []) if jobs_resp.status_code == 200 else []
+            )
         except Exception:
             jobs_list = []
 
-        job_options = [j.get('key') for j in jobs_list]
+        job_options = [j.get("key") for j in jobs_list]
         selected_job = None
         if job_options:
-            sel = st.selectbox('Select job', ['-- choose a job --'] + job_options, key='admin_job_select')
-            if sel and sel != '-- choose a job --':
+            sel = st.selectbox(
+                "Select job",
+                ["-- choose a job --"] + job_options,
+                key="admin_job_select",
+            )
+            if sel and sel != "-- choose a job --":
                 selected_job = sel
                 # find meta for display
-                meta = next((j for j in jobs_list if j.get('key') == sel), {})
+                meta = next((j for j in jobs_list if j.get("key") == sel), {})
                 st.write(f"Job type: {meta.get('job_type')}")
                 st.write(f"Status: {meta.get('status')}")
                 st.write(f"Processed: {meta.get('processed', 0)}")
@@ -1703,98 +1969,146 @@ def show_admin_page():
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    if st.button('Refresh selected job status'):
+                    if st.button("Refresh selected job status"):
                         # determine job_type query param
-                        jt = meta.get('job_type') or ('tmdb' if sel.startswith('tmdb_sync_job:') else 'trakt')
+                        jt = meta.get("job_type") or (
+                            "tmdb" if sel.startswith("tmdb_sync_job:") else "trakt"
+                        )
                         js = poll_job_status(sel, job_type=jt, max_wait=0)
                         if js:
                             st.json(js)
                         else:
-                            st.warning('Job status not available')
+                            st.warning("Job status not available")
                 with c2:
-                    if st.button('Poll until complete (120s)'):
-                        jt = meta.get('job_type') or ('tmdb' if sel.startswith('tmdb_sync_job:') else 'trakt')
-                        with st.spinner('Polling selected job...'):
-                            js = poll_job_status(sel, job_type=jt, max_wait=120, interval=5)
+                    if st.button("Poll until complete (120s)"):
+                        jt = meta.get("job_type") or (
+                            "tmdb" if sel.startswith("tmdb_sync_job:") else "trakt"
+                        )
+                        with st.spinner("Polling selected job..."):
+                            js = poll_job_status(
+                                sel, job_type=jt, max_wait=120, interval=5
+                            )
                             if js:
                                 st.success(f"Job finished: {js.get('status')}")
                                 st.json(js)
                             else:
-                                st.warning('Polling ended without completion')
+                                st.warning("Polling ended without completion")
                 with c3:
-                    if st.button('Cancel selected job'):
+                    if st.button("Cancel selected job"):
                         # cancel TMDB only via existing endpoint; Trakt cancel not implemented
-                        jt = meta.get('job_type') or ('tmdb' if sel.startswith('tmdb_sync_job:') else 'trakt')
-                        if jt == 'tmdb' or sel.startswith('tmdb_sync_job:'):
+                        jt = meta.get("job_type") or (
+                            "tmdb" if sel.startswith("tmdb_sync_job:") else "trakt"
+                        )
+                        if jt == "tmdb" or sel.startswith("tmdb_sync_job:"):
                             # post to tmdb cancel with job id (strip prefix if necessary)
-                            jid = sel.split(':',1)[1] if ':' in sel else sel
-                            sc, rr = raw_api_post('/admin/sync/tmdb/cancel', {'job_id': jid})
-                            if sc in (200,202):
-                                st.success('Cancel requested')
+                            jid = sel.split(":", 1)[1] if ":" in sel else sel
+                            sc, rr = raw_api_post(
+                                "/admin/sync/tmdb/cancel", {"job_id": jid}
+                            )
+                            if sc in (200, 202):
+                                st.success("Cancel requested")
                                 try:
                                     clear_caches()
                                 except Exception:
                                     pass
                                 _safe_rerun()
                             else:
-                                st.error(f'Cancel request returned: {sc} - {rr}')
+                                st.error(f"Cancel request returned: {sc} - {rr}")
                         else:
-                            st.error('Cancel is supported only for TMDB jobs via this UI')
+                            st.error(
+                                "Cancel is supported only for TMDB jobs via this UI"
+                            )
         else:
-            st.info('No non-completed jobs found')
+            st.info("No non-completed jobs found")
 
         st.markdown("---")
         st.subheader("🔄 TMDB Sync")
-        st.write("Trigger TMDB metadata sync (export/discover) and monitor its job status.")
+        st.write(
+            "Trigger TMDB metadata sync (export/discover) and monitor its job status."
+        )
 
         col_a, col_b = st.columns([3, 1])
         with col_a:
-            tmdb_media_type = st.selectbox("Media Type", ["movie", "tv"], key="tmdb_sync_media")
-            full_sync = st.checkbox("Full Sync (export/discover)", value=False, key="tmdb_full_sync")
-            force_refresh = st.checkbox("Force Refresh Metadata (re-fetch existing)", value=False, key="tmdb_force_refresh")
-            embed_updated = st.checkbox("Compute embeddings during sync", value=True, key="tmdb_embed_updated")
+            tmdb_media_type = st.selectbox(
+                "Media Type", ["movie", "tv"], key="tmdb_sync_media"
+            )
+            full_sync = st.checkbox(
+                "Full Sync (export/discover)", value=False, key="tmdb_full_sync"
+            )
+            force_refresh = st.checkbox(
+                "Force Refresh Metadata (re-fetch existing)",
+                value=False,
+                key="tmdb_force_refresh",
+            )
+            embed_updated = st.checkbox(
+                "Compute embeddings during sync", value=True, key="tmdb_embed_updated"
+            )
 
         with col_b:
             if st.button("Start TMDB Sync", type="primary"):
                 with st.spinner("Starting TMDB sync..."):
-                    status_code, resp = raw_api_post("/admin/sync/tmdb", {"media_type": tmdb_media_type, "full_sync": full_sync, "embed_updated": embed_updated, "force_refresh": force_refresh})
-                    if status_code in (200, 202) and isinstance(resp, dict) and resp.get("job_id"):
+                    status_code, resp = raw_api_post(
+                        "/admin/sync/tmdb",
+                        {
+                            "media_type": tmdb_media_type,
+                            "full_sync": full_sync,
+                            "embed_updated": embed_updated,
+                            "force_refresh": force_refresh,
+                        },
+                    )
+                    if (
+                        status_code in (200, 202)
+                        and isinstance(resp, dict)
+                        and resp.get("job_id")
+                    ):
                         jid = resp.get("job_id")
-                        st.session_state['tmdb_last_sync_job_id'] = jid
-                        st.session_state['tmdb_sync_in_progress'] = True
-                        st.session_state['tmdb_last_sync_polled'] = False
+                        st.session_state["tmdb_last_sync_job_id"] = jid
+                        st.session_state["tmdb_sync_in_progress"] = True
+                        st.session_state["tmdb_last_sync_polled"] = False
                         st.success(f"TMDB sync started (job_id={jid})")
                     else:
                         st.error(f"Failed to start TMDB sync: {resp}")
 
         # show currently tracked TMDB job and controls
-        tmdb_job_id = st.session_state.get('tmdb_last_sync_job_id')
+        tmdb_job_id = st.session_state.get("tmdb_last_sync_job_id")
         if tmdb_job_id:
             st.markdown(f"**TMDB job id:** {tmdb_job_id}")
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("Refresh TMDB Job Status"):
-                    js = poll_job_status(tmdb_job_id, job_type='tmdb', max_wait=0)
+                    js = poll_job_status(tmdb_job_id, job_type="tmdb", max_wait=0)
                     if js:
                         st.json(js)
-                        if js.get('status') in ('completed', 'failed', 'canceled'):
+                        if js.get("status") in ("completed", "failed", "canceled"):
                             clear_caches()
-                            for k in ['tmdb_last_sync_job_id', 'tmdb_sync_in_progress', 'tmdb_last_sync_polled']:
+                            for k in [
+                                "tmdb_last_sync_job_id",
+                                "tmdb_sync_in_progress",
+                                "tmdb_last_sync_polled",
+                            ]:
                                 if k in st.session_state:
                                     try:
                                         del st.session_state[k]
                                     except Exception:
                                         pass
                     else:
-                        st.warning("Job status not available (still running or not found)")
+                        st.warning(
+                            "Job status not available (still running or not found)"
+                        )
             with c2:
                 if st.button("Poll until complete (300s)"):
                     with st.spinner("Polling TMDB job until completion..."):
-                        js = poll_job_status(tmdb_job_id, job_type='tmdb', max_wait=300, interval=5)
+                        js = poll_job_status(
+                            tmdb_job_id, job_type="tmdb", max_wait=300, interval=5
+                        )
                         if js:
                             st.success(f"Job finished: {js.get('status')}")
                             clear_caches()
-                            for k in ['tmdb_last_sync_job_id', 'tmdb_sync_in_progress', 'tmdb_last_sync_polled']:
+                            for k in [
+                                "tmdb_last_sync_job_id",
+                                "tmdb_sync_in_progress",
+                                "tmdb_last_sync_polled",
+                            ]:
                                 if k in st.session_state:
                                     try:
                                         del st.session_state[k]
@@ -1802,11 +2116,15 @@ def show_admin_page():
                                         pass
                             st.json(js)
                         else:
-                            st.warning("Polling ended without completion. Check job status later.")
+                            st.warning(
+                                "Polling ended without completion. Check job status later."
+                            )
             with c3:
                 if st.button("Cancel TMDB Job"):
-                    sc, rr = raw_api_post("/admin/sync/tmdb/cancel", {"job_id": tmdb_job_id})
-                    if sc in (200,202):
+                    sc, rr = raw_api_post(
+                        "/admin/sync/tmdb/cancel", {"job_id": tmdb_job_id}
+                    )
+                    if sc in (200, 202):
                         st.success("Cancel requested")
                         try:
                             clear_caches()
@@ -1827,10 +2145,10 @@ def show_admin_page():
                     st.write(f"Embeddings queued: {js.get('embed_queued', 0)}")
                     # show a simple progress indicator when a total isn't known
                     try:
-                        if isinstance(js.get('processed'), int):
+                        if isinstance(js.get("processed"), int):
                             # show a small determinate bar modulo an arbitrary cap to indicate activity
-                            cap = max(1000, js.get('processed', 0))
-                            val = min(1.0, js.get('processed', 0) / cap)
+                            cap = max(1000, js.get("processed", 0))
+                            val = min(1.0, js.get("processed", 0) / cap)
                             st.progress(val)
                     except Exception:
                         pass
@@ -1842,14 +2160,14 @@ def show_admin_page():
         st.markdown("---")
         if st.button("Clear History Cache"):
             try:
-                res = api_request('/admin/clear-history-cache', method='POST', data={})
-                if res and res.get('status') == 'cleared':
+                res = api_request("/admin/clear-history-cache", method="POST", data={})
+                if res and res.get("status") == "cleared":
                     cached_api_get.clear()
-                    st.success('History cache cleared')
+                    st.success("History cache cleared")
                 else:
-                    st.error(f'Failed to clear history cache: {res}')
+                    st.error(f"Failed to clear history cache: {res}")
             except Exception as e:
-                st.error(f'Error clearing history cache: {e}')
+                st.error(f"Error clearing history cache: {e}")
 
 
 def main():

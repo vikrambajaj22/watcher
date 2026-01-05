@@ -127,7 +127,9 @@ def write_sidecar_meta(meta: dict) -> None:
         logger.warning("Failed to write sidecar_meta: %s", repr(e), exc_info=True)
 
 
-def get_vectors_for_ids(ids: List[int], media_types: Optional[List[str]] = None) -> List[Optional[np.ndarray]]:
+def get_vectors_for_ids(
+    ids: List[int], media_types: Optional[List[str]] = None
+) -> List[Optional[np.ndarray]]:
     """Return list of vectors corresponding to provided ids and optional media_types.
 
     If a vector is missing, the corresponding list entry will be None.
@@ -180,9 +182,7 @@ def build_faiss_index(
     os.makedirs(INDEX_DIR, exist_ok=True)
 
     # fetch all metadata docs (we need fields for embedding computation)
-    docs = list(
-        tmdb_metadata_collection.find({}, {"_id": 0})
-    )
+    docs = list(tmdb_metadata_collection.find({}, {"_id": 0}))
     if not docs:
         logger.info("No TMDB metadata docs found to build FAISS index")
         return None
@@ -203,10 +203,16 @@ def build_faiss_index(
         # auto-detect embedding_model changes: if model differs, ignore sidecars
         try:
             from app.embeddings import EMBED_MODEL_NAME
-            if sidecar_meta and sidecar_meta.get("embedding_model") and sidecar_meta.get("embedding_model") != EMBED_MODEL_NAME:
+
+            if (
+                sidecar_meta
+                and sidecar_meta.get("embedding_model")
+                and sidecar_meta.get("embedding_model") != EMBED_MODEL_NAME
+            ):
                 logger.warning(
                     "Sidecar meta embedding_model (%s) differs from current model (%s); ignoring sidecars and recomputing",
-                    sidecar_meta.get("embedding_model"), EMBED_MODEL_NAME,
+                    sidecar_meta.get("embedding_model"),
+                    EMBED_MODEL_NAME,
                 )
                 existing_labels = None
                 existing_vecs = None
@@ -220,16 +226,26 @@ def build_faiss_index(
             existing_vecs = _vecs
             existing_label_to_index = _label_to_index
             # check dimension match
-            if existing_vecs is not None and existing_vecs.size and existing_vecs.shape[1] != dim:
+            if (
+                existing_vecs is not None
+                and existing_vecs.size
+                and existing_vecs.shape[1] != dim
+            ):
                 logger.warning(
                     "Existing sidecar vectors have dim=%s but requested dim=%s; ignoring sidecars and recomputing",
-                    existing_vecs.shape[1], dim,
+                    existing_vecs.shape[1],
+                    dim,
                 )
                 existing_labels = None
                 existing_vecs = None
                 existing_label_to_index = None
 
-    logger.info("Preparing vectors for %s docs (batch_size=%s, reuse_sidecars=%s)...", len(docs), batch_size, bool(existing_labels is not None))
+    logger.info(
+        "Preparing vectors for %s docs (batch_size=%s, reuse_sidecars=%s)...",
+        len(docs),
+        batch_size,
+        bool(existing_labels is not None),
+    )
     for i in range(0, len(docs), batch_size):
         batch = docs[i : i + batch_size]
         # attempt to compute embeddings for items missing from sidecars in this batch
@@ -237,7 +253,10 @@ def build_faiss_index(
         for d in batch:
             try:
                 lbl = _encode_label(d.get("id"), d.get("media_type"))
-                if existing_label_to_index is not None and int(lbl) in existing_label_to_index:
+                if (
+                    existing_label_to_index is not None
+                    and int(lbl) in existing_label_to_index
+                ):
                     idx = existing_label_to_index[int(lbl)]
                     vec = np.asarray(existing_vecs[idx], dtype=np.float32)
                     labels_list.append(int(lbl))
@@ -252,7 +271,11 @@ def build_faiss_index(
                 labels_list.append(lbl)
                 vecs_list.append(vec)
             except Exception as e:
-                logger.warning("Failed to compute or reuse embedding for id=%s: %s", d.get("id"), repr(e))
+                logger.warning(
+                    "Failed to compute or reuse embedding for id=%s: %s",
+                    d.get("id"),
+                    repr(e),
+                )
 
     if not vecs_list:
         logger.info("No vectors computed; aborting FAISS build")
@@ -306,6 +329,7 @@ def build_faiss_index(
         # write sidecar meta
         try:
             from app.embeddings import EMBED_MODEL_NAME
+
             meta = {
                 "embedding_model": EMBED_MODEL_NAME,
                 "embedding_ts": int(time.time()),
@@ -491,7 +515,9 @@ def query_faiss(
         return []
 
 
-def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate: bool = False) -> dict:
+def upsert_single_item(
+    tmdb_id: int, media_type: str = "movie", force_regenerate: bool = False
+) -> dict:
     """Incrementally upsert a single item's vector into sidecars and FAISS index.
 
     Behavior:
@@ -507,14 +533,20 @@ def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate
     try:
         # lazy import for embedding builder and DB access
         from app.embeddings import build_weighted_embedding_for_item
-        doc = tmdb_metadata_collection.find_one({"id": int(tmdb_id), "media_type": str(media_type).lower()}, {"_id": 0})
+
+        doc = tmdb_metadata_collection.find_one(
+            {"id": int(tmdb_id), "media_type": str(media_type).lower()}, {"_id": 0}
+        )
         if not doc:
             return {"status": "not_found", "message": "metadata not found"}
 
         # compute vector
         vec = build_weighted_embedding_for_item(doc)
         if vec is None:
-            return {"status": "no_vector", "message": "embedding computation returned None"}
+            return {
+                "status": "no_vector",
+                "message": "embedding computation returned None",
+            }
         vec = np.asarray(vec, dtype=np.float32)
         label = int(_encode_label(int(tmdb_id), str(media_type).lower()))
 
@@ -522,7 +554,10 @@ def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate
         load_sidecars()
         if force_regenerate or _labels is None or _vecs is None:
             # schedule full rebuild (caller should call build_faiss_index in background)
-            return {"status": "rebuild_required", "message": "sidecars missing or force_regenerate requested"}
+            return {
+                "status": "rebuild_required",
+                "message": "sidecars missing or force_regenerate requested",
+            }
 
         # ensure caches available
         if (not _label_to_index) and (_labels is not None):
@@ -548,7 +583,10 @@ def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate
             try:
                 idx_obj = load_faiss_index()
                 if idx_obj is None:
-                    return {"status": "rebuild_required", "message": "index not found on disk"}
+                    return {
+                        "status": "rebuild_required",
+                        "message": "index not found on disk",
+                    }
 
                 # remove old id if supported
                 try:
@@ -561,7 +599,10 @@ def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate
                 if not hasattr(idx_obj, "add_with_ids"):
                     idx_obj = faiss.IndexIDMap(idx_obj)
 
-                idx_obj.add_with_ids(np.ascontiguousarray(vec.reshape(1, -1)), np.array([label], dtype=np.int64))
+                idx_obj.add_with_ids(
+                    np.ascontiguousarray(vec.reshape(1, -1)),
+                    np.array([label], dtype=np.int64),
+                )
                 # persist updated index
                 try:
                     faiss.write_index(idx_obj, INDEX_FILE)
@@ -572,16 +613,34 @@ def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate
                         pass
                 except Exception:
                     # if writing back fails, still consider sidecars updated
-                    logger.warning("Failed to write updated FAISS index after upsert; sidecars updated")
-                return {"status": "updated", "message": "vector updated in sidecars and index"}
+                    logger.warning(
+                        "Failed to write updated FAISS index after upsert; sidecars updated"
+                    )
+                return {
+                    "status": "updated",
+                    "message": "vector updated in sidecars and index",
+                }
             except Exception as e:
-                logger.warning("In-place index update not supported/failure: %s", repr(e))
-                return {"status": "rebuild_required", "message": "in-place index update not supported"}
+                logger.warning(
+                    "In-place index update not supported/failure: %s", repr(e)
+                )
+                return {
+                    "status": "rebuild_required",
+                    "message": "in-place index update not supported",
+                }
         else:
             # append new label/vector to sidecars
             try:
-                new_labels = np.concatenate([_labels, np.array([label], dtype=np.int64)]) if _labels is not None else np.array([label], dtype=np.int64)
-                new_vecs = np.concatenate([_vecs, vec.reshape(1, -1)]) if _vecs is not None else vec.reshape(1, -1)
+                new_labels = (
+                    np.concatenate([_labels, np.array([label], dtype=np.int64)])
+                    if _labels is not None
+                    else np.array([label], dtype=np.int64)
+                )
+                new_vecs = (
+                    np.concatenate([_vecs, vec.reshape(1, -1)])
+                    if _vecs is not None
+                    else vec.reshape(1, -1)
+                )
                 np.save(LABELS_FILE, new_labels)
                 np.save(VECS_FILE, new_vecs)
                 # refresh cache
@@ -605,20 +664,34 @@ def upsert_single_item(tmdb_id: int, media_type: str = "movie", force_regenerate
             try:
                 idx_obj = load_faiss_index()
                 if idx_obj is None:
-                    return {"status": "rebuild_required", "message": "index missing; sidecars updated"}
+                    return {
+                        "status": "rebuild_required",
+                        "message": "index missing; sidecars updated",
+                    }
 
                 if not hasattr(idx_obj, "add_with_ids"):
                     idx_obj = faiss.IndexIDMap(idx_obj)
 
-                idx_obj.add_with_ids(np.ascontiguousarray(vec.reshape(1, -1)), np.array([label], dtype=np.int64))
+                idx_obj.add_with_ids(
+                    np.ascontiguousarray(vec.reshape(1, -1)),
+                    np.array([label], dtype=np.int64),
+                )
                 try:
                     faiss.write_index(idx_obj, INDEX_FILE)
                 except Exception:
-                    logger.warning("Failed to write FAISS index after append; sidecars updated")
-                return {"status": "added", "message": "vector appended to sidecars and index (if supported)"}
+                    logger.warning(
+                        "Failed to write FAISS index after append; sidecars updated"
+                    )
+                return {
+                    "status": "added",
+                    "message": "vector appended to sidecars and index (if supported)",
+                }
             except Exception as e:
                 logger.warning("Failed to add vector to index in-place: %s", repr(e))
-                return {"status": "rebuild_required", "message": "in-place add failed; sidecars updated"}
+                return {
+                    "status": "rebuild_required",
+                    "message": "in-place add failed; sidecars updated",
+                }
     except Exception as e:
         logger.exception("upsert_single_item failed: %s", repr(e))
         return {"status": "error", "message": str(e)}

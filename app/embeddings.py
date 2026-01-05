@@ -98,7 +98,10 @@ def _extract_actors(item: Dict, top_n: int = 5) -> str:
     if not isinstance(cast_list, list):
         return ""
     try:
-        sorted_cast = sorted((c for c in cast_list if isinstance(c, dict)), key=lambda c: c.get("order", 9999))
+        sorted_cast = sorted(
+            (c for c in cast_list if isinstance(c, dict)),
+            key=lambda c: c.get("order", 9999),
+        )
     except Exception:
         sorted_cast = [c for c in cast_list if isinstance(c, dict)]
     actors = [c.get("name") for c in sorted_cast if c.get("name")]
@@ -173,7 +176,9 @@ def embed_text(texts: List[str]) -> np.ndarray:
             return np.array([])
 
 
-def _combine_features(feature_vecs: Dict[str, Optional[np.ndarray]], weights: Dict[str, float]) -> np.ndarray:
+def _combine_features(
+    feature_vecs: Dict[str, Optional[np.ndarray]], weights: Dict[str, float]
+) -> np.ndarray:
     dim = None
     for v in feature_vecs.values():
         if v is not None and v.size:
@@ -195,7 +200,9 @@ def _combine_features(feature_vecs: Dict[str, Optional[np.ndarray]], weights: Di
     return _safe_normalize(combined)
 
 
-def build_weighted_embedding_for_item(item: Dict, weights: Optional[Dict[str, float]] = None) -> np.ndarray:
+def build_weighted_embedding_for_item(
+    item: Dict, weights: Optional[Dict[str, float]] = None
+) -> np.ndarray:
     """Compute weighted embedding for a single item by embedding each feature separately."""
     w = dict(DEFAULT_WEIGHTS)
     if weights:
@@ -261,19 +268,25 @@ def embed_item(item: Dict, weights: Optional[Dict[str, float]] = None) -> Dict:
     return item_copy
 
 
-def compute_embeddings_batch(docs: List[Dict], weights: Optional[Dict[str, float]] = None) -> List[np.ndarray]:
+def compute_embeddings_batch(
+    docs: List[Dict], weights: Optional[Dict[str, float]] = None
+) -> List[np.ndarray]:
     """Compute embeddings for a batch of metadata docs and return list of vectors (no DB writes)."""
     from concurrent.futures import ThreadPoolExecutor
 
     results: List[np.ndarray] = []
     with ThreadPoolExecutor(max_workers=4) as ex:
-        futures = [ex.submit(build_weighted_embedding_for_item, d, weights) for d in docs]
+        futures = [
+            ex.submit(build_weighted_embedding_for_item, d, weights) for d in docs
+        ]
         for f in futures:
             try:
                 v = f.result()
                 results.append(np.asarray(v, dtype=np.float32))
             except Exception as e:
-                logger.warning("Batch embedding computation failed: %s", repr(e), exc_info=True)
+                logger.warning(
+                    "Batch embedding computation failed: %s", repr(e), exc_info=True
+                )
                 results.append(np.zeros(384, dtype=np.float32))
     return results
 
@@ -322,7 +335,7 @@ def embed_all_items(batch_size: int = 256) -> int:
 def build_user_vector_from_history(
     history_items: List[Dict],
     decay_days: Optional[float] = None,
-    min_weight: float = 0.3
+    min_weight: float = 0.3,
 ) -> Optional[np.ndarray]:
     """Build a user embedding by weighted average of item embeddings. Weights decay by recency.
 
@@ -400,6 +413,7 @@ def build_user_vector_from_history(
         avg = np.sum(mat * w, axis=0) / (np.sum(w) if np.sum(w) > 0 else 1.0)
         return _safe_normalize(avg)
     except Exception as e:
-        logger.error("Failed to build user vector from history: %s", repr(e), exc_info=True)
+        logger.error(
+            "Failed to build user vector from history: %s", repr(e), exc_info=True
+        )
         return None
-

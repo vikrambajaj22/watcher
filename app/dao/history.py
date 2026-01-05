@@ -24,7 +24,8 @@ def store_watch_history(data):
         if len(data) != len(deduplicated):
             logger.warning(
                 "Deduplicating watch history before storage: %d items reduced to %d unique items",
-                len(data), len(deduplicated)
+                len(data),
+                len(deduplicated),
             )
 
         watch_history_collection.delete_many({})
@@ -34,7 +35,9 @@ def store_watch_history(data):
             _HISTORY_CACHE.clear()
         except Exception:
             pass
-        logger.info("Watch history stored successfully: %d unique items.", len(deduplicated))
+        logger.info(
+            "Watch history stored successfully: %d unique items.", len(deduplicated)
+        )
     else:
         logger.error("Invalid data format for storing watch history. Expected a list.")
         raise ValueError("Data must be a list of watch history items.")
@@ -72,7 +75,10 @@ def get_watch_history(media_type=None, include_posters: bool = True):
                 seen_keys[key] = item
                 deduplicated.append(item)
         if len(history) != len(deduplicated):
-            logger.warning("Removed %d duplicate entries from watch history (db has duplicates)", len(history) - len(deduplicated))
+            logger.warning(
+                "Removed %d duplicate entries from watch history (db has duplicates)",
+                len(history) - len(deduplicated),
+            )
         history = deduplicated
 
     if include_posters and history:
@@ -94,7 +100,10 @@ def get_watch_history(media_type=None, include_posters: bool = True):
         if unique_ids:
             try:
                 # single query to fetch poster paths and media_type for all ids
-                cursor = tmdb_metadata_collection.find({"id": {"$in": unique_ids}}, {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1})
+                cursor = tmdb_metadata_collection.find(
+                    {"id": {"$in": unique_ids}},
+                    {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1},
+                )
                 # build exact map keyed by (id, media_type) only
                 poster_map_exact = {}
                 for d in cursor:
@@ -127,8 +136,13 @@ def get_watch_history(media_type=None, include_posters: bool = True):
         enrich_time = 0.0
 
     total_time = time.time() - start
-    logger.info("Watch history retrieved successfully. items=%s db_time=%.3fs enrich_time=%.3fs total=%.3fs",
-                len(history), db_fetch_time, enrich_time, total_time)
+    logger.info(
+        "Watch history retrieved successfully. items=%s db_time=%.3fs enrich_time=%.3fs total=%.3fs",
+        len(history),
+        db_fetch_time,
+        enrich_time,
+        total_time,
+    )
 
     # cache the result (deepcopy to keep cached copy immutable)
     try:

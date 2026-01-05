@@ -91,13 +91,17 @@ def recommend(media_type: str, payload: RecommendRequest):
     """
     try:
         if media_type not in ("movie", "tv", "all"):
-            raise HTTPException(status_code=400, detail="media_type must be 'movie' or 'tv'")
+            raise HTTPException(
+                status_code=400, detail="media_type must be 'movie' or 'tv'"
+            )
 
         recommend_count = payload.recommend_count
 
         check_trakt_last_activities_and_sync()
         recommender = MediaRecommender()
-        return recommender.generate_recommendations(media_type=media_type, recommend_count=recommend_count)
+        return recommender.generate_recommendations(
+            media_type=media_type, recommend_count=recommend_count
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -114,14 +118,18 @@ def get_history(media_type: str = None, include_posters: bool = True):
       - include_posters: boolean (default true) - when false, skip poster enrichment for faster responses
     """
     try:
-        history = get_watch_history(media_type=media_type, include_posters=include_posters)
+        history = get_watch_history(
+            media_type=media_type, include_posters=include_posters
+        )
         return history
     except Exception as e:
         logger.error("get_history error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/sync/trakt", response_model=AdminJobAcceptedResponse, status_code=202)
+@router.post(
+    "/admin/sync/trakt", response_model=AdminJobAcceptedResponse, status_code=202
+)
 def admin_sync(background_tasks: BackgroundTasks):
     """Trigger Trakt history sync in background."""
     try:
@@ -177,7 +185,9 @@ def admin_sync(background_tasks: BackgroundTasks):
 
 
 @router.get("/admin/sync/job/{job_id}", response_model=JobStatusModel)
-def admin_sync_job_status(job_id: str, job_type: str = Query(..., description="Job type: 'trakt' or 'tmdb'")):
+def admin_sync_job_status(
+    job_id: str, job_type: str = Query(..., description="Job type: 'trakt' or 'tmdb'")
+):
     """Return job status document for the given job_id (from sync_meta_collection).
 
     Requires explicit query param `job_type` which must be either 'trakt' or 'tmdb'.
@@ -188,14 +198,19 @@ def admin_sync_job_status(job_id: str, job_type: str = Query(..., description="J
 
         t = (job_type or "").lower()
         if t not in ("trakt", "tmdb"):
-            raise HTTPException(status_code=400, detail="job_type must be 'trakt' or 'tmdb'")
+            raise HTTPException(
+                status_code=400, detail="job_type must be 'trakt' or 'tmdb'"
+            )
 
         # if caller passed a fully-prefixed key, ensure it matches the requested type.
         if job_id.startswith("trakt_sync_job:") or job_id.startswith("tmdb_sync_job:"):
             # validate prefix matches type
             expected_prefix = f"{t}_sync_job:"
             if not job_id.startswith(expected_prefix):
-                raise HTTPException(status_code=400, detail=f"job_id prefix does not match job_type '{t}'")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"job_id prefix does not match job_type '{t}'",
+                )
             key = job_id
         else:
             key = f"{t}_sync_job:{job_id}"
@@ -255,9 +270,7 @@ def auth_status() -> Dict[str, bool]:
     """Return current authentication status."""
     try:
         if settings.TRAKT_ACCESS_TOKEN != "":
-            return {
-                "authenticated": True
-            }
+            return {"authenticated": True}
         return {"authenticated": False}
     except Exception as e:
         logger.error("auth_status error: %s", repr(e), exc_info=True)
@@ -290,7 +303,9 @@ def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemP
             raise HTTPException(status_code=400, detail="id is required")
         media_type = (payload.media_type or "movie").lower()
         # ensure item exists
-        doc = tmdb_metadata_collection.find_one({"id": tmdb_id, "media_type": media_type}, {"_id": 0})
+        doc = tmdb_metadata_collection.find_one(
+            {"id": tmdb_id, "media_type": media_type}, {"_id": 0}
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="item not found")
 
@@ -300,7 +315,9 @@ def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemP
         try:
             from app.faiss_index import upsert_single_item, clear_index_cache
         except Exception:
-            raise HTTPException(status_code=500, detail="faiss index module unavailable")
+            raise HTTPException(
+                status_code=500, detail="faiss index module unavailable"
+            )
 
         res = upsert_single_item(tmdb_id, media_type, force_regenerate=force)
 
@@ -317,10 +334,15 @@ def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemP
             reuse = not force
             logger.warning("Upsert single item failed; scheduling full FAISS rebuild")
             background_tasks.add_task(build_faiss_index, int(384), reuse_sidecars=reuse)
-            return AdminAckResponse(status="rebuild_scheduled", message="Full FAISS rebuild scheduled; " + (message or ""))
+            return AdminAckResponse(
+                status="rebuild_scheduled",
+                message="Full FAISS rebuild scheduled; " + (message or ""),
+            )
 
         # otherwise return the upsert result
-        return AdminAckResponse(status=str(status or "ok"), message=str(message or "upsert attempted"))
+        return AdminAckResponse(
+            status=str(status or "ok"), message=str(message or "upsert attempted")
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -338,6 +360,7 @@ def admin_embed_full(background_tasks: BackgroundTasks, payload: AdminEmbedFullP
         # clear in-memory index cache before starting rebuild so we don't keep serving stale index
         try:
             from app.faiss_index import clear_index_cache
+
             clear_index_cache()
         except Exception:
             pass
@@ -348,7 +371,9 @@ def admin_embed_full(background_tasks: BackgroundTasks, payload: AdminEmbedFullP
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/faiss/rebuild", response_model=AdminFaissRebuildResponse, status_code=202)
+@router.post(
+    "/admin/faiss/rebuild", response_model=AdminFaissRebuildResponse, status_code=202
+)
 def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
     """Trigger FAISS rebuild in a detached process. Expects JSON: {"dim": <int>, "factory": "..."}"""
     try:
@@ -402,8 +427,12 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
             clear_index_cache()
         except Exception:
             pass
-        return AdminFaissRebuildResponse(status="accepted", message="faiss rebuild started",
-                                          pid=getattr(p, "pid", None), log=log_path)
+        return AdminFaissRebuildResponse(
+            status="accepted",
+            message="faiss rebuild started",
+            pid=getattr(p, "pid", None),
+            log=log_path,
+        )
     except Exception as e:
         logger.error("admin_faiss_rebuild error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -450,9 +479,15 @@ def admin_faiss_upsert(payload: AdminFaissUpsertPayload):
     try:
         from app.faiss_index import upsert_single_item
 
-        res = upsert_single_item(payload.id, payload.media_type or "movie", force_regenerate=bool(payload.force_regenerate))
+        res = upsert_single_item(
+            payload.id,
+            payload.media_type or "movie",
+            force_regenerate=bool(payload.force_regenerate),
+        )
         # coerce to response model
-        return AdminFaissUpsertResponse(status=res.get("status"), message=res.get("message"))
+        return AdminFaissUpsertResponse(
+            status=res.get("status"), message=res.get("message")
+        )
     except Exception as e:
         logger.exception("admin_faiss_upsert error: %s", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -564,20 +599,26 @@ def admin_sync_status():
                 }
                 if media_type:
                     filter["media_type"] = media_type
-                doc = sync_meta_collection.find(
-                    filter,
-                    {
-                        "_id": 0,
-                        "finished_at": 1,
-                    },
-                ).sort("finished_at", DESCENDING).limit(1)
+                doc = (
+                    sync_meta_collection.find(
+                        filter,
+                        {
+                            "_id": 0,
+                            "finished_at": 1,
+                        },
+                    )
+                    .sort("finished_at", DESCENDING)
+                    .limit(1)
+                )
                 doc = list(doc)
                 if not doc:
                     return None
                 # convert timestamp to iso string
                 finished_at = doc[0]["finished_at"]
                 if finished_at:
-                    return datetime.fromtimestamp(finished_at, tz=timezone.utc).isoformat()
+                    return datetime.fromtimestamp(
+                        finished_at, tz=timezone.utc
+                    ).isoformat()
                 return finished_at
             except Exception:
                 return None
@@ -593,7 +634,9 @@ def admin_sync_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/sync/tmdb", response_model=AdminJobAcceptedResponse, status_code=202)
+@router.post(
+    "/admin/sync/tmdb", response_model=AdminJobAcceptedResponse, status_code=202
+)
 def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBRequest):
     """Trigger a TMDB sync job in background.
 
@@ -607,7 +650,9 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
     try:
         media_type = payload.media_type
         if media_type not in ("movie", "tv"):
-            raise HTTPException(status_code=400, detail="media_type must be 'movie' or 'tv'")
+            raise HTTPException(
+                status_code=400, detail="media_type must be 'movie' or 'tv'"
+            )
         full_sync = bool(payload.full_sync)
         embed_updated = bool(payload.embed_updated)
         force_refresh = bool(payload.force_refresh)
@@ -615,77 +660,155 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
         job_id = str(uuid.uuid4())
         job_key = f"tmdb_sync_job:{job_id}"
         started_at = int(_time.time())
-        sync_meta_collection.update_one({"_id": job_key}, {
-            "$set": {"status": "pending", "started_at": started_at, "media_type": media_type}}, upsert=True)
+        sync_meta_collection.update_one(
+            {"_id": job_key},
+            {
+                "$set": {
+                    "status": "pending",
+                    "started_at": started_at,
+                    "media_type": media_type,
+                }
+            },
+            upsert=True,
+        )
 
         def _run_tmdb_job(jid: str, mtype: str, full: bool, embed_u: bool, force: bool):
             key = f"tmdb_sync_job:{jid}"
             try:
                 # check if job was canceled before the worker started; if so, honor it and skip running
                 existing = sync_meta_collection.find_one({"_id": key})
-                if existing and (existing.get("cancel") or existing.get("status") == "canceled"):
+                if existing and (
+                    existing.get("cancel") or existing.get("status") == "canceled"
+                ):
                     # ensure canceled state persisted with finished_at
                     try:
-                        sync_meta_collection.update_one({"_id": key}, {
-                            "$set": {"status": "canceled", "finished_at": int(_time.time())}})
+                        sync_meta_collection.update_one(
+                            {"_id": key},
+                            {
+                                "$set": {
+                                    "status": "canceled",
+                                    "finished_at": int(_time.time()),
+                                }
+                            },
+                        )
                     except Exception:
                         pass
                     return
 
-                sync_meta_collection.update_one({"_id": key},
-                                                {"$set": {"status": "running", "last_update": int(_time.time())}})
-                res = sync_tmdb(mtype, full_sync=full, embed_updated=embed_u, force_refresh=force, job_id=jid)
+                sync_meta_collection.update_one(
+                    {"_id": key},
+                    {"$set": {"status": "running", "last_update": int(_time.time())}},
+                )
+                res = sync_tmdb(
+                    mtype,
+                    full_sync=full,
+                    embed_updated=embed_u,
+                    force_refresh=force,
+                    job_id=jid,
+                )
                 # if the sync reported it was canceled, mark job as canceled; otherwise complete it
                 try:
                     current = sync_meta_collection.find_one({"_id": key}) or {}
-                    already_canceled = bool(current.get("cancel") or current.get("status") == "canceled")
-                    if already_canceled or (isinstance(res, dict) and res.get("canceled")):
-                        sync_meta_collection.update_one({"_id": key}, {
-                            "$set": {"status": "canceled", "finished_at": int(_time.time()), "result": res}},
-                                                        upsert=True)
+                    already_canceled = bool(
+                        current.get("cancel") or current.get("status") == "canceled"
+                    )
+                    if already_canceled or (
+                        isinstance(res, dict) and res.get("canceled")
+                    ):
+                        sync_meta_collection.update_one(
+                            {"_id": key},
+                            {
+                                "$set": {
+                                    "status": "canceled",
+                                    "finished_at": int(_time.time()),
+                                    "result": res,
+                                }
+                            },
+                            upsert=True,
+                        )
                     else:
-                        sync_meta_collection.update_one({"_id": key}, {
-                            "$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}},
-                                                        upsert=True)
+                        sync_meta_collection.update_one(
+                            {"_id": key},
+                            {
+                                "$set": {
+                                    "status": "completed",
+                                    "finished_at": int(_time.time()),
+                                    "result": res,
+                                }
+                            },
+                            upsert=True,
+                        )
                 except Exception:
                     # best-effort final update
                     try:
-                        sync_meta_collection.update_one({"_id": key}, {
-                            "$set": {"status": "completed", "finished_at": int(_time.time()), "result": res}},
-                                                        upsert=True)
+                        sync_meta_collection.update_one(
+                            {"_id": key},
+                            {
+                                "$set": {
+                                    "status": "completed",
+                                    "finished_at": int(_time.time()),
+                                    "result": res,
+                                }
+                            },
+                            upsert=True,
+                        )
                     except Exception:
                         pass
             except Exception as e:
                 # If job was canceled by user, avoid overwriting canceled status with 'failed'.
                 try:
                     current = sync_meta_collection.find_one({"_id": key}) or {}
-                    already_canceled = bool(current.get("cancel") or current.get("status") == "canceled")
+                    already_canceled = bool(
+                        current.get("cancel") or current.get("status") == "canceled"
+                    )
                     if already_canceled:
                         # preserve canceled state and record the error in result/error fields
                         try:
-                            sync_meta_collection.update_one({"_id": key}, {
-                                "$set": {"status": "canceled", "finished_at": int(_time.time()), "error": str(e),
-                                         "trace": _traceback.format_exc()}}, upsert=True)
+                            sync_meta_collection.update_one(
+                                {"_id": key},
+                                {
+                                    "$set": {
+                                        "status": "canceled",
+                                        "finished_at": int(_time.time()),
+                                        "error": str(e),
+                                        "trace": _traceback.format_exc(),
+                                    }
+                                },
+                                upsert=True,
+                            )
                         except Exception:
                             pass
                     else:
                         try:
-                            sync_meta_collection.update_one({"_id": key}, {
-                                "$set": {"status": "failed", "finished_at": int(_time.time()), "error": str(e),
-                                         "trace": _traceback.format_exc()}}, upsert=True)
+                            sync_meta_collection.update_one(
+                                {"_id": key},
+                                {
+                                    "$set": {
+                                        "status": "failed",
+                                        "finished_at": int(_time.time()),
+                                        "error": str(e),
+                                        "trace": _traceback.format_exc(),
+                                    }
+                                },
+                                upsert=True,
+                            )
                         except Exception:
                             pass
                 except Exception:
                     pass
 
-        background_tasks.add_task(_run_tmdb_job, job_id, media_type, full_sync, embed_updated, force_refresh)
+        background_tasks.add_task(
+            _run_tmdb_job, job_id, media_type, full_sync, embed_updated, force_refresh
+        )
         return AdminJobAcceptedResponse(status="accepted", job_id=job_id)
     except Exception as e:
         logger.error("admin_sync_tmdb error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/sync/tmdb/cancel", response_model=AdminAckResponse, status_code=202)
+@router.post(
+    "/admin/sync/tmdb/cancel", response_model=AdminAckResponse, status_code=202
+)
 def admin_cancel_tmdb(payload: AdminCancelJobRequest):
     """Set cancel flag on running TMDB sync job. Expects JSON: {"job_id": "..."}"""
     try:
@@ -700,12 +823,23 @@ def admin_cancel_tmdb(payload: AdminCancelJobRequest):
         # If job hasn't started (pending) mark it canceled immediately
         status = doc.get("status")
         if status in (None, "pending", "running"):
-            sync_meta_collection.update_one({"_id": key}, {
-                "$set": {"cancel": True, "cancel_requested_at": now, "status": "canceled", "finished_at": now}},
-                                            upsert=True)
+            sync_meta_collection.update_one(
+                {"_id": key},
+                {
+                    "$set": {
+                        "cancel": True,
+                        "cancel_requested_at": now,
+                        "status": "canceled",
+                        "finished_at": now,
+                    }
+                },
+                upsert=True,
+            )
             return AdminAckResponse(status="accepted", message="job canceled")
         # Otherwise (already completed/failed/canceled), just set the cancel flag for record
-        sync_meta_collection.update_one({"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": now}})
+        sync_meta_collection.update_one(
+            {"_id": key}, {"$set": {"cancel": True, "cancel_requested_at": now}}
+        )
         return AdminAckResponse(status="accepted", message="cancel requested")
     except Exception as e:
         logger.error("admin_cancel_tmdb error: %s", repr(e), exc_info=True)
@@ -727,9 +861,18 @@ def admin_list_sync_jobs():
 
         # find job docs whose _id ends with '_sync_job:<id>' and which are not completed
         # Using regex to roughly match keys like 'tmdb_sync_job:' or 'trakt_sync_job:'
-        cursor = sync_meta_collection.find({"_id": {"$regex": "_sync_job:"}, "status": {"$ne": "completed"}},
-                                           {"_id": 1, "status": 1, "processed": 1, "embed_queued": 1, "started_at": 1,
-                                            "last_update": 1, "cancel": 1})
+        cursor = sync_meta_collection.find(
+            {"_id": {"$regex": "_sync_job:"}, "status": {"$ne": "completed"}},
+            {
+                "_id": 1,
+                "status": 1,
+                "processed": 1,
+                "embed_queued": 1,
+                "started_at": 1,
+                "last_update": 1,
+                "cancel": 1,
+            },
+        )
         results = []
         for d in cursor:
             key = d.get("_id")
@@ -741,7 +884,14 @@ def admin_list_sync_jobs():
                     job_type = "trakt"
             entry = {"key": key, "job_type": job_type}
             # merge selected metadata fields
-            for f in ("status", "processed", "embed_queued", "started_at", "last_update", "cancel"):
+            for f in (
+                "status",
+                "processed",
+                "embed_queued",
+                "started_at",
+                "last_update",
+                "cancel",
+            ):
                 if f in d:
                     entry[f] = d.get(f)
             results.append(entry)
@@ -753,8 +903,7 @@ def admin_list_sync_jobs():
 
 @router.get("/visualize/clusters")
 def get_watch_history_clusters(
-        media_type: str = None,
-        n_clusters: int = Query(default=6, ge=3, le=15)
+    media_type: str = None, n_clusters: int = Query(default=6, ge=3, le=15)
 ):
     """Generate 2D clustered visualization of watch history using embeddings.
 
@@ -795,7 +944,9 @@ def get_watch_history_clusters(
         unique_pairs = list(set(id_media_pairs))
         ids_list = [p[0] for p in unique_pairs]
         mts_list = [p[1] for p in unique_pairs]
-        logger.info(f"Fetching embeddings for {len(unique_pairs)} unique TMDB (id,media_type) pairs")
+        logger.info(
+            f"Fetching embeddings for {len(unique_pairs)} unique TMDB (id,media_type) pairs"
+        )
 
         from app.faiss_index import get_vectors_for_ids
 
@@ -811,7 +962,17 @@ def get_watch_history_clusters(
             if v is None:
                 continue
             # fetch metadata doc to pull genres and overview (non-embedding fields)
-            doc = tmdb_metadata_collection.find_one({"id": int(tmdb_id), "media_type": str(mt).lower()}, {"_id": 0, "genres": 1, "overview": 1, "title": 1, "poster_path": 1, "backdrop_path": 1})
+            doc = tmdb_metadata_collection.find_one(
+                {"id": int(tmdb_id), "media_type": str(mt).lower()},
+                {
+                    "_id": 0,
+                    "genres": 1,
+                    "overview": 1,
+                    "title": 1,
+                    "poster_path": 1,
+                    "backdrop_path": 1,
+                },
+            )
             entry = {"embedding": list(v)}
             if doc:
                 entry.update(doc)
@@ -844,14 +1005,22 @@ def get_watch_history_clusters(
 
         if len(items_with_embeddings) < n_clusters:
             # not enough items with embeddings for clustering
-            logger.warning(f"Only {len(items_with_embeddings)} items with embeddings, requested {n_clusters} clusters")
-            n_clusters = max(2, len(items_with_embeddings) // 2) if len(items_with_embeddings) >= 4 else 1
+            logger.warning(
+                f"Only {len(items_with_embeddings)} items with embeddings, requested {n_clusters} clusters"
+            )
+            n_clusters = (
+                max(2, len(items_with_embeddings) // 2)
+                if len(items_with_embeddings) >= 4
+                else 1
+            )
 
         if not items_with_embeddings:
             return {"items": [], "cluster_summaries": {}}
 
         # extract embeddings matrix
-        embeddings = np.array([item["embedding"] for item in items_with_embeddings], dtype=np.float32)
+        embeddings = np.array(
+            [item["embedding"] for item in items_with_embeddings], dtype=np.float32
+        )
 
         # perform clustering
         if len(items_with_embeddings) > 1:
@@ -862,7 +1031,11 @@ def get_watch_history_clusters(
 
         # dimensionality reduction to 2D using t-SNE
         if embeddings.shape[0] > 1:
-            reducer = TSNE(n_components=2, random_state=42, perplexity=min(30, embeddings.shape[0] - 1))
+            reducer = TSNE(
+                n_components=2,
+                random_state=42,
+                perplexity=min(30, embeddings.shape[0] - 1),
+            )
             coords_2d = reducer.fit_transform(embeddings)
         else:
             coords_2d = np.array([[0.0, 0.0]])
@@ -870,20 +1043,22 @@ def get_watch_history_clusters(
         # build result items with coordinates and cluster labels
         result_items = []
         for idx, item in enumerate(items_with_embeddings):
-            result_items.append({
-                "id": item.get("id") or item.get("ids", {}).get("tmdb"),
-                "title": item.get("title", "Unknown"),
-                "media_type": item.get("media_type"),
-                "poster_path": item.get("poster_path"),
-                "year": item.get("year"),
-                "x": float(coords_2d[idx, 0]),
-                "y": float(coords_2d[idx, 1]),
-                "cluster": int(cluster_labels[idx]),
-                "watch_count": item.get("watch_count", 1),
-                "completion_ratio": item.get("completion_ratio", 0),  # for TV shows
-                "overview": item.get("overview", ""),
-                "genres": item.get("genres", [])
-            })
+            result_items.append(
+                {
+                    "id": item.get("id") or item.get("ids", {}).get("tmdb"),
+                    "title": item.get("title", "Unknown"),
+                    "media_type": item.get("media_type"),
+                    "poster_path": item.get("poster_path"),
+                    "year": item.get("year"),
+                    "x": float(coords_2d[idx, 0]),
+                    "y": float(coords_2d[idx, 1]),
+                    "cluster": int(cluster_labels[idx]),
+                    "watch_count": item.get("watch_count", 1),
+                    "completion_ratio": item.get("completion_ratio", 0),  # for TV shows
+                    "overview": item.get("overview", ""),
+                    "genres": item.get("genres", []),
+                }
+            )
 
         # generate cluster summaries
         cluster_groups = defaultdict(list)
@@ -920,7 +1095,7 @@ def get_watch_history_clusters(
                 titles[:20],  # use up to 20 titles
                 top_genres,
                 movie_count,
-                tv_count
+                tv_count,
             )
 
             cluster_summaries[str(cluster_id)] = {
@@ -929,7 +1104,7 @@ def get_watch_history_clusters(
                 "movie_count": movie_count,
                 "tv_count": tv_count,
                 "name": cluster_name,
-                "top_genres": top_genres
+                "top_genres": top_genres,
             }
 
         return {
@@ -938,7 +1113,7 @@ def get_watch_history_clusters(
             "total_items": len(result_items),
             "total_in_history": len(history),
             "n_clusters": n_clusters,
-            "method": "tsne"
+            "method": "tsne",
         }
 
     except Exception as e:

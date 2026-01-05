@@ -10,7 +10,9 @@ def flatten(nested_list):
     return [item for sublist in nested_list for item in sublist]
 
 
-def generate_cluster_name(titles: List[str], genres: List[str], movie_count: int, tv_count: int) -> str:
+def generate_cluster_name(
+    titles: List[str], genres: List[str], movie_count: int, tv_count: int
+) -> str:
     """Generate a descriptive name for a cluster using an LLM.
 
     Args:
@@ -36,9 +38,7 @@ def generate_cluster_name(titles: List[str], genres: List[str], movie_count: int
         registry = PromptRegistry()
         template = registry.load_prompt_template("cluster/name_cluster", 1)
         prompt = template.render(
-            media_str=media_str,
-            genres_str=genres_str,
-            titles_str=titles_str
+            media_str=media_str, genres_str=genres_str, titles_str=titles_str
         )
 
         client = get_openai_client()
@@ -47,12 +47,12 @@ def generate_cluster_name(titles: List[str], genres: List[str], movie_count: int
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant that generates short, descriptive names for content clusters. Respond with just the name, nothing else."
+                    "content": "You are a helpful assistant that generates short, descriptive names for content clusters. Respond with just the name, nothing else.",
                 },
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=20
+            max_tokens=20,
         )
 
         name = response.choices[0].message.content.strip()
@@ -66,4 +66,3 @@ def generate_cluster_name(titles: List[str], genres: List[str], movie_count: int
         if genres:
             return f"{genres[0]} Collection"
         return "Mixed Content"
-

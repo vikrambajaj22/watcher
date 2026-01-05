@@ -12,6 +12,7 @@ Flags:
   --commit: after successful rebuild, remove `embedding`, `embedding_meta`, and `has_embedding` fields from tmdb_metadata
   --preview: show counts of docs with embedding fields before deletion
 """
+
 import argparse
 import sys
 import time
@@ -43,8 +44,10 @@ print(f"FAISS rebuild completed in {elapsed:.1f}s")
 load_sidecars()
 from app.faiss_index import LABELS_FILE, VECS_FILE
 import os
+
 if os.path.exists(LABELS_FILE) and os.path.exists(VECS_FILE):
     import numpy as np
+
     labels = np.load(LABELS_FILE)
     vecs = np.load(VECS_FILE)
     print(f"Sidecars: labels={labels.shape}, vecs={vecs.shape}")
@@ -53,8 +56,18 @@ else:
     sys.exit(3)
 
 # preview or commit removal of fields
-count_with_embedding = tmdb_metadata_collection.count_documents({"$or": [{"embedding": {"$exists": True}}, {"embedding_meta": {"$exists": True}}, {"has_embedding": {"$exists": True}}]})
-print(f"Documents in tmdb_metadata with embedding-related fields: {count_with_embedding}")
+count_with_embedding = tmdb_metadata_collection.count_documents(
+    {
+        "$or": [
+            {"embedding": {"$exists": True}},
+            {"embedding_meta": {"$exists": True}},
+            {"has_embedding": {"$exists": True}},
+        ]
+    }
+)
+print(
+    f"Documents in tmdb_metadata with embedding-related fields: {count_with_embedding}"
+)
 
 if args.preview or args.dry_run:
     print("Dry run/preview mode; not deleting fields from DB.")
@@ -63,23 +76,43 @@ if args.preview or args.dry_run:
 if args.commit:
     # perform batched removal
     BATCH = 1000
-    cursor = tmdb_metadata_collection.find({"$or": [{"embedding": {"$exists": True}}, {"embedding_meta": {"$exists": True}}, {"has_embedding": {"$exists": True}}]}, {"_id": 1})
+    cursor = tmdb_metadata_collection.find(
+        {
+            "$or": [
+                {"embedding": {"$exists": True}},
+                {"embedding_meta": {"$exists": True}},
+                {"has_embedding": {"$exists": True}},
+            ]
+        },
+        {"_id": 1},
+    )
     to_delete = []
     cnt = 0
     for doc in cursor:
         _id = doc.get("_id")
         to_delete.append(_id)
         if len(to_delete) >= BATCH:
-            res = tmdb_metadata_collection.update_many({"_id": {"$in": to_delete}}, {"$unset": {"embedding": "", "embedding_meta": "", "has_embedding": ""}})
+            res = tmdb_metadata_collection.update_many(
+                {"_id": {"$in": to_delete}},
+                {
+                    "$unset": {
+                        "embedding": "",
+                        "embedding_meta": "",
+                        "has_embedding": "",
+                    }
+                },
+            )
             cnt += len(to_delete)
             print(f"Processed batch, removed fields from {len(to_delete)} docs")
             to_delete = []
     if to_delete:
-        res = tmdb_metadata_collection.update_many({"_id": {"$in": to_delete}}, {"$unset": {"embedding": "", "embedding_meta": "", "has_embedding": ""}})
+        res = tmdb_metadata_collection.update_many(
+            {"_id": {"$in": to_delete}},
+            {"$unset": {"embedding": "", "embedding_meta": "", "has_embedding": ""}},
+        )
         cnt += len(to_delete)
         print(f"Processed final batch, removed fields from {len(to_delete)} docs")
     print(f"Removal complete. Processed {cnt} documents.")
 else:
     print("No --commit provided. Exiting without modifying DB.")
     sys.exit(0)
-

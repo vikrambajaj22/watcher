@@ -1,4 +1,5 @@
 """Generic recommendation schemas for movies and TV."""
+
 from typing import List, Optional
 
 from pydantic import BaseModel, model_validator

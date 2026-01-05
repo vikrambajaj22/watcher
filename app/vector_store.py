@@ -40,7 +40,12 @@ def rebuild_index(
     Returns the in-memory index (maybe a GPU index if FAISS was configured to use GPU).
     """
     global _index
-    logger.info("Rebuilding FAISS index (dim=%s, factory=%s, reuse_sidecars=%s)", dim, factory, reuse_sidecars)
+    logger.info(
+        "Rebuilding FAISS index (dim=%s, factory=%s, reuse_sidecars=%s)",
+        dim,
+        factory,
+        reuse_sidecars,
+    )
     idx = build_faiss_index(dim, index_factory=factory, reuse_sidecars=reuse_sidecars)
     _index = idx
     return _index
