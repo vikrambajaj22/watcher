@@ -4,6 +4,7 @@ and optionally remove embedding-related fields from Mongo.
 Usage:
     python -m tools.migrate_embeddings_to_faiss --dim 384 --batch 256 --dry-run
     python -m tools.migrate_embeddings_to_faiss --dim 384 --batch 256 --commit
+    python -m tools.migrate_embeddings_to_faiss --device mps
 
 Flags:
   --dim: embedding dim to request (passed to builder)
@@ -11,11 +12,13 @@ Flags:
   --dry-run: compute and write sidecars but do NOT delete fields from Mongo
   --commit: after successful rebuild, remove `embedding`, `embedding_meta`, and `has_embedding` fields from tmdb_metadata
   --preview: show counts of docs with embedding fields before deletion
+    --device: set embedding device for this run (overrides EMBED_DEVICE env var)
 """
 
 import argparse
 import sys
 import time
+import os
 from app.utils.logger import get_logger
 from app.db import tmdb_metadata_collection
 
@@ -27,13 +30,19 @@ parser.add_argument("--batch", type=int, default=256)
 parser.add_argument("--dry-run", action="store_true")
 parser.add_argument("--commit", action="store_true")
 parser.add_argument("--preview", action="store_true")
+parser.add_argument("--device", type=str, choices=["cpu", "mps", "cuda"], help="Set embedding device for this run (overrides EMBED_DEVICE env)")
 args = parser.parse_args()
 
-from app.faiss_index import build_faiss_index, load_sidecars
+# If user specified a device on the CLI, set the EMBED_DEVICE env var before importing modules that may use it.
+if args.device:
+    os.environ["EMBED_DEVICE"] = args.device
+    print(f"Using embedding device from CLI: {args.device}")
+
+from app.faiss_index import build_faiss_index_from_mongo_embeddings, load_sidecars
 
 print("Starting FAISS rebuild (this will compute embeddings for all metadata docs).")
 start = time.time()
-idx = build_faiss_index(args.dim, batch_size=args.batch, reuse_sidecars=False)
+idx = build_faiss_index_from_mongo_embeddings(args.dim, batch_size=args.batch)
 elapsed = time.time() - start
 if idx is None:
     print("FAISS rebuild failed or produced no index.")
@@ -43,7 +52,6 @@ print(f"FAISS rebuild completed in {elapsed:.1f}s")
 # verify sidecars
 load_sidecars()
 from app.faiss_index import LABELS_FILE, VECS_FILE
-import os
 
 if os.path.exists(LABELS_FILE) and os.path.exists(VECS_FILE):
     import numpy as np

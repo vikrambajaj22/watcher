@@ -424,6 +424,157 @@ def build_faiss_index(
     return idx
 
 
+def build_faiss_index_from_mongo_embeddings(
+    dim: int, batch_size: int = 256, index_factory: str = "IDMap,IVF100,Flat"
+) -> Optional["faiss.Index"]:
+    """Build FAISS index using embeddings stored in Mongo under the `embedding` field.
+
+    This function streams only docs that have `embedding` present and does not import
+    or use the embedding model. It mirrors the consolidation logic used by
+    `build_faiss_index` to create sidecars and the index.
+    """
+    global _labels, _vecs, _label_to_index
+    os.makedirs(INDEX_DIR, exist_ok=True)
+
+    parts_dir = os.path.join(INDEX_DIR, "parts_mongo")
+    os.makedirs(parts_dir, exist_ok=True)
+    parts = []
+    part_idx = 0
+    total_vectors = 0
+
+    def _write_part(pi: int, lbls: List[int], vecs: List[np.ndarray]) -> int:
+        if not lbls:
+            return 0
+        la = np.array(lbls, dtype=np.int64)
+        va = np.array(vecs, dtype=np.float32)
+        lpath = os.path.join(parts_dir, f"labels_part_{pi:06d}.npy")
+        vpath = os.path.join(parts_dir, f"vecs_part_{pi:06d}.npy")
+        np.save(lpath, la)
+        np.save(vpath, va)
+        parts.append((lpath, vpath, la.shape[0]))
+        return la.shape[0]
+
+    cursor = tmdb_metadata_collection.find({"embedding": {"$exists": True}}, {"_id": 0}).batch_size(batch_size)
+    batch_labels: List[int] = []
+    batch_vecs: List[np.ndarray] = []
+    processed = 0
+    try:
+        for doc in cursor:
+            emb = doc.get("embedding")
+            if not emb:
+                continue
+            vec = np.asarray(emb, dtype=np.float32)
+            if vec.ndim == 1:
+                if vec.shape[0] != dim:
+                    logger.warning("Skipping id=%s: embedding dim mismatch (%s != %s)", doc.get("id"), vec.shape[0], dim)
+                    continue
+            else:
+                # unexpected shape
+                logger.warning("Skipping id=%s: unexpected embedding shape %s", doc.get("id"), vec.shape)
+                continue
+
+            lbl = _encode_label(doc.get("id"), doc.get("media_type"))
+            batch_labels.append(int(lbl))
+            batch_vecs.append(vec)
+            processed += 1
+
+            if len(batch_labels) >= batch_size:
+                added = _write_part(part_idx, batch_labels, batch_vecs)
+                part_idx += 1
+                total_vectors += added
+                logger.info("Processed %d embeddings, parts=%d, vectors=%d", processed, part_idx, total_vectors)
+                batch_labels = []
+                batch_vecs = []
+
+        if batch_labels:
+            added = _write_part(part_idx, batch_labels, batch_vecs)
+            part_idx += 1
+            total_vectors += added
+            logger.info("Processed %d embeddings, parts=%d, vectors=%d", processed, part_idx, total_vectors)
+    except Exception as e:
+        logger.exception("Error while streaming mongo embeddings: %s", repr(e))
+
+    if total_vectors == 0:
+        logger.info("No embeddings found in Mongo; aborting mongo-embeddings FAISS build")
+        return None
+
+    # consolidate parts
+    first_part = parts[0]
+    sample_vecs = np.load(first_part[1])
+    final_dim = sample_vecs.shape[1]
+    total_n = sum(p[2] for p in parts)
+
+    labels_mm = np.memmap(LABELS_FILE, dtype=np.int64, mode="w+", shape=(total_n,))
+    vecs_mm = np.memmap(VECS_FILE, dtype=np.float32, mode="w+", shape=(total_n, final_dim))
+    off = 0
+    for lpath, vpath, n in parts:
+        la = np.load(lpath)
+        va = np.load(vpath)
+        labels_mm[off : off + n] = la
+        vecs_mm[off : off + n, :] = va
+        off += n
+    labels_mm.flush()
+    vecs_mm.flush()
+
+    # build index
+    if "," in index_factory:
+        idx = faiss.index_factory(final_dim, index_factory)
+    else:
+        idx = faiss.IndexFlatIP(final_dim)
+    if not hasattr(idx, "add_with_ids"):
+        idx = faiss.IndexIDMap(idx)
+
+    # add for each part
+    for lpath, vpath, n in parts:
+        la = np.load(lpath).astype(np.int64)
+        va = np.load(vpath).astype(np.float32)
+        try:
+            idx.add_with_ids(va, la)
+        except Exception as e:
+            logger.exception("Failed to add vectors to index from mongo part: %s", repr(e))
+            raise
+
+    faiss.write_index(idx, INDEX_FILE)
+    logger.info("Built and saved FAISS index from mongo embeddings with %d vectors at %s", total_n, INDEX_FILE)
+
+    # refresh cache
+    try:
+        _labels = np.array(labels_mm)
+        _vecs = np.array(vecs_mm)
+        _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
+    except Exception:
+        load_sidecars()
+
+
+    # write sidecar meta
+    try:
+        meta = {"embedding_model": "mongo-stored", "embedding_ts": int(time.time()), "embedding_dims": int(final_dim), "num_vectors": int(total_n)}
+        write_sidecar_meta(meta)
+    except Exception:
+        pass
+
+    # cleanup parts
+    try:
+        for p in parts:
+            try:
+                os.remove(p[0])
+            except Exception:
+                pass
+            try:
+                os.remove(p[1])
+            except Exception:
+                pass
+        try:
+            os.rmdir(parts_dir)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    _set_cached_index(idx)
+    return idx
+
+
 def load_faiss_index() -> Optional["faiss.Index"]:
     global _cached_index
     # fast path: return cached index if present
