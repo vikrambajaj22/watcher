@@ -524,6 +524,20 @@ def build_faiss_index_from_mongo_embeddings(
     if not hasattr(idx, "add_with_ids"):
         idx = faiss.IndexIDMap(idx)
 
+    # train if necessary
+    if hasattr(idx, "train") and not idx.is_trained:
+        try:
+            # sample some vectors for training
+            train_arr = np.array([])
+            sample_size = min(10000, total_n)
+            if sample_size > 0:
+                train_arr = np.memmap(VECS_FILE, dtype=np.float32, mode="r", shape=(total_n, final_dim))[:sample_size]
+            if train_arr.shape[0] > 0:
+                logger.info("Training FAISS index on %d samples...", train_arr.shape[0])
+                idx.train(train_arr)
+        except Exception as e:
+            logger.warning("FAISS training failed: %s", repr(e), exc_info=True)
+
     # add for each part
     for lpath, vpath, n in parts:
         la = np.load(lpath).astype(np.int64)
