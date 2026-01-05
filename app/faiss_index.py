@@ -92,8 +92,8 @@ def load_sidecars() -> None:
         _label_to_index = {}
         return
     try:
-        _labels = np.load(LABELS_FILE, allow_pickle=True)
-        _vecs = np.load(VECS_FILE, allow_pickle=True)
+        _labels = np.fromfile(LABELS_FILE, dtype=np.int64)
+        _vecs = np.fromfile(VECS_FILE, dtype=np.float32)
         # build map for fast lookup
         _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
         logger.info("Loaded sidecars: %s vectors", len(_labels))
@@ -312,7 +312,7 @@ def build_faiss_index(
 
     # consolidate parts into final memmaps
     first_part = parts[0]
-    sample_vecs = np.load(first_part[1], allow_pickle=True)
+    sample_vecs = np.fromfile(first_part[1], dtype=np.float32)
     final_dim = sample_vecs.shape[1]
     total_n = sum(p[2] for p in parts)
 
@@ -320,8 +320,8 @@ def build_faiss_index(
     vecs_mm = np.memmap(VECS_FILE, dtype=np.float32, mode="w+", shape=(total_n, final_dim))
     off = 0
     for lpath, vpath, n in parts:
-        la = np.load(lpath, allow_pickle=True)
-        va = np.load(vpath, allow_pickle=True)
+        la = np.fromfile(lpath, dtype=np.int64)
+        va = np.fromfile(vpath, dtype=np.float32)
         labels_mm[off : off + n] = la
         vecs_mm[off : off + n, :] = va
         off += n
@@ -348,8 +348,8 @@ def build_faiss_index(
 
     # add parts sequentially
     for lpath, vpath, n in parts:
-        la = np.load(lpath, allow_pickle=True).astype(np.int64)
-        va = np.load(vpath, allow_pickle=True).astype(np.float32)
+        la = np.fromfile(lpath, dtype=np.int64)
+        va = np.fromfile(vpath, dtype=np.float32)
         try:
             idx.add_with_ids(va, la)
         except Exception as e:
@@ -500,7 +500,7 @@ def build_faiss_index_from_mongo_embeddings(
 
     # consolidate parts
     first_part = parts[0]
-    sample_vecs = np.load(first_part[1], allow_pickle=True)
+    sample_vecs = np.fromfile(first_part[1], dtype=np.float32)
     final_dim = sample_vecs.shape[1]
     total_n = sum(p[2] for p in parts)
 
@@ -508,8 +508,8 @@ def build_faiss_index_from_mongo_embeddings(
     vecs_mm = np.memmap(VECS_FILE, dtype=np.float32, mode="w+", shape=(total_n, final_dim))
     off = 0
     for lpath, vpath, n in parts:
-        la = np.load(lpath, allow_pickle=True)
-        va = np.load(vpath, allow_pickle=True)
+        la = np.fromfile(lpath, dtype=np.int64)
+        va = np.fromfile(vpath, dtype=np.float32)
         labels_mm[off : off + n] = la
         vecs_mm[off : off + n, :] = va
         off += n
@@ -540,8 +540,8 @@ def build_faiss_index_from_mongo_embeddings(
 
     # add for each part
     for lpath, vpath, n in parts:
-        la = np.load(lpath, allow_pickle=True).astype(np.int64)
-        va = np.load(vpath, allow_pickle=True).astype(np.float32)
+        la = np.fromfile(lpath, dtype=np.int64)
+        va = np.fromfile(vpath, dtype=np.float32)
         try:
             idx.add_with_ids(va, la)
         except Exception as e:
