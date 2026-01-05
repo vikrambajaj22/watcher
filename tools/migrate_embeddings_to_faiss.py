@@ -12,7 +12,7 @@ Flags:
   --dry-run: compute and write sidecars but do NOT delete fields from Mongo
   --commit: after successful rebuild, remove `embedding`, `embedding_meta`, and `has_embedding` fields from tmdb_metadata
   --preview: show counts of docs with embedding fields before deletion
-    --device: set embedding device for this run (overrides EMBED_DEVICE env var)
+  --device: set embedding device for this run (overrides EMBED_DEVICE env var)
 """
 
 import argparse
