@@ -176,31 +176,24 @@ def build_faiss_index(
     batch_size: int = 256,
     reuse_sidecars: bool = True,
 ) -> Optional["faiss.Index"]:
-    """Build FAISS index from metadata by computing embeddings and persist CPU index and sidecars; optionally return GPU index."""
-    # declare module-level caches as globals since we will assign to them later
+    """Stream metadata from Mongo, compute embeddings (unless sidecars reused), and build FAISS.
+
+    This avoids loading the entire collection into memory before work begins.
+    It logs progress early and frequently so long runs are visible in logs.
+    """
     global _labels, _vecs, _label_to_index
     os.makedirs(INDEX_DIR, exist_ok=True)
-
-    # fetch all metadata docs (we need fields for embedding computation)
-    docs = list(tmdb_metadata_collection.find({}, {"_id": 0}))
-    if not docs:
-        logger.info("No TMDB metadata docs found to build FAISS index")
-        return None
 
     # lazy import to avoid circular import at module load
     from app.embeddings import build_weighted_embedding_for_item
 
-    labels_list = []
-    vecs_list = []
-
-    # if requested, try to reuse existing sidecars to avoid recomputing vectors
+    # try to reuse existing sidecars if requested
     existing_labels = None
     existing_vecs = None
     existing_label_to_index = None
     if reuse_sidecars:
         load_sidecars()
         sidecar_meta = load_sidecar_meta()
-        # auto-detect embedding_model changes: if model differs, ignore sidecars
         try:
             from app.embeddings import EMBED_MODEL_NAME
 
@@ -214,143 +207,210 @@ def build_faiss_index(
                     sidecar_meta.get("embedding_model"),
                     EMBED_MODEL_NAME,
                 )
-                existing_labels = None
-                existing_vecs = None
-                existing_label_to_index = None
+            else:
+                if _labels is not None and _vecs is not None and _label_to_index is not None:
+                    existing_labels = _labels
+                    existing_vecs = _vecs
+                    existing_label_to_index = _label_to_index
+                    if existing_vecs is not None and existing_vecs.size and existing_vecs.shape[1] != dim:
+                        logger.warning(
+                            "Existing sidecar vectors have dim=%s but requested dim=%s; ignoring sidecars",
+                            existing_vecs.shape[1],
+                            dim,
+                        )
+                        existing_labels = None
+                        existing_vecs = None
+                        existing_label_to_index = None
         except Exception:
-            # if we can't import EMBED_MODEL_NAME for any reason, continue without auto-detect
             pass
 
-        if _labels is not None and _vecs is not None and _label_to_index is not None:
-            existing_labels = _labels
-            existing_vecs = _vecs
-            existing_label_to_index = _label_to_index
-            # check dimension match
-            if (
-                existing_vecs is not None
-                and existing_vecs.size
-                and existing_vecs.shape[1] != dim
-            ):
-                logger.warning(
-                    "Existing sidecar vectors have dim=%s but requested dim=%s; ignoring sidecars and recomputing",
-                    existing_vecs.shape[1],
-                    dim,
-                )
-                existing_labels = None
-                existing_vecs = None
-                existing_label_to_index = None
+    total_docs = tmdb_metadata_collection.count_documents({})
+    if total_docs == 0:
+        logger.info("No TMDB metadata docs found to build FAISS index")
+        return None
 
     logger.info(
-        "Preparing vectors for %s docs (batch_size=%s, reuse_sidecars=%s)...",
-        len(docs),
+        "Streaming %d TMDB metadata docs (batch_size=%d, reuse_sidecars=%s)",
+        total_docs,
         batch_size,
         bool(existing_labels is not None),
     )
-    for i in range(0, len(docs), batch_size):
-        batch = docs[i : i + batch_size]
-        # attempt to compute embeddings for items missing from sidecars in this batch
-        # construct output lists in the same order as docs
-        for d in batch:
-            try:
-                lbl = _encode_label(d.get("id"), d.get("media_type"))
-                if (
-                    existing_label_to_index is not None
-                    and int(lbl) in existing_label_to_index
-                ):
-                    idx = existing_label_to_index[int(lbl)]
-                    vec = np.asarray(existing_vecs[idx], dtype=np.float32)
-                    labels_list.append(int(lbl))
-                    vecs_list.append(vec)
-                    continue
 
-                # compute vector since not found in existing sidecars
-                v = build_weighted_embedding_for_item(d)
+    parts_dir = os.path.join(INDEX_DIR, "parts")
+    os.makedirs(parts_dir, exist_ok=True)
+    parts = []
+    part_idx = 0
+    total_vectors = 0
+    train_samples: List[np.ndarray] = []
+
+    def _write_part(pi: int, lbls: List[int], vecs: List[np.ndarray]) -> int:
+        if not lbls:
+            return 0
+        la = np.array(lbls, dtype=np.int64)
+        va = np.array(vecs, dtype=np.float32)
+        lpath = os.path.join(parts_dir, f"labels_part_{pi:06d}.npy")
+        vpath = os.path.join(parts_dir, f"vecs_part_{pi:06d}.npy")
+        np.save(lpath, la)
+        np.save(vpath, va)
+        parts.append((lpath, vpath, la.shape[0]))
+        return la.shape[0]
+
+    cursor = tmdb_metadata_collection.find({}, {"_id": 0}).batch_size(batch_size)
+    batch_labels: List[int] = []
+    batch_vecs: List[np.ndarray] = []
+    processed = 0
+    try:
+        for doc in cursor:
+            lbl = _encode_label(doc.get("id"), doc.get("media_type"))
+            # reuse sidecar vector if available
+            if existing_label_to_index is not None and int(lbl) in existing_label_to_index:
+                idx = existing_label_to_index[int(lbl)]
+                vec = np.asarray(existing_vecs[idx], dtype=np.float32)
+                batch_labels.append(int(lbl))
+                batch_vecs.append(vec)
+                if len(train_samples) < 10000:
+                    train_samples.append(vec)
+            else:
+                try:
+                    v = build_weighted_embedding_for_item(doc)
+                except Exception as e:
+                    logger.warning("Embedding computation failed for id=%s: %s", doc.get("id"), repr(e))
+                    v = None
                 if v is None:
+                    # skip if embedding not available
                     continue
                 vec = np.asarray(v, dtype=np.float32)
-                labels_list.append(lbl)
-                vecs_list.append(vec)
-            except Exception as e:
-                logger.warning(
-                    "Failed to compute or reuse embedding for id=%s: %s",
-                    d.get("id"),
-                    repr(e),
-                )
+                if vec.shape[0] != dim:
+                    logger.warning("Skipping id=%s: embedding dim mismatch (%s != %s)", doc.get("id"), vec.shape[0], dim)
+                    continue
+                batch_labels.append(int(lbl))
+                batch_vecs.append(vec)
+                if len(train_samples) < 10000:
+                    train_samples.append(vec)
 
-    if not vecs_list:
+            processed += 1
+            if len(batch_labels) >= batch_size:
+                added = _write_part(part_idx, batch_labels, batch_vecs)
+                part_idx += 1
+                total_vectors += added
+                logger.info("Processed %d/%d docs, parts=%d, vectors=%d", processed, total_docs, part_idx, total_vectors)
+                batch_labels = []
+                batch_vecs = []
+
+        # flush remaining
+        if batch_labels:
+            added = _write_part(part_idx, batch_labels, batch_vecs)
+            part_idx += 1
+            total_vectors += added
+            logger.info("Processed %d/%d docs, parts=%d, vectors=%d", processed, total_docs, part_idx, total_vectors)
+    except Exception as e:
+        logger.exception("Error while streaming metadata: %s", repr(e))
+
+    if total_vectors == 0:
         logger.info("No vectors computed; aborting FAISS build")
         return None
 
-    labels = np.array(labels_list, dtype=np.int64)
-    vecs = np.array(vecs_list, dtype=np.float32)
+    # consolidate parts into final memmaps
+    first_part = parts[0]
+    sample_vecs = np.load(first_part[1])
+    final_dim = sample_vecs.shape[1]
+    total_n = sum(p[2] for p in parts)
 
-    # normalize factory string to avoid user-provided casing issues (e.g., IDMAP vs IDMap)
-    index_factory = _normalize_factory(index_factory)
+    labels_mm = np.memmap(LABELS_FILE, dtype=np.int64, mode="w+", shape=(total_n,))
+    vecs_mm = np.memmap(VECS_FILE, dtype=np.float32, mode="w+", shape=(total_n, final_dim))
+    off = 0
+    for lpath, vpath, n in parts:
+        la = np.load(lpath)
+        va = np.load(vpath)
+        labels_mm[off : off + n] = la
+        vecs_mm[off : off + n, :] = va
+        off += n
+    labels_mm.flush()
+    vecs_mm.flush()
 
+    # create index
     if "," in index_factory:
-        index = faiss.index_factory(vecs.shape[1], index_factory)
+        idx = faiss.index_factory(final_dim, index_factory)
     else:
-        index = faiss.IndexFlatIP(vecs.shape[1])
+        idx = faiss.IndexFlatIP(final_dim)
+    if not hasattr(idx, "add_with_ids"):
+        idx = faiss.IndexIDMap(idx)
 
-    if hasattr(index, "train") and not index.is_trained:
-        logger.info("Training FAISS index...")
-        index.train(vecs)
-    logger.info("Adding vectors to FAISS index...")
+    # train if necessary
+    if hasattr(idx, "train") and not idx.is_trained:
+        try:
+            train_arr = np.array(train_samples, dtype=np.float32)
+            if train_arr.shape[0] > 0:
+                logger.info("Training FAISS index on %d samples...", train_arr.shape[0])
+                idx.train(train_arr)
+        except Exception as e:
+            logger.warning("FAISS training failed: %s", repr(e), exc_info=True)
 
-    # ensure the index stores explicit labels (TMDB ids); wrap with IndexIDMap if needed
-    if not hasattr(index, "add_with_ids"):
-        # wrap the base index so we can add vectors with explicit ids
-        index = faiss.IndexIDMap(index)
+    # add parts sequentially
+    for lpath, vpath, n in parts:
+        la = np.load(lpath).astype(np.int64)
+        va = np.load(vpath).astype(np.float32)
+        try:
+            idx.add_with_ids(va, la)
+        except Exception as e:
+            logger.exception("Failed to add vectors to index: %s", repr(e))
+            raise
 
-    # add_with_ids expects ids as int64 array; ensure dtype
     try:
-        index.add_with_ids(vecs, labels)
+        faiss.write_index(idx, INDEX_FILE)
+        logger.info("Built and saved FAISS index with %d vectors at %s", total_n, INDEX_FILE)
     except Exception as e:
-        logger.error(
-            "Failed to add vectors with ids to FAISS index: %s", repr(e), exc_info=True
-        )
+        logger.exception("Failed to write FAISS index: %s", repr(e))
         raise
 
-    # save CPU index (labels inside index) -- no separate meta file
-    faiss.write_index(index, INDEX_FILE)
-    logger.info(
-        "Built and saved FAISS index with %s vectors at %s", len(labels), INDEX_FILE
-    )
-
-    # persist sidecars for robust vector retrieval
+    # refresh sidecar cache
     try:
-        np.save(LABELS_FILE, labels)
-        np.save(VECS_FILE, vecs)
-        logger.info("Saved sidecars: %s (labels) and %s (vecs)", LABELS_FILE, VECS_FILE)
-        # refresh cache
-        _labels = labels
-        _vecs = vecs
+        _labels = np.array(labels_mm)
+        _vecs = np.array(vecs_mm)
         _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
-        # write sidecar meta
-        try:
-            from app.embeddings import EMBED_MODEL_NAME
+    except Exception:
+        load_sidecars()
 
-            meta = {
-                "embedding_model": EMBED_MODEL_NAME,
-                "embedding_ts": int(time.time()),
-                "embedding_dims": int(vecs.shape[1]),
-                "num_vectors": int(labels.shape[0]),
-            }
-            write_sidecar_meta(meta)
+    # write sidecar meta
+    try:
+        from app.embeddings import EMBED_MODEL_NAME
+
+        meta = {
+            "embedding_model": EMBED_MODEL_NAME if 'EMBED_MODEL_NAME' in globals() else "unknown",
+            "embedding_ts": int(time.time()),
+            "embedding_dims": int(final_dim),
+            "num_vectors": int(total_n),
+        }
+        write_sidecar_meta(meta)
+    except Exception:
+        pass
+
+    try:
+        _set_cached_index(idx)
+    except Exception:
+        pass
+
+    # cleanup parts
+    try:
+        for p in parts:
+            try:
+                os.remove(p[0])
+            except Exception:
+                pass
+            try:
+                os.remove(p[1])
+            except Exception:
+                pass
+        try:
+            os.rmdir(parts_dir)
         except Exception:
             pass
-    except Exception as e:
-        logger.warning("Failed to write sidecars: %s", repr(e), exc_info=True)
-
-    # persist index and update module-level cache so future calls don't re-read from disk
-    try:
-        _set_cached_index(index)
     except Exception:
         pass
 
     if FAISS_USE_GPU:
         try:
-            gpu_index = _to_gpu_index(index, FAISS_GPU_ID)
+            gpu_index = _to_gpu_index(idx, FAISS_GPU_ID)
             logger.info("Transferred FAISS index to GPU")
             _set_cached_index(gpu_index)
             return gpu_index
@@ -360,8 +420,8 @@ def build_faiss_index(
                 repr(e),
                 exc_info=True,
             )
-            return index
-    return index
+            return idx
+    return idx
 
 
 def load_faiss_index() -> Optional["faiss.Index"]:
