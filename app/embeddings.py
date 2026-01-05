@@ -246,8 +246,8 @@ def build_weighted_embedding_for_item(item: Dict, weights: Optional[Dict[str, fl
     return combined
 
 
-def embed_item_and_store(item: Dict, weights: Optional[Dict[str, float]] = None) -> Dict:
-    """Compute weighted embedding for a TMDB item and store in Mongo."""
+def embed_item(item: Dict, weights: Optional[Dict[str, float]] = None) -> Dict:
+    """Compute weighted embedding for a TMDB item and return it (doesn't persist to Mongo) with embedding model metadata."""
     vec = build_weighted_embedding_for_item(item, weights=weights)
     embed_list = vec.tolist() if vec.size else []
     meta = {
@@ -255,103 +255,59 @@ def embed_item_and_store(item: Dict, weights: Optional[Dict[str, float]] = None)
         "embedding_ts": int(time.time()),
         "embedding_dims": len(embed_list),
     }
-    # robust selector: prefer media_type when present, but always match on id
-    selector = {"id": item.get("id")}
-    if item.get("media_type"):
-        selector["media_type"] = item.get("media_type")
-    tmdb_metadata_collection.update_one(
-        selector,
-        {"$set": {"embedding": embed_list, "embedding_meta": meta, "has_embedding": True}},
-        upsert=True,
-    )
     item_copy = dict(item)
     item_copy["embedding"] = embed_list
     item_copy["embedding_meta"] = meta
     return item_copy
 
 
+def compute_embeddings_batch(docs: List[Dict], weights: Optional[Dict[str, float]] = None) -> List[np.ndarray]:
+    """Compute embeddings for a batch of metadata docs and return list of vectors (no DB writes)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: List[np.ndarray] = []
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(build_weighted_embedding_for_item, d, weights) for d in docs]
+        for f in futures:
+            try:
+                v = f.result()
+                results.append(np.asarray(v, dtype=np.float32))
+            except Exception as e:
+                logger.warning("Batch embedding computation failed: %s", repr(e), exc_info=True)
+                results.append(np.zeros(384, dtype=np.float32))
+    return results
+
+
 def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None):
-    w = dict(DEFAULT_WEIGHTS)
-    if weights:
-        w.update(weights)
-
-    texts = [_extract_text(it) for it in batch]
-    genres = [_extract_genres(it) for it in batch]
-    actors = [_extract_actors(it) for it in batch]
-    directors = [_extract_directors(it) for it in batch]
-    keywords = [_extract_keywords(it) for it in batch]
-    pops = [_extract_popularity(it) for it in batch]
-
-    emb_text = embed_text(texts)
-    emb_genres = embed_text(genres)
-    emb_actors = embed_text(actors)
-    emb_directors = embed_text(directors)
-    emb_keywords = embed_text(keywords)
-    emb_pops = embed_text(pops)
-
-    dim = None
-    for arr in (emb_text, emb_genres, emb_actors, emb_directors, emb_keywords, emb_pops):
-        if arr.size:
-            dim = arr.shape[1]
-            break
-    if dim is None:
-        try:
-            dim = _get_model().encode(["dummy"]).shape[-1]
-        except Exception:
-            dim = 384
-
+    """Compute embeddings for a batch and don't persist to DB (legacy persisted behavior removed)."""
+    vecs = compute_embeddings_batch(batch, weights=weights)
+    # return list of item copies with embeddings attached for callers that expect them
+    results = []
     now_ts = int(time.time())
-
     for idx, it in enumerate(batch):
-        feature_vecs: Dict[str, Optional[np.ndarray]] = {}
-        # helper to pick vec or zeros
-        def pick(arr):
-            if arr is None or not getattr(arr, "size", 0):
-                return np.zeros(dim, dtype=np.float32)
-            if idx >= arr.shape[0]:
-                return np.zeros(dim, dtype=np.float32)
-            s = arr[idx]
-            # if original string was empty, treat as zero
-            return _safe_normalize(np.asarray(s, dtype=np.float32)) if np.linalg.norm(s) > 0 else np.zeros(dim, dtype=np.float32)
-
-        feature_vecs["text"] = pick(emb_text) if emb_text.size else np.zeros(dim, dtype=np.float32)
-        feature_vecs["genres"] = pick(emb_genres) if emb_genres.size else np.zeros(dim, dtype=np.float32)
-        feature_vecs["actors"] = pick(emb_actors) if emb_actors.size else np.zeros(dim, dtype=np.float32)
-        feature_vecs["directors"] = pick(emb_directors) if emb_directors.size else np.zeros(dim, dtype=np.float32)
-        feature_vecs["keywords"] = pick(emb_keywords) if emb_keywords.size else np.zeros(dim, dtype=np.float32)
-        feature_vecs["popularity"] = pick(emb_pops) if emb_pops.size else np.zeros(dim, dtype=np.float32)
-
-        combined = _combine_features(feature_vecs, w)
-
-        embed_list = combined.tolist() if combined.size else []
+        vec = vecs[idx] if idx < len(vecs) else np.zeros_like(vecs[0])
+        embed_list = vec.tolist() if vec.size else []
         meta = {
             "embedding_model": EMBED_MODEL_NAME,
             "embedding_ts": now_ts,
             "embedding_dims": len(embed_list),
         }
-        try:
-            # require media_type to avoid id-only updates that can collide across media types
-            if not it.get("media_type"):
-                raise ValueError(f"Missing media_type for item id={it.get('id')}; cannot update embedding without media_type")
-            selector = {"id": it.get("id"), "media_type": it.get("media_type")}
-            tmdb_metadata_collection.update_one(
-                selector,
-                {"$set": {"embedding": embed_list, "embedding_meta": meta, "has_embedding": True}},
-                upsert=True,
-            )
-        except Exception as e:
-            logger.warning("Failed to update embedding for %s: %s", it.get("id"), repr(e), exc_info=True)
+        item_copy = dict(it)
+        item_copy["embedding"] = embed_list
+        item_copy["embedding_meta"] = meta
+        results.append(item_copy)
+    return results
 
 
 def embed_all_items(batch_size: int = 256) -> int:
     """Iterate over all items in tmdb_metadata_collection and compute embeddings for those missing them.
-    Returns number of items processed."""
+    Returns number of items processed.
+    """
     cursor = tmdb_metadata_collection.find({}, {"_id": 0})
     processed = 0
     batch: List[Dict] = []
     for doc in cursor:
-        if not doc.get("embedding"):
-            batch.append(doc)
+        batch.append(doc)
         if len(batch) >= batch_size:
             _process_batch(batch)
             processed += len(batch)
@@ -371,7 +327,7 @@ def build_user_vector_from_history(
     """Build a user embedding by weighted average of item embeddings. Weights decay by recency.
 
     Args:
-        history_items: list of TMDB item docs (must include 'embedding' and 'latest_watched_at' or 'watched_at')
+        history_items: list of TMDB item docs (must include 'id' and optionally 'latest_watched_at' or 'watched_at')
         decay_days: decay factor in days (larger = slower decay). Default from env RECENCY_DECAY_DAYS or 120.0
         min_weight: minimum weight for older items (prevents total decay). Default 0.3
 
@@ -384,7 +340,7 @@ def build_user_vector_from_history(
     if decay_days is None:
         decay_days = float(os.getenv("RECENCY_DECAY_DAYS", "120.0"))
     # history_items are watch-history records (no embeddings). Fetch embeddings
-    # from tmdb_metadata_collection using the TMDB ids in the history.
+    # from FAISS/sidecar using ids in the history.
     if not history_items:
         return None
 
@@ -394,93 +350,56 @@ def build_user_vector_from_history(
     age_days_list = []
     rewatch_engagement_list = []
 
-    # gather ids referenced in history and fetch embeddings in bulk
+    # gather ids referenced in history
     ids = [it.get("id") for it in history_items if it.get("id") is not None]
+    mts = [it.get("media_type") for it in history_items if it.get("id") is not None]
     if not ids:
         return None
 
-    # fetch candidate docs that have embeddings; build a map keyed by (id, media_type) and fallback by id
-    docs_cursor = tmdb_metadata_collection.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "media_type": 1, "embedding": 1})
-    docs_exact = {}
-    docs_by_id = {}
-    for d in docs_cursor:
-        try:
-            _id = int(d.get("id"))
-        except Exception:
-            continue
-        m = str(d.get("media_type") or "").lower()
-        docs_exact[(_id, m)] = d
-        if _id not in docs_by_id:
-            docs_by_id[_id] = d
+    # lazy import to avoid circular imports
+    from app.faiss_index import get_vectors_for_ids
 
-    for it in history_items:
-        tid = it.get("id")
-        if tid is None:
-            continue
-        # prefer exact (id, media_type) lookup using history item's media_type when available
-        media_from_history = (str(it.get("media_type") or "").lower()) if it.get("media_type") else None
-        doc = None
-        if media_from_history:
-            doc = docs_exact.get((int(tid), media_from_history))
-        if not doc:
-            doc = docs_by_id.get(int(tid))
-        if not doc:
-            # no metadata/embedding stored for this id
-            continue
-        emb = doc.get("embedding")
-        if not emb:
-            continue
-        try:
-            embs.append(np.asarray(emb, dtype=np.float32))
-        except Exception:
-            # malformed embedding
-            continue
+    vecs = get_vectors_for_ids(ids, media_types=mts)
 
-        ts_str = it.get("latest_watched_at") or it.get("watched_at")
-        age_days = 0.0
-        if ts_str:
-            try:
-                age_ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
-                age_days = (now_ts - age_ts) / 86400.0
-            except Exception:
-                age_days = 0.0
-        age_days_list.append(age_days)
-
-        # collect rewatch engagement metric (default to 1.0 if not present)
-        # rewatch_engagement already represents the engagement multiplier (1.0 = single watch, 2.0 = double, etc.)
-        rewatch_eng = it.get("rewatch_engagement", 1.0)
-        if rewatch_eng is None or rewatch_eng < 0:
-            rewatch_eng = 1.0
-        rewatch_engagement_list.append(rewatch_eng)
+    for idx, v in enumerate(vecs):
+        if v is None:
+            continue
+        embs.append(np.asarray(v, dtype=np.float32))
+        # find watched timestamp on history item
+        h = history_items[idx]
+        ts = None
+        for fld in ("latest_watched_at", "watched_at"):
+            if h.get(fld):
+                try:
+                    ts = float(h.get(fld))
+                    break
+                except Exception:
+                    pass
+        if ts is None:
+            # if no timestamp, treat as older
+            age_days_list.append(365.0)
+        else:
+            age_days_list.append(max(0.0, (now_ts - ts) / 86400.0))
+        # engagement / rewatch factor
+        rewatch_engagement_list.append(float(h.get("rewatch_count", 1.0) or 1.0))
 
     if not embs:
-        logger.warning("No embeddings found for user history items (after fetching deom tmdb_metadata_collection)")
         return None
 
-    logger.info("Loaded %d embeddings from user history for user vector computation", len(embs))
-    embs_arr = np.stack(embs)  # shape: (n_items, embedding_dim)
-    ages_arr = np.array(age_days_list, dtype=np.float32)
-    rewatch_arr = np.array(rewatch_engagement_list, dtype=np.float32)
+    # compute weights
+    weights = []
+    for age_d, rewatch in zip(age_days_list, rewatch_engagement_list):
+        decay = max(min_weight, np.exp(-age_d / decay_days))
+        weights.append(decay * float(rewatch))
 
-    # compute exponential decay weights with floor
-    # weights decay exponentially but never fall below min_weight
-    decay_weights = np.exp(-ages_arr / max(1.0, decay_days))  # shape: (n_items,)
-    weights = np.maximum(decay_weights, min_weight)  # apply floor
-
-    # apply rewatch engagement multiplier to weights to amplify signals from rewatched items
-    weights = weights * rewatch_arr
-
-    logger.info(
-        "User vector weights - min: %.3f, max: %.3f, mean: %.3f (decay_days=%.1f, min_weight=%.2f, with rewatch multiplier)",
-        weights.min(), weights.max(), weights.mean(), decay_days, min_weight
-    )
-
-    # apply weights and sum
-    weighted_embs = embs_arr * weights[:, None]
-    user_vec = np.sum(weighted_embs, axis=0)
-
-    norm = np.linalg.norm(user_vec)
-    if norm < 1e-12:
+    # weighted average then normalize
+    mat = np.vstack(embs)
+    w = np.asarray(weights, dtype=np.float32)
+    w = w.reshape(-1, 1)
+    try:
+        avg = np.sum(mat * w, axis=0) / (np.sum(w) if np.sum(w) > 0 else 1.0)
+        return _safe_normalize(avg)
+    except Exception as e:
+        logger.error("Failed to build user vector from history: %s", repr(e), exc_info=True)
         return None
 
-    return user_vec / norm

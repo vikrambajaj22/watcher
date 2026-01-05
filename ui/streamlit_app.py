@@ -10,7 +10,6 @@ Features:
 import numpy as np
 import streamlit as st
 import requests
-import json
 import os
 import time
 from typing import Optional, Dict, Any
@@ -1478,44 +1477,92 @@ def show_admin_page():
                 pass
 
     with tab_embedding:
-        st.subheader("🧠 Embedding Management")
-        st.write("Generate embeddings for similarity search")
+        st.subheader("🧠 Embeddings & FAISS")
+        st.write("FAISS index generation and embedding computation are coupled: triggering an embedding action will rebuild the FAISS index, compute embeddings from metadata, and write sidecar files.")
 
-        st.markdown("#### Embed Single Item")
+        st.markdown("#### Rebuild FAISS (for a single item — performs a full rebuild)")
         col1, col2 = st.columns(2)
         with col1:
             embed_id = st.number_input("TMDB ID", min_value=1, key="embed_id")
         with col2:
             embed_media_type = st.selectbox("Media Type", ["movie", "tv"], key="embed_media")
 
-        if st.button("🎯 Embed Single Item"):
-            with st.spinner("Generating embedding..."):
+        force_regen = st.checkbox("Force regenerate all embeddings (ignore existing sidecars)", value=False, key="force_regen")
+
+        if st.button("🎯 Rebuild FAISS (single item)"):
+            with st.spinner("Triggering FAISS rebuild (will compute embeddings for all items)..."):
                 result = api_request(
                     "/admin/embed/item",
                     method="POST",
-                    data={"id": embed_id, "media_type": embed_media_type}
+                    data={"id": embed_id, "media_type": embed_media_type, "force_regenerate": force_regen}
                 )
                 if result:
-                    st.success("✅ Embedding generation started!")
+                    st.success("✅ FAISS rebuild started (this will compute embeddings from metadata and write sidecars).")
                     st.json(result)
+
+        # Incremental single-item upsert (fast) - attempts to add/update only one vector without full rebuild
+        if st.button("⚡ Incremental index (fast) - upsert single item"):
+            with st.spinner("Upserting single item into FAISS sidecars/index..."):
+                res = api_request("/admin/faiss/upsert-item", method="POST", data={"id": int(embed_id), "media_type": embed_media_type, "force_regenerate": force_regen})
+                if res:
+                    if res.get('status') in ('updated','added'):
+                        st.success(f"✅ Incremental upsert successful: {res.get('status')}")
+                    elif res.get('status') in ('rebuild_required', 'rebuild_scheduled'):
+                        st.warning("⚠️ Incremental upsert not possible; a full rebuild is required. Use Rebuild FAISS (single item) or Rebuild FAISS (all items).")
+                    else:
+                        st.info(res)
 
         st.markdown("---")
 
-        st.markdown("#### Generate All Embeddings")
-        st.warning("⚠️ This will generate embeddings for all items in the database. This may take a while.")
+        st.markdown("#### Rebuild FAISS for all items")
+        st.warning("⚠️ This will compute embeddings for all items and rebuild the FAISS index. This may take a while.")
 
-        batch_size = st.number_input("Batch Size", min_value=1, max_value=1000, value=256, key="batch_size")
-
-        if st.button("🚀 Generate All Embeddings", type="primary"):
-            with st.spinner("Starting full embedding generation..."):
+        if st.button("🚀 Rebuild FAISS (all items)", type="primary"):
+            with st.spinner("Starting FAISS rebuild..."):
                 result = api_request(
                     "/admin/embed/full",
                     method="POST",
-                    data={"batch_size": batch_size}
+                    data={"force_regenerate": force_regen}
                 )
                 if result:
-                    st.success("✅ Full embedding generation started!")
+                    st.success("✅ FAISS rebuild started!")
                     st.json(result)
+        # show current sidecar/index status
+        try:
+            status = api_request("/admin/faiss/status", method="GET")
+            if status:
+                st.markdown("**FAISS Sidecar Status**")
+                if status.get("present"):
+                    st.success("Sidecars/index present")
+                else:
+                    st.info("No sidecars/index found")
+                # show whether the FAISS index is cached in this process
+                try:
+                    cached = status.get("cached")
+                    if cached:
+                        st.write("**Index cached in this process:** ✅")
+                    else:
+                        st.write("**Index cached in this process:** ❌")
+                except Exception:
+                    pass
+                if status.get("sidecar_meta"):
+                    meta = status.get("sidecar_meta")
+                    try:
+                        st.write(f"**Model:** {meta.get('embedding_model', 'unknown')}  ")
+                        st.write(f"**Vectors:** {meta.get('num_vectors', 'n/a')}  ")
+                        st.write(f"**Dims:** {meta.get('embedding_dims', 'n/a')}  ")
+                        ts = meta.get('embedding_ts')
+                        if ts:
+                            try:
+                                st.write(f"**Built:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))}")
+                            except Exception:
+                                st.write(meta)
+                        else:
+                            st.write(meta)
+                    except Exception:
+                        st.write(status.get('sidecar_meta'))
+        except Exception:
+            pass
 
     with tab_faiss:
         st.subheader("📇 FAISS Index Management")
@@ -1575,6 +1622,13 @@ def show_admin_page():
                         except Exception:
                             pass
                 st.success("Cleared Persisted Similar Search state")
+            if st.button("Clear FAISS Cache"):
+                with st.spinner("Clearing FAISS in-process cache..."):
+                    res = api_request('/admin/faiss/clear-cache', method='POST', data={})
+                    if res and res.get('status') == 'cleared':
+                        st.success('Cleared FAISS cache in this process')
+                    else:
+                        st.error(f'Failed to clear FAISS cache: {res}')
 
     with tab_sync:
         st.subheader("🔄 Manual Trakt Sync")

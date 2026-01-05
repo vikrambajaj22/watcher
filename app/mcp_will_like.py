@@ -4,7 +4,7 @@ import numpy as np
 
 from app.db import tmdb_metadata_collection
 from app.tmdb_client import get_metadata, search_by_title
-from app.embeddings import embed_item_and_store, build_user_vector_from_history
+from app.embeddings import embed_item, build_user_vector_from_history
 from app.dao.history import get_watch_history
 from app.utils.logger import get_logger
 
@@ -47,7 +47,7 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
                 md = None
             if md:
                 md["media_type"] = media_type
-                item_with_emb = embed_item_and_store(md)
+                item_with_emb = embed_item(md)
                 resolved_doc = item_with_emb
                 resolved_id = item_with_emb.get("id")
 
@@ -76,7 +76,7 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
                 md = None
             if md:
                 md["media_type"] = media_type
-                item_with_emb = embed_item_and_store(md)
+                item_with_emb = embed_item(md)
                 resolved_doc = item_with_emb
                 resolved_id = item_with_emb.get("id")
 
@@ -100,7 +100,7 @@ def compute_will_like(tmdb_id: Optional[int], title: Optional[str], media_type: 
         if not md:
             raise WillLikeError("failed to fetch metadata from TMDB")
         md["media_type"] = media_type
-        item_with_emb = embed_item_and_store(md)
+        item_with_emb = embed_item(md)
         item_emb = item_with_emb.get("embedding")
         resolved_title = item_with_emb.get("title") or item_with_emb.get("name") or item_with_emb.get("original_title") or item_with_emb.get("original_name")
         resolved_overview = item_with_emb.get("overview")

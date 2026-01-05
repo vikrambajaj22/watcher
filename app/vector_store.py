@@ -28,14 +28,20 @@ _index = None
 
 
 def rebuild_index(
-    dim: int = 384, factory: str = "IDMap,IVF100,Flat"
+    dim: int = 384, factory: str = "IDMap,IVF100,Flat", reuse_sidecars: bool = True
 ) -> Optional[object]:
-    """Rebuilds the FAISS index from Mongo embeddings by calling the FAISS builder.
+    """Rebuilds the FAISS index by calling the FAISS builder.
+
+    Args:
+        dim: embedding dimension
+        factory: FAISS factory string
+        reuse_sidecars: if True, attempt to reuse existing sidecar vectors and only compute missing vectors; if False, recompute all embeddings.
+
     Returns the in-memory index (maybe a GPU index if FAISS was configured to use GPU).
     """
     global _index
-    logger.info("Rebuilding FAISS index (dim=%s, factory=%s)", dim, factory)
-    idx = build_faiss_index(dim, index_factory=factory)
+    logger.info("Rebuilding FAISS index (dim=%s, factory=%s, reuse_sidecars=%s)", dim, factory, reuse_sidecars)
+    idx = build_faiss_index(dim, index_factory=factory, reuse_sidecars=reuse_sidecars)
     _index = idx
     return _index
 

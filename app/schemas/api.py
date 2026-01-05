@@ -125,15 +125,19 @@ class WillLikeResponse(BaseModel):
 class AdminEmbedItemPayload(BaseModel):
     id: int
     media_type: Optional[str] = "movie"
+    force_regenerate: Optional[bool] = False
 
 
 class AdminEmbedFullPayload(BaseModel):
     batch_size: Optional[int] = 256
+    force_regenerate: Optional[bool] = False
 
 
 class AdminFaissRebuildPayload(BaseModel):
     dim: Optional[int] = 384
     factory: Optional[str] = "IDMap,IVF100,Flat"
+    force_regenerate: Optional[bool] = False
+    reuse_sidecars: Optional[bool] = True
 
 
 class AdminSyncTMDBRequest(BaseModel):
@@ -160,6 +164,7 @@ class AdminJobAcceptedResponse(BaseModel):
 class AdminFaissRebuildResponse(AdminAckResponse):
     pid: Optional[int] = None
     log: Optional[str] = None
+    sidecar_meta: Optional[dict] = None
 
 
 class SyncStatusResponse(BaseModel):
@@ -213,3 +218,15 @@ class TMDBMetadata(BaseModel):
     embedding_meta: Optional[dict] = None
     # allow additional TMDB fields without strict schema enforcement
     model_config = {"extra": "allow"}
+
+
+class AdminFaissUpsertPayload(BaseModel):
+    id: int
+    media_type: Optional[str] = "movie"
+    force_regenerate: Optional[bool] = False
+
+
+class AdminFaissUpsertResponse(BaseModel):
+    status: str
+    message: Optional[str] = None
+

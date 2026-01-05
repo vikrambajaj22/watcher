@@ -19,8 +19,7 @@ from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_toke
 from app.config.settings import settings
 from app.dao.history import get_watch_history, clear_history_cache
 from app.db import tmdb_metadata_collection, sync_meta_collection
-from app.embeddings import embed_item_and_store, embed_all_items
-from app.faiss_index import INDEX_DIR
+from app.faiss_index import INDEX_DIR, INDEX_FILE, build_faiss_index
 from app.mcp_will_like import compute_will_like, WillLikeError
 from app.process.recommendation import MediaRecommender
 from app.scheduler import check_trakt_last_activities_and_sync
@@ -41,6 +40,8 @@ from app.schemas.api import (
     TMDBMetadata,
     WillLikeRequest,
     WillLikeResponse,
+    AdminFaissUpsertPayload,
+    AdminFaissUpsertResponse,
 )
 from app.schemas.recommendations.recommendations import (
     RecommendationsResponse,
@@ -275,23 +276,55 @@ def auth_logout():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/embed/item", response_model=AdminAckResponse, status_code=202)
+@router.post("/admin/embed/item", response_model=AdminAckResponse, status_code=200)
 def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemPayload):
-    """Trigger embedding of a single TMDB item in background. Expects JSON: {"id": <int>, "media_type": "movie"}"""
+    """Attempt a fast incremental upsert for a single TMDB item.
+
+    Behavior:
+      - Try `upsert_single_item` to update sidecars/index in-place.
+      - If upsert reports a full rebuild is required, schedule a background `build_faiss_index` and return a scheduled status.
+    """
     try:
         tmdb_id = payload.id
         if not tmdb_id:
             raise HTTPException(status_code=400, detail="id is required")
-        media_type = payload.media_type or "movie"
-        doc = tmdb_metadata_collection.find_one(
-            {"id": tmdb_id, "media_type": media_type}, {"_id": 0}
-        )
+        media_type = (payload.media_type or "movie").lower()
+        # ensure item exists
+        doc = tmdb_metadata_collection.find_one({"id": tmdb_id, "media_type": media_type}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="item not found")
-        background_tasks.add_task(embed_item_and_store, doc)
-        return AdminAckResponse(status="accepted", message="embedding started")
+
+        force = bool(getattr(payload, "force_regenerate", False))
+
+        # perform incremental upsert
+        try:
+            from app.faiss_index import upsert_single_item, clear_index_cache
+        except Exception:
+            raise HTTPException(status_code=500, detail="faiss index module unavailable")
+
+        res = upsert_single_item(tmdb_id, media_type, force_regenerate=force)
+
+        status = res.get("status")
+        message = res.get("message")
+
+        # if upsert couldn't be applied in-place, schedule a full rebuild in background
+        if status in ("rebuild_required", "rebuild_scheduled"):
+            # clear cache and schedule full rebuild
+            try:
+                clear_index_cache()
+            except Exception:
+                pass
+            reuse = not force
+            logger.warning("Upsert single item failed; scheduling full FAISS rebuild")
+            background_tasks.add_task(build_faiss_index, int(384), reuse_sidecars=reuse)
+            return AdminAckResponse(status="rebuild_scheduled", message="Full FAISS rebuild scheduled; " + (message or ""))
+
+        # otherwise return the upsert result
+        return AdminAckResponse(status=str(status or "ok"), message=str(message or "upsert attempted"))
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("admin_embed_item error: %s", repr(e), exc_info=True)
+        logger.exception("admin_embed_item error: %s", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -299,9 +332,17 @@ def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemP
 def admin_embed_full(background_tasks: BackgroundTasks, payload: AdminEmbedFullPayload):
     """Trigger full embedding generation (background). Expects JSON: {"batch_size": <int>}"""
     try:
-        batch_size = int(payload.batch_size or 256)
-        background_tasks.add_task(embed_all_items, batch_size)
-        return AdminAckResponse(status="accepted", message="full embedding generation started")
+        # Trigger a full FAISS rebuild which computes embeddings from metadata and writes sidecars.
+        dims = 384
+        reuse = not bool(getattr(payload, "force_regenerate", False))
+        # clear in-memory index cache before starting rebuild so we don't keep serving stale index
+        try:
+            from app.faiss_index import clear_index_cache
+            clear_index_cache()
+        except Exception:
+            pass
+        background_tasks.add_task(build_faiss_index, dims, reuse_sidecars=reuse)
+        return AdminAckResponse(status="accepted", message="faiss rebuild started")
     except Exception as e:
         logger.error("admin_embed_full error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -324,6 +365,8 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
             "--factory",
             factory,
         ]
+        if getattr(payload, "force_regenerate", False):
+            cmd.append("--force-regenerate")
 
         os.makedirs(INDEX_DIR, exist_ok=True)
         log_path = os.path.join(INDEX_DIR, "rebuild.log")
@@ -352,10 +395,66 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
             getattr(p, "pid", None),
             log_path,
         )
+        # clear in-memory index cache in this process so we don't continue using stale index
+        try:
+            from app.faiss_index import clear_index_cache
+
+            clear_index_cache()
+        except Exception:
+            pass
         return AdminFaissRebuildResponse(status="accepted", message="faiss rebuild started",
-                                         pid=getattr(p, "pid", None), log=log_path)
+                                          pid=getattr(p, "pid", None), log=log_path)
     except Exception as e:
         logger.error("admin_faiss_rebuild error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/faiss/status")
+def admin_faiss_status():
+    """Return sidecar metadata (if any) and index presence info, plus whether the index is cached in this process."""
+    try:
+        from app.faiss_index import load_sidecar_meta, is_index_cached
+
+        meta = load_sidecar_meta()
+        present = os.path.exists(INDEX_FILE) or (meta is not None)
+        cached = False
+        try:
+            cached = bool(is_index_cached())
+        except Exception:
+            cached = False
+        return {"present": bool(present), "sidecar_meta": meta, "cached": cached}
+    except Exception as e:
+        logger.error("admin_faiss_status error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/faiss/clear-cache")
+def admin_faiss_clear_cache():
+    """Clear the in-process FAISS index cache."""
+    try:
+        from app.faiss_index import clear_index_cache
+
+        clear_index_cache()
+        return {"status": "cleared"}
+    except Exception as e:
+        logger.error("admin_faiss_clear_cache error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/faiss/upsert-item", response_model=AdminFaissUpsertResponse)
+def admin_faiss_upsert(payload: AdminFaissUpsertPayload):
+    """Attempt an incremental upsert of a single TMDB item into FAISS sidecars and index.
+
+    Returns status indicating whether the item was added/updated locally, or whether a full rebuild is required.
+    """
+    try:
+        from app.faiss_index import upsert_single_item
+
+        res = upsert_single_item(payload.id, payload.media_type or "movie", force_regenerate=bool(payload.force_regenerate))
+        # coerce to response model
+        return AdminFaissUpsertResponse(status=res.get("status"), message=res.get("message"))
+    except Exception as e:
+        logger.exception("admin_faiss_upsert error: %s", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -692,25 +791,31 @@ def get_watch_history_clusters(
             logger.warning("No valid TMDB IDs found in watch history")
             return {"items": [], "cluster_summaries": {}}
 
-        # batch fetch all embeddings from tmdb_metadata
-        unique_ids = list(set(pair[0] for pair in id_media_pairs))
-        logger.info(f"Fetching embeddings for {len(unique_ids)} unique TMDB IDs")
+        # build unique (id, media_type) pairs and fetch embeddings from FAISS sidecars
+        unique_pairs = list(set(id_media_pairs))
+        ids_list = [p[0] for p in unique_pairs]
+        mts_list = [p[1] for p in unique_pairs]
+        logger.info(f"Fetching embeddings for {len(unique_pairs)} unique TMDB (id,media_type) pairs")
 
-        embeddings_docs = list(tmdb_metadata_collection.find(
-            {"id": {"$in": unique_ids}, "embedding": {"$exists": True}},
-            {"_id": 0, "id": 1, "media_type": 1, "embedding": 1, "genres": 1, "overview": 1}
-        ))
+        from app.faiss_index import get_vectors_for_ids
 
-        logger.info(f"Found {len(embeddings_docs)} items with embeddings in tmdb_metadata")
+        vecs = get_vectors_for_ids(ids_list, media_types=mts_list)
 
-        # create lookup dict keyed by (id, media_type)
+        # build lookup map keyed by (id, media_type)
         embeddings_map = {}
-        for doc in embeddings_docs:
+        for (tmdb_id, mt), v in zip(unique_pairs, vecs):
             try:
-                key = (int(doc.get("id")), str(doc.get("media_type", "")).lower())
-                embeddings_map[key] = doc
+                key = (int(tmdb_id), str(mt).lower())
             except (ValueError, TypeError):
                 continue
+            if v is None:
+                continue
+            # fetch metadata doc to pull genres and overview (non-embedding fields)
+            doc = tmdb_metadata_collection.find_one({"id": int(tmdb_id), "media_type": str(mt).lower()}, {"_id": 0, "genres": 1, "overview": 1, "title": 1, "poster_path": 1, "backdrop_path": 1})
+            entry = {"embedding": list(v)}
+            if doc:
+                entry.update(doc)
+            embeddings_map[key] = entry
 
         # filter items that have embeddings
         items_with_embeddings = []
@@ -724,12 +829,13 @@ def get_watch_history_clusters(
             try:
                 key = (int(tmdb_id), str(item_media_type).lower())
                 doc = embeddings_map.get(key)
-
                 if doc and doc.get("embedding"):
                     item["embedding"] = doc["embedding"]
-                    # include genres for cluster naming
                     if doc.get("genres"):
                         item["genres"] = doc.get("genres")
+                    # copy overview if present
+                    if doc.get("overview"):
+                        item["overview"] = doc.get("overview")
                     items_with_embeddings.append(item)
             except (ValueError, TypeError):
                 continue

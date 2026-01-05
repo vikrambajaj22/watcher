@@ -1,81 +1,44 @@
 # watcher
 
-> watchu lookin at?
+> Personal movie & TV recommendations built on Trakt, TMDB, FAISS, and LLMs
 
-watcher is a personal movie / TV show recommendation app powered by Trakt, TMDB, and OpenAI LLMs.
+Watcher is a personal media discovery and recommendation application that integrates Trakt watch history, TMDB metadata, and LLM-powered reasoning. It uses FAISS for vector similarity and stores embeddings in compact sidecar files and the FAISS index for fast nearest-neighbor search.
 
 ## Features
 - 🔐 Trakt OAuth authentication
 - 📺 Browse and sync watch history
-- 📊 **Visual Explorer** - Interactive clustered visualization of watch history
-- ✨ AI-powered recommendations (movies/TV/all)
-- 🔍 Find similar items via KNN search
-- ⚙️ Admin panel for embeddings and FAISS management
+- 📊 Visual Explorer — clustered, interactive visualization of history
+- ✨ AI-powered recommendations with human-readable reasoning
+- 🔍 Similar-item search by TMDB id or free-text
+- ❓Will I Like It? — personalized LLM predictions on specific titles
+- ⚙️ Admin panel for sync, embedding generation, FAISS management, and cache control
 
 ## Quick Start
 
-### Start Everything
+Start the whole project:
+
 ```bash
 ./start.sh
 ```
 
 Access:
-- **Streamlit Web App:** http://localhost:8501
-- **Backend API:** http://localhost:8080/docs
+- Streamlit UI: http://localhost:8501
+- Backend API docs: http://localhost:8080/docs
 
-### Or Start Separately
+Or start components separately:
+
 ```bash
 # Backend
 uvicorn app.main:app --reload --port 8080
 
-# Frontend
+# Frontend (Streamlit)
 ./run_streamlit.sh
 ```
 
-## Streamlit Features
+### Environment
 
-### 🔐 Authentication
-- Trakt OAuth login/logout
+Create a `.env` in the repo root with the following values (examples):
 
-### 📺 Watch History
-- View all watched content
-- Filter, sort, and search
-- One-click sync from Trakt
-- **Click "Find Similar" on any item!**
-
-### 📊 Visual Explorer
-- **Interactive 2D scatter plot** of your watch history
-- Items clustered by similarity using embeddings
-- Adjustable cluster count (3-15)
-- **AI-generated cluster names** describing each group's theme
-- Click any cluster to see poster grid
-- Find similar items directly from clusters
-- Color-coded clusters with summaries
-
-### ✨ Recommendations
-- Personalized suggestions (movies/TV/all)
-- AI reasoning for each recommendation
-- Adjustable count (1-20)
-- **Click "Find Similar" on any item!**
-
-### 🔍 Similar Items
-- Search by TMDB ID
-- Search by text description
-- Click "Find Similar" from watch history or recommendations
-
-### ⚙️ Admin Panel
-- System status monitoring
-- Sync operations
-- Embeddings generation
-- FAISS index management
-
-## Environment (minimal)
-Create a `.env` file in the repo root (values below are examples):
-```env
-TRAKT_CLIENT_ID=your-client-id
-## Environment Setup
-
-Create a `.env` file in the repo root:
 ```env
 TRAKT_CLIENT_ID=your-client-id
 TRAKT_CLIENT_SECRET=your-client-secret
@@ -84,148 +47,139 @@ TMDB_API_KEY=your-tmdb-key
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=watcher
 OPENAI_API_KEY=your-openai-key
+FAISS_INDEX_DIR=./faiss_index
 ```
 
-## Setup Steps
+Install dependencies
 
-### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Sync Watch History
-```bash
-python sync_worker.py
-```
+### Overview: Embeddings and FAISS
 
-### 3. Generate Embeddings
-Before generating embeddings, check the section on TMDB sync behavior below to understand how initial sync works.
-```bash
-python -c "from app.embeddings import index_all_items; index_all_items(batch_size=128)"
-```
+- Embeddings are computed from TMDB metadata and are used only for nearest-neighbor search and candidate generation for LLM reasoning. Embedding vectors are persisted to sidecar files in the FAISS index directory (`labels.npy` and `vecs.npy`) and are also stored as labels inside the FAISS index. Embedding vectors are not written into MongoDB documents.
 
-### 4. Build FAISS Index
-```bash
-python -c "from app.vector_store import rebuild_index; rebuild_index(dim=768, factory='IDMap,IVF100,Flat')"
-```
+- FAISS index files (for example `tmdb.index`) and sidecar files form the canonical on-disk representation of computed vectors and labels. A JSON `sidecar_meta.json` lives alongside them and records the embedding model name, timestamp, dims, and number of vectors.
 
-### 5. Start the App
-```bash
-./start.sh
-```
+- The system supports two embedding workflows:
+  1. Batched / full-index rebuilding: compute embeddings for metadata records and build a FAISS index. This produces the on-disk index file and sidecars. Use this for initial population or full reindex.
+  2. Incremental single-item upserts: attempt to compute and insert/update a single vector in the sidecars and (if supported) update the FAISS index in-place. If the local FAISS build does not support in-place updates, a full rebuild is scheduled instead.
 
-## TMDB sync behavior
-### Export-first initial sync, then incremental changes
+#### TMDB Sync Behavior (export-first, then incremental)
 
-The sync flow prefers TMDB's official daily export files (complete ID dumps) for the initial full ingest and falls back to the `/discover/{movie|tv}` endpoint if an export isn't available. After the initial ingest, the service uses the `/movie/changes` and `/tv/changes` endpoints for incremental updates.
+The sync logic prioritizes high-coverage export files published by TMDB for the initial ingest and uses the changes endpoints for incremental updates.
 
-Why exports?
-- TMDB provides daily gzipped ID exports for movies and TV series which contain every TMDB ID (millions of titles) and are updated daily. Using the exports:
-  - avoids the 500-page limit on the `/discover` API
-  - provides full coverage of IDs
-  - is faster and more reliable for initial population
+1. Initial ingest
+   - The sync attempts to fetch TMDB daily export files (gzipped newline-delimited JSON of IDs) and streams them for a complete ID list. This is the recommended method for an initial, full population because it avoids the discover-page limits and provides broad coverage.
+   - IDs are batched and the app fetches full metadata per ID (details, credits, keywords) and upserts them into MongoDB.
+   - Embedding computation during the initial ingest is optional and controlled by the `embed_updated` / `embed_updated` flag when calling the TMDB sync routines; it is recommended to skip embeddings during the initial large ingest (embed_updated=false) and run a separate embedding/index pass afterwards.
 
-Export URLs (example):
-```
-http://files.tmdb.org/p/exports/movie_ids_MM_DD_YYYY.json.gz
-http://files.tmdb.org/p/exports/tv_series_ids_MM_DD_YYYY.json.gz
-```
-Each line in the gz file is JSON, e.g.:
-```
-{"id":550,"original_title":"Fight Club","popularity":61.4}
-```
+2. Fallback / discover
+   - If no suitable export file is available within the configured lookback window, the sync falls back to the `/discover/{movie|tv}` route with a safe cap on pages.
 
-How the sync works:
-1. On the first run (no stored `last_sync`), the app attempts an export-based initial ingest:
-   - Try today's export; if not present, try previous days (configurable lookback, default 7 days).
-   - Stream the gz file; extract IDs; batch IDs into CHUNK_SIZE; fetch full metadata per ID via `/movie/{id}` or `/tv/{id}` (append credits, keywords) and upsert.
-   - Optionally queue embeddings for each item (recommended to disable for the initial bulk ingest).
-   - Set the `tmdb_<media_type>_last_sync` meta to the max `updated_at` observed so later runs can use `/changes`.
-2. If no suitable export is found within the lookback window, fall back to the `/discover/{movie|tv}` path (with a safety cap on pages to avoid TMDB page errors).
-   - Note: `/discover` is limited by TMDB and may not return the full universe of IDs; TMDB's API allows up to 500 pages — the app caps discover pages by default to 500 pages. For 100% coverage prefer the export files described above.
-   - You can override the cap with the environment variable `TMDB_DISCOVER_MAX_PAGES` (e.g., export TMDB_DISCOVER_MAX_PAGES=500) but this may still be limited by TMDB.
-3. On subsequent runs, use `/movie/changes` and `/tv/changes` to fetch incremental updates only.
+3. Incremental updates
+   - After initial population the sync uses `/movie/changes` and `/tv/changes` to fetch deltas and apply metadata updates.
+   - The sync exposes parameters to control whether embeddings are computed during the incremental pass (embed_updated). For typical usage, compute embeddings separately so metadata sync and embedding provider usage are rate-limited independently.
 
-Operational notes & recommendations
-- Initial ingest can be very large. For safety/cost control: run the initial ingest with `embed_updated=False` (metadata-only), then run embeddings separately with throttling.
-- Exports avoid the discover 500-page limit, but large runs may still hit TMDB rate limits when fetching per-ID details — consider adding rate-limiting/backoff.
-- The export streaming handles gz files and processes IDs in batches to bound memory usage.
+#### Embedding Generation & Index Lifecycle (recommended workflows)
 
-Extra tips
-- To force use of TMDB exports (recommended for full coverage) make sure your environment can reach `http://files.tmdb.org/p/exports/` and increase the `days_back_limit` if the latest export isn't available for any reason.
-- To control discover behavior (if you must use discover), set `TMDB_DISCOVER_MAX_PAGES` in your environment to the number of pages to attempt (default 500). Example:
+- Full rebuild path (recommended for initial indexing):
+  - Compute embeddings for each metadata record.
+  - Build and persist a FAISS index file (CPU index) and save sidecars: `labels.npy`, `vecs.npy`, and `sidecar_meta.json`.
+  - Optionally transfer the index to GPU resources if configured.
 
-```bash
-export TMDB_DISCOVER_MAX_PAGES=500
-```
+- Incremental upsert path (fast for single items):
+  - Compute an embedding for a single item and try to update sidecars and FAISS index in-place.
+  - If the local FAISS implementation doesn't support in-place add/remove, the operation returns a rebuild-required response and a full rebuild can be scheduled.
 
-Then run your sync (metadata-only recommended for initial run):
+- Cache & process behavior:
+  - Each backend process keeps an in-memory FAISS index cached after the first load to avoid repeated disk reads.
+  - The admin UI and API provide controls to clear the in-process cache when an out-of-process rebuild or external index write occurs.
+
+#### Admin and API notes
+
+Core endpoints used by the UI and scripts:
+
+- `GET /admin/faiss/status` — reports whether an index/sidecars are present and returns the `sidecar_meta` and a `cached` boolean indicating whether this process has the index loaded in memory.
+- `POST /admin/faiss/clear-cache` — clears the FAISS index cache in the current process.
+- `POST /admin/faiss/rebuild` — spawn a detached CLI process to rebuild the FAISS index (useful for large, long-running rebuilds).
+- `POST /admin/embed/full` — schedule a background full rebuild that computes embeddings and writes sidecars/index.
+- `POST /admin/embed/item` — attempt an incremental upsert for a single item; if an in-place update is not possible, this endpoint schedules a background rebuild.
+- `POST /admin/faiss/upsert-item` — lower-level endpoint that attempts an in-place upsert and returns its status.
+
+Use `localhost:8080/redoc` to explore the full API.
+
+UI: Streamlit admin pages let you:
+- Trigger full rebuilds, per-item upserts, and detached rebuilds
+- Inspect `sidecar_meta` (model, dims, num_vectors)
+- See whether the current process has the index cached
+- Clear the FAISS cache for this backend process
+
+#### Practical Recommendations
+
+- Initial population: run TMDB sync with `embed_updated=false` (metadata-only) to avoid concurrently fetching TMDB metadata and computing embeddings:
 
 ```bash
 python - <<'PY'
 from app.tmdb_sync import sync_tmdb
+# full export-based ingest (recommended), but skip embeddings in this large job
 sync_tmdb('movie', full_sync=True, embed_updated=False)
 PY
 ```
 
-Force-refresh metadata
-----------------------
-If you want to re-fetch metadata from TMDB even for IDs already present in your database (for example if you suspect data drift or want to refresh all fields), use the `force_refresh` flag:
+- Once metadata is populated, create embeddings and build the FAISS index:
 
 ```bash
-python - <<'PY'
-from app.tmdb_sync import sync_tmdb
-# full sync, re-fetch metadata for all IDs, but skip embedding during the initial pass
-sync_tmdb('movie', full_sync=True, embed_updated=False, force_refresh=True)
-PY
+# Full rebuild from metadata (computes embeddings and produces sidecars + FAISS index)
+python -m app.faiss_rebuild_cli --dim 384 --factory "IDMap,IVF100,Flat"
 ```
 
-After a force-refresh you can run embedding passes separately (recommended) so your system doesn't hit TMDB and your embedding provider simultaneously.
+Or trigger from the API/UI (admin panel) using the "Rebuild FAISS" controls.
 
-**Location**: the sync logic is implemented in `app/tmdb_sync.py` (see `_sync_from_export`, `_fetch_all_ids_by_discover`, and `sync_tmdb_changes`).
+- Small updates: use single-item upsert flows from the UI or `POST /admin/embed/item` to avoid full rebuilds when possible.
 
-## API Endpoints
+#### Operational Notes
 
-### Core
-- `GET /history` - Fetch watch history
-- `POST /recommend/{movie|tv|all}` - Get recommendations
-- `POST /mcp/knn` - Find similar items
+- Embedding vectors are not stored inside MongoDB documents. The canonical storage for embeddings is the FAISS index and the sidecar files. This keeps metadata fast and small while keeping vectors available for nearest-neighbor search and export.
 
-Notes for `POST /mcp/knn`:
-- `media_type` is a required field in the request body and must be one of: `movie`, `tv`, or `all`.
-  - When providing a specific `tmdb_id`, `media_type` must be either `movie` or `tv` (not `all`) because a TMDB numeric id can correspond to distinct movie and TV records in the database; the API will validate and reject `tmdb_id`+`media_type: all` requests.
+- Module-level (process) cache: the FAISS index is cached per Python process. If you run multiple workers, each worker caches its own copy. Clearing the cache via the API affects only the process that receives the request.
 
-Example requests
+- If an external tool updates the on-disk index, clear the in-process cache (or restart the process) so the backend reloads the fresh index on next use.
 
-By TMDB id (required to specify `movie` or `tv`):
+#### Examples & Troubleshooting
+
+- Check FAISS status:
 
 ```bash
-curl -X POST "${API_BASE_URL:-http://localhost:8080}/mcp/knn" \
-  -H "Content-Type: application/json" \
-  -d '{"tmdb_id": 60803, "k": 10, "results_media_type": "movie", "input_media_type": "movie"}'
+curl -sS http://localhost:8080/admin/faiss/status | jq .
 ```
 
-By free-text (you may use `all` to search across both movies and TV):
+- Clear the FAISS cache for the current process:
 
 ```bash
-curl -X POST "${API_BASE_URL:-http://localhost:8080}/mcp/knn" \
-  -H "Content-Type: application/json" \
-  -d '{"text": "mind-bending thriller with a twist ending", "k": 10, "results_media_type": "all"}'
+curl -X POST http://localhost:8080/admin/faiss/clear-cache
 ```
 
-### Authentication
-- `GET /auth/trakt/start` - Start OAuth
-- `GET /auth/trakt/callback` - OAuth callback
+- Trigger an incremental upsert for single item (UI-friendly):
 
-### Admin
-- `POST /admin/sync/trakt` - Sync Trakt history
-- `POST /admin/embed/item` - Embed single item
-- `POST /admin/embed/full` - Embed all items
-- `POST /admin/faiss/rebuild` - Rebuild FAISS index
+```bash
+curl -X POST http://localhost:8080/admin/embed/item -H 'Content-Type: application/json' -d '{"id": 550, "media_type": "movie"}'
+```
+
+- Trigger a detached FAISS rebuild:
+
+```bash
+curl -X POST http://localhost:8080/admin/faiss/rebuild -H 'Content-Type: application/json' -d '{"dim": 384, "factory": "IDMap,IVF100,Flat"}'
+```
+
+#### Development Notes
+
+- During a very large initial ingest avoid computing embeddings inline to reduce load on embedding providers and TMDB. After metadata is stable, run embedding/indexing passes with throttling and batching.
 
 ## Deployment
-
 TBD
+License
 
-## License
 MIT
+
