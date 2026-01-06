@@ -55,9 +55,26 @@ from app.faiss_index import LABELS_FILE, VECS_FILE
 
 if os.path.exists(LABELS_FILE) and os.path.exists(VECS_FILE):
     import numpy as np
-    labels = np.fromfile(LABELS_FILE, dtype=np.int64)
-    vecs = np.fromfile(VECS_FILE, dtype=np.float32)
-    print(f"Sidecars: labels={labels.shape}, vecs={vecs.shape}")
+
+    # labels: raw memmap (1D)
+    labels = np.memmap(
+        LABELS_FILE,
+        dtype=np.int64,
+        mode="r",
+    )
+    num_vectors = labels.shape[0]
+
+    # vecs: raw memmap (2D, reconstruct shape explicitly)
+    vecs = np.memmap(
+        VECS_FILE,
+        dtype=np.float32,
+        mode="r",
+        shape=(num_vectors, args.dim),
+    )
+
+    print(
+        f"Sidecars OK: labels={labels.shape}, vecs={vecs.shape}, dim={args.dim}"
+    )
 else:
     print("Sidecars missing after rebuild; aborting migration")
     sys.exit(3)
