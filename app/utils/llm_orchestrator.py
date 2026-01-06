@@ -15,6 +15,7 @@ import numpy as np
 
 from app.db import tmdb_metadata_collection
 from app.embeddings import embed_text
+from app.faiss_index import load_faiss_index, get_vectors_for_ids
 from app.vector_store import query
 from app.utils.knn_utils import process_knn_results
 from app.schemas.api import KNNRequest
@@ -40,11 +41,11 @@ def load_tool(tool_name: str) -> Dict[str, Any] | None:
 
 
 def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
-    """Resolve a numeric query vector from a validated payload.
+    """Resolve a numeric query vector from a validated payload using FAISS.
 
-    Raises ValueError on missing item or embedding.
+    Raises ValueError if the item cannot be resolved or no embedding is found.
     """
-    # If a title is provided, resolve it to TMDB metadata first (requires input_media_type)
+    # If a title is provided, resolve it to TMDB metadata first
     if payload.title is not None:
         input_mt = getattr(payload, "input_media_type", None)
         try:
@@ -55,50 +56,28 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
             raise ValueError(
                 f"title '{payload.title}' could not be resolved to a TMDB item (type={input_mt})"
             )
-        # set resolved tmdb_id and let tmdb_id flow continue
+        # set resolved tmdb_id for subsequent lookup
         payload.tmdb_id = md.get("id")
 
     if payload.tmdb_id is not None:
-        # prefer exact (id, input_media_type) match when input_media_type provided in payload
         input_mt = getattr(payload, "input_media_type", None)
-        if input_mt:
-            query = {"id": payload.tmdb_id, "media_type": str(input_mt).lower()}
-            doc = tmdb_metadata_collection.find_one(query, {"_id": 0})
-            if not doc:
-                raise ValueError(
-                    f"tmdb_id {payload.tmdb_id} not found for input_media_type {input_mt}"
-                )
-        else:
-            # if input_media_type not provided, fetch all docs for this id
-            docs = list(
-                tmdb_metadata_collection.find(
-                    {"id": payload.tmdb_id}, {"_id": 0, "media_type": 1, "embedding": 1}
-                )
-            )
-            if not docs:
-                raise ValueError(
-                    f"tmdb_id {payload.tmdb_id} not found in metadata store"
-                )
-            if len(docs) > 1:
-                # ambiguous across media types - require input_media_type to disambiguate
-                raise ValueError(
-                    f"tmdb_id {payload.tmdb_id} is ambiguous across media types; please provide input_media_type"
-                )
-            doc = docs[0]
-            if not doc.get("media_type"):
-                raise ValueError(
-                    f"tmdb_id {payload.tmdb_id} found but media_type missing in metadata; please provide input_media_type"
-                )
-        emb = doc.get("embedding")
-        if emb is None:
+        resolved_id = payload.tmdb_id
+        resolved_mt = str(input_mt).lower() if input_mt else None
+
+        # fetch vector from FAISS
+        faiss_index = load_faiss_index()
+        if not faiss_index:
+            raise ValueError("FAISS index not loaded")
+
+        vecs = get_vectors_for_ids([resolved_id], [resolved_mt])
+        if not vecs or vecs[0] is None:
             raise ValueError(
-                f"embedding missing for tmdb_id {payload.tmdb_id} with input_media_type {input_mt}"
+                f"embedding for tmdb_id {resolved_id} with media_type {resolved_mt} not found in FAISS"
             )
-        return np.array(emb, dtype=np.float32)
+        return np.array(vecs[0], dtype=np.float32)
 
     if payload.text is not None:
-        # enrich free-text queries with an LLM before embedding so the vector
-        # captures additional structured signals (genres, actors, directors, etc.).
+        # enrich free-text queries with an LLM before embedding
         try:
             enriched = enrich_text_for_embedding(payload.text)
             logger.info("Enriched input text '%s': %s", payload.text, enriched)
@@ -111,7 +90,7 @@ def resolve_query_vector(payload: KNNRequest) -> np.ndarray:
             enriched = payload.text
         return embed_text([enriched])[0]
 
-    raise ValueError("invalid payload; provide tmdb_id, title or text")
+    raise ValueError("invalid payload; provide tmdb_id, title, or text")
 
 
 def enrich_text_for_embedding(

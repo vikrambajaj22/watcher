@@ -19,7 +19,8 @@ from app.db import (
     tmdb_failures_collection,
     tmdb_metadata_collection,
 )
-from app.embeddings import EMBED_MODEL_NAME, _process_batch
+from app.embeddings import _process_batch
+from app.faiss_index import get_vectors_for_ids
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__, level=logging.DEBUG)
@@ -693,18 +694,19 @@ def _process_details_batch(
     details: list[dict], media_type: str, embed_updated: bool
 ) -> tuple[int, int, list]:
     """Process a list of detail objects: upsert into Mongo, collect items to embed, and
-    return (processed_count, max_ts_seen, queued_items) where max_ts_seen is an int timestamp or 0
-    and queued_items is a list of dicts to be embedded (each includes media_type).
-    This avoids mutating caller state and makes queuing explicit.
+    return (processed_count, max_ts_seen, queued_items).
+
+    Checks FAISS for existing embeddings instead of relying on Mongo.
     """
     processed = 0
     max_ts_seen = 0
     queued_items: list[dict] = []
+
     for det in details:
         if not det:
             continue
-        # ensure the detail payload contains a valid id before processing
-        tid = det.get("id") if isinstance(det, dict) else None
+
+        tid = det.get("id")
         if not tid:
             logger.warning(
                 "Skipping detail without id (media_type=%s) - malformed TMDB response: %s",
@@ -713,16 +715,7 @@ def _process_details_batch(
             )
             continue
 
-        # fetch existing doc (if any) BEFORE overwriting, so we can decide whether an embedding is needed
-        existing_doc = None
-        try:
-            existing_doc = tmdb_metadata_collection.find_one(
-                {"id": tid, "media_type": media_type},
-                {"_id": 0, "embedding_meta": 1, "embedding": 1},
-            )
-        except Exception:
-            existing_doc = None
-
+        # Upsert metadata into Mongo
         try:
             tmdb_metadata_collection.update_one(
                 {"id": tid, "media_type": media_type},
@@ -734,12 +727,13 @@ def _process_details_batch(
             logger.warning(
                 "Failed to upsert %s %s: %s",
                 media_type,
-                det.get("id"),
+                tid,
                 repr(e),
                 exc_info=True,
             )
             continue
 
+        # track max updated_at timestamp
         updated_at = det.get("updated_at")
         if updated_at:
             try:
@@ -751,67 +745,46 @@ def _process_details_batch(
 
         if embed_updated:
             try:
-                # determine if embedding is needed:
-                needs_embedding = False
-                # if there is an existing doc with embedding_meta, and model matches, skip
-                try:
-                    if existing_doc:
-                        emb = existing_doc.get("embedding")
-                        emb_meta = existing_doc.get("embedding_meta") or {}
-                        emb_model = emb_meta.get("embedding_model")
-                        if not emb or not emb_meta:
-                            needs_embedding = True
-                        elif emb_model != EMBED_MODEL_NAME:
-                            needs_embedding = True
-                        else:
-                            needs_embedding = False
-                    else:
-                        # no existing doc -> if incoming payload already has embedding (unlikely) skip, otherwise embed
-                        if not det.get("embedding"):
-                            needs_embedding = True
-                except Exception:
-                    needs_embedding = True
+                # Check FAISS for existing embedding
+                existing_vec = get_vectors_for_ids([tid], [media_type])[0]
+                needs_embedding = existing_vec is None
 
                 if needs_embedding:
                     queued_item = dict(det, media_type=media_type)
                     queued_items.append(queued_item)
-                    # info-level on first queued item (visible in normal logs)
                     if len(queued_items) == 1:
                         logger.info(
                             "Queued first embedding item in batch for media_type=%s (id=%s)",
                             media_type,
-                            queued_item.get("id"),
+                            tid,
                         )
                     else:
                         logger.debug(
                             "Queued embedding for %s (media_type=%s). batch_queued=%s",
-                            queued_item.get("id"),
+                            tid,
                             media_type,
                             len(queued_items),
                         )
                 else:
                     logger.debug(
-                        "Skipping embedding for %s (media_type=%s) - embedding present and up-to-date",
+                        "Skipping embedding for %s (media_type=%s) - embedding already exists in FAISS",
                         tid,
                         media_type,
                     )
             except Exception as e:
                 logger.warning(
-                    "Failed to prepare embedding for %s: %s",
-                    det.get("id"),
-                    repr(e),
-                    exc_info=True,
+                    "Failed to check FAISS embedding for %s: %s", tid, repr(e), exc_info=True
                 )
 
     return processed, max_ts_seen, queued_items
 
 
 def _submit_embedding_tasks(to_embed: list) -> dict:
-    """Process embeddings in batches using the embeddings module's _process_batch.
-    Returns a summary dict with keys: submitted, succeeded, failed, timed_out.
-    This function validates results by checking the DB for written embeddings after each batch.
+    """Process embeddings in batches and validate against FAISS instead of Mongo.
+
+    Returns a summary dict with keys: submitted, succeeded, failed.
     """
-    summary = {"submitted": 0, "succeeded": 0, "failed": 0, "timed_out": 0}
+    summary = {"submitted": 0, "succeeded": 0, "failed": 0}
     if not to_embed:
         return summary
 
@@ -827,53 +800,16 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
             batch = to_embed[idx : idx + EMBED_BATCH_SIZE]
             batch_ids = [int(item.get("id")) for item in batch if item.get("id")]
             submitted = len(batch)
+
             try:
-                # process batch (compute embeddings and update DB)
+                # compute embeddings and update FAISS
                 _process_batch(batch)
 
-                # verify how many docs now have embeddings written (per (id,media_type) pair)
-                succeeded = 0
-                try:
-                    pairs = []
-                    for item in batch:
-                        try:
-                            _id = int(item.get("id"))
-                        except Exception:
-                            continue
-                        m = str(item.get("media_type") or "").lower()
-                        pairs.append((_id, m))
-
-                    ids_in_batch = list({p[0] for p in pairs})
-                    if ids_in_batch:
-                        cursor = tmdb_metadata_collection.find(
-                            {
-                                "id": {"$in": ids_in_batch},
-                                "embedding": {"$exists": True},
-                            },
-                            {"_id": 0, "id": 1, "media_type": 1},
-                        )
-                        found = set()
-                        for d in cursor:
-                            try:
-                                did = int(d.get("id"))
-                            except Exception:
-                                continue
-                            mtype = str(d.get("media_type") or "").lower()
-                            found.add((did, mtype))
-                        for p in pairs:
-                            if p in found:
-                                succeeded += 1
-                except Exception:
-                    # fallback: best-effort id-only count
-                    try:
-                        written = tmdb_metadata_collection.count_documents(
-                            {"id": {"$in": batch_ids}, "embedding": {"$exists": True}}
-                        )
-                        succeeded = int(written)
-                    except Exception:
-                        succeeded = 0
-
+                # verify embeddings exist in FAISS
+                vecs = get_vectors_for_ids(batch_ids, [item.get("media_type") for item in batch])
+                succeeded = sum(1 for v in vecs if v is not None)
                 failed = submitted - succeeded
+
                 summary["submitted"] += submitted
                 summary["succeeded"] += succeeded
                 summary["failed"] += failed
@@ -888,7 +824,6 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
                     failed,
                 )
             except Exception as e:
-                # mark all in this batch as failed
                 summary["submitted"] += submitted
                 summary["failed"] += submitted
                 logger.warning(

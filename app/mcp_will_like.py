@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 import numpy as np
 
 from app.db import tmdb_metadata_collection
+from app.faiss_index import get_vectors_for_ids
 from app.tmdb_client import get_metadata, search_by_title
 from app.embeddings import embed_item, build_user_vector_from_history
 from app.dao.history import get_watch_history
@@ -18,8 +19,8 @@ class WillLikeError(Exception):
 def compute_will_like(
     tmdb_id: Optional[int], title: Optional[str], media_type: str
 ) -> Dict[str, Any]:
-    """Resolve an item (by id or title), ensure it has an embedding, build user vector,
-    compute cosine similarity and return a result dict.
+    """Resolve an item (by id or title), get its embedding from FAISS, build user vector,
+    compute cosine similarity, and return a result dict.
 
     Raises WillLikeError on recoverable failures (not found / insufficient history).
     """
@@ -32,15 +33,14 @@ def compute_will_like(
     resolved_overview = None
     resolved_poster = None
 
-    # resolve by tmdb_id if provided
+    # resolve by tmdb_id first
     if tmdb_id is not None:
         resolved_id = int(tmdb_id)
-        # require exact media_type match in DB; include poster_path/backdrop if present
+        # get metadata from Mongo (no embeddings)
         resolved_doc = tmdb_metadata_collection.find_one(
             {"id": resolved_id, "media_type": media_type},
             {
                 "_id": 0,
-                "embedding": 1,
                 "title": 1,
                 "overview": 1,
                 "poster_path": 1,
@@ -50,26 +50,24 @@ def compute_will_like(
                 "original_name": 1,
             },
         )
-        # if not in DB, fetch from TMDB (using provided media_type) and embed/store
+        # fallback to TMDB fetch if not in Mongo
         if not resolved_doc:
             try:
                 md = get_metadata(resolved_id, media_type=media_type)
-            except Exception as e:
-                logger.warning(
-                    "Failed to fetch metadata from TMDB for id %s: %s",
-                    resolved_id,
-                    repr(e),
-                )
+            except Exception:
                 md = None
             if md:
                 md["media_type"] = media_type
-                item_with_emb = embed_item(md)
-                resolved_doc = item_with_emb
-                resolved_id = item_with_emb.get("id")
+                resolved_doc = tmdb_metadata_collection.update_one(
+                    {"id": md["id"], "media_type": media_type},
+                    {"$set": md},
+                    upsert=True,
+                )
+                resolved_doc = md
+                resolved_id = md.get("id")
 
-    # resolve by title if provided and not already resolved
+    # resolve by title if not already found
     if not resolved_doc and title:
-        # db case-insensitive regex on title or name
         try:
             regex = {"$regex": title, "$options": "i"}
             docs = list(
@@ -81,7 +79,6 @@ def compute_will_like(
                     {
                         "_id": 0,
                         "id": 1,
-                        "embedding": 1,
                         "title": 1,
                         "overview": 1,
                         "poster_path": 1,
@@ -99,70 +96,48 @@ def compute_will_like(
             resolved_doc = None
             resolved_id = None
 
-        # if still not resolved, call TMDB search_by_title
         if not resolved_doc:
             try:
                 md = search_by_title(title, media_type=media_type)
-            except Exception as e:
-                logger.warning(
-                    "TMDB search_by_title failed for '%s': %s", title, repr(e)
-                )
+            except Exception:
                 md = None
             if md:
                 md["media_type"] = media_type
-                item_with_emb = embed_item(md)
-                resolved_doc = item_with_emb
-                resolved_id = item_with_emb.get("id")
+                tmdb_metadata_collection.update_one(
+                    {"id": md["id"], "media_type": media_type}, {"$set": md}, upsert=True
+                )
+                resolved_doc = md
+                resolved_id = md.get("id")
 
-    if not resolved_doc and not resolved_id:
+    if not resolved_doc or not resolved_id:
         raise WillLikeError("item not found by id or title")
 
-    # ensure embedding exists
-    item_emb = None
-    if resolved_doc:
-        item_emb = resolved_doc.get("embedding")
-        resolved_title = (
-            resolved_doc.get("title")
-            or resolved_doc.get("name")
-            or resolved_doc.get("original_title")
-            or resolved_doc.get("original_name")
-        )
-        resolved_overview = resolved_doc.get("overview")
-        resolved_poster = resolved_doc.get("poster_path") or resolved_doc.get(
-            "backdrop_path"
-        )
-
-    if not item_emb and resolved_id:
+    # ---- get embedding from FAISS ----
+    item_emb = get_vectors_for_ids([resolved_id], [media_type])[0]
+    if item_emb is None:
+        # fallback: compute embedding if not in FAISS
         try:
-            md = get_metadata(int(resolved_id), media_type=media_type)
-        except Exception as e:
-            logger.warning(
-                "Failed to fetch metadata for id %s: %s", resolved_id, repr(e)
-            )
+            md = get_metadata(resolved_id, media_type=media_type)
+        except Exception:
             md = None
         if not md:
-            raise WillLikeError("failed to fetch metadata from TMDB")
+            raise WillLikeError("failed to fetch metadata from TMDB for embedding")
         md["media_type"] = media_type
         item_with_emb = embed_item(md)
         item_emb = item_with_emb.get("embedding")
-        resolved_title = (
-            item_with_emb.get("title")
-            or item_with_emb.get("name")
-            or item_with_emb.get("original_title")
-            or item_with_emb.get("original_name")
-        )
-        resolved_overview = item_with_emb.get("overview")
-        resolved_poster = item_with_emb.get("poster_path") or item_with_emb.get(
-            "backdrop_path"
-        )
 
-    if not item_emb:
-        raise WillLikeError("item embedding could not be obtained")
+    resolved_title = (
+        resolved_doc.get("title")
+        or resolved_doc.get("name")
+        or resolved_doc.get("original_title")
+        or resolved_doc.get("original_name")
+    )
+    resolved_overview = resolved_doc.get("overview")
+    resolved_poster = resolved_doc.get("poster_path") or resolved_doc.get("backdrop_path")
 
     # build user vector from watch history
     history = get_watch_history(media_type=None, include_posters=False)
 
-    # check if user has already watched this item
     already_watched = False
     if resolved_id and history:
         already_watched = any(
@@ -170,7 +145,6 @@ def compute_will_like(
             for h in history
         )
 
-    # skip similarity computation if already watched
     if already_watched:
         return {
             "will_like": False,
@@ -178,7 +152,7 @@ def compute_will_like(
             "explanation": "You have already watched this item.",
             "already_watched": True,
             "item": {
-                "id": int(resolved_id) if resolved_id else None,
+                "id": int(resolved_id),
                 "title": resolved_title,
                 "media_type": media_type,
                 "overview": resolved_overview,
@@ -206,13 +180,8 @@ def compute_will_like(
         raise WillLikeError("similarity computation failed")
 
     will_like = bool(score >= 0.65)
+    formatted_score = "{:.3f}".format(float(score))
 
-    try:
-        formatted_score = "{:.3f}".format(float(score))
-    except Exception:
-        formatted_score = str(score)
-
-    # build explanation
     explanation = f"Similarity score based on your watch history: {formatted_score}."
     if will_like:
         explanation += " This item closely matches your tastes."
@@ -225,7 +194,7 @@ def compute_will_like(
         "explanation": explanation,
         "already_watched": False,
         "item": {
-            "id": int(resolved_id) if resolved_id else None,
+            "id": int(resolved_id),
             "title": resolved_title,
             "media_type": media_type,
             "overview": resolved_overview,

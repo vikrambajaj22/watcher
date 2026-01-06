@@ -301,7 +301,7 @@ def compute_embeddings_batch(
 
 
 def _process_batch(batch: List[Dict], weights: Optional[Dict[str, float]] = None):
-    """Compute embeddings for a batch and don't persist to DB (legacy persisted behavior removed)."""
+    """Compute embeddings for a batch and don't persist to DB."""
     vecs = compute_embeddings_batch(batch, weights=weights)
     # return list of item copies with embeddings attached for callers that expect them
     results = []
