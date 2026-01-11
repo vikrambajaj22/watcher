@@ -21,6 +21,5 @@ CMD ["sh", "-c", "\
     export STREAMLIT_SERVER_PORT=$PORT && \
     export STREAMLIT_SERVER_ADDRESS=0.0.0.0 && \
     export STREAMLIT_SERVER_HEADLESS=true && \
-    export IMAGE_DIR='./static/images' && \
     streamlit run streamlit_app.py \
 "]
