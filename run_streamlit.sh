@@ -10,6 +10,7 @@ echo ""
 
 # Set environment variable for API base URL (can be overridden)
 export API_BASE_URL=${API_BASE_URL:-"http://localhost:8080"}
+export IMAGE_DIR=ui/static/images
 
 # Run streamlit
 streamlit run ui/streamlit_app.py --server.port 8501 --server.address localhost

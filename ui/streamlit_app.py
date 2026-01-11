@@ -19,6 +19,7 @@ from dateutil import parser
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"  # w500 for good quality
+IMAGES_DIR = os.getenv("IMAGES_DIR", "ui/static/images")
 
 # tab indices - update these if tab order changes
 TAB_HOME = 0
@@ -395,7 +396,7 @@ def show_dashboard():
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.image("ui/static/images/watcher-logo.jpeg", width=100)
+        st.image(IMAGES_DIR+"/watcher-logo.jpeg", width=100)
     with col2:
         if is_authenticated():
             if st.button("→ Logout", use_container_width=True):
