@@ -2,15 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Copy and install dependencies
 COPY requirements-ui.txt .
 RUN pip install --no-cache-dir -r requirements-ui.txt
 
+# Copy the Streamlit app
 COPY streamlit_app.py .
 
-ENV STREAMLIT_SERVER_PORT=$PORT
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_SERVER_HEADLESS=true
-
+# Expose the default port
 EXPOSE 8080
 
-CMD ["streamlit", "run", "streamlit_app.py"]
+# Use a shell entrypoint to set PORT dynamically
+CMD ["sh", "-c", "\
+    : ${PORT:=8080} && \
+    export STREAMLIT_SERVER_PORT=$PORT && \
+    export STREAMLIT_SERVER_ADDRESS=0.0.0.0 && \
+    export STREAMLIT_SERVER_HEADLESS=true && \
+    streamlit run streamlit_app.py \
+"]
