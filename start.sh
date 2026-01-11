@@ -46,7 +46,7 @@ echo ""
 # Start the Streamlit frontend
 echo "🎨 Starting Streamlit frontend on http://localhost:8501..."
 export API_BASE_URL=${API_BASE_URL:-"http://localhost:8080"}
-export IMAGE_DIR=ui/static/images
+export IMAGES_DIR=ui/static/images
 streamlit run ui/streamlit_app.py --server.port 8501 --server.address localhost > frontend.log 2>&1 &
 FRONTEND_PID=$!
 
