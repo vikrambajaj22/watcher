@@ -28,4 +28,3 @@ frontend.log
 
 # Mongo
 mongo_dumps/*
-tools/mongo_local_to_atlas.py
