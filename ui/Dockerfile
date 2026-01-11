@@ -9,6 +9,9 @@ RUN pip install --no-cache-dir -r requirements-ui.txt
 # Copy the Streamlit app
 COPY streamlit_app.py .
 
+# Copy static assets
+COPY ui/static ./ui/static
+
 # Expose the default port
 EXPOSE 8080
 
