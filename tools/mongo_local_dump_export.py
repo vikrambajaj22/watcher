@@ -11,6 +11,8 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Columns to keep for tmdb_metadata
 TMDB_FIELDS = [
+    "id",
+    "media_type",
     "title",
     "overview",
     "poster_path",
