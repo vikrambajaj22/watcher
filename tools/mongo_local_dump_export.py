@@ -15,6 +15,9 @@ TMDB_FIELDS = [
     "media_type",
     "title",
     "overview",
+    "tagline",
+    "release_date",
+    "first_air_date",
     "poster_path",
     "backdrop_path",
     "name",
@@ -22,11 +25,52 @@ TMDB_FIELDS = [
     "original_title",
     "original_name",
     "rewatch_engagement",
+    "credits",
+    "keywords",
+    "popularity"
 ]
 
 # ----- Connect -----
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
+
+def _prune_credits(credits: dict) -> dict:
+    """
+    Keep only the subfields required by:
+      - _extract_actors: cast[].name, cast[].order
+      - _extract_directors: crew[].name, crew[].job, crew[].department
+    """
+    if not isinstance(credits, dict):
+        return {}
+
+    cast = credits.get("cast") or []
+    crew = credits.get("crew") or []
+
+    pruned_cast = [
+        {
+            "name": c.get("name"),
+            "order": c.get("order"),
+        }
+        for c in cast
+        if isinstance(c, dict) and c.get("name")
+    ]
+
+    pruned_crew = [
+        {
+            "name": c.get("name"),
+            "job": c.get("job"),
+            "department": c.get("department"),
+        }
+        for c in crew
+        if isinstance(c, dict)
+        and c.get("name")
+        and (c.get("job") == "Director" or c.get("department") == "Directing")
+    ]
+
+    return {
+        "cast": pruned_cast,
+        "crew": pruned_crew,
+    }
 
 # ----- Iterate collections -----
 for coll_name in db.list_collection_names():
@@ -44,6 +88,9 @@ for coll_name in db.list_collection_names():
             # Field filtering for tmdb_metadata
             if coll_name == "tmdb_metadata":
                 doc_copy = {k: v for k, v in doc_copy.items() if k in TMDB_FIELDS}
+
+                if "credits" in doc_copy:
+                    doc_copy["credits"] = _prune_credits(doc_copy["credits"])
 
             f.write(encode(doc_copy))
             count += 1
