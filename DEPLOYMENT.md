@@ -79,7 +79,10 @@ use admin
 db.createUser({
   user: "<GCP_MONGO_DB_USER>",
   pwd: "<GCP_MONGO_DB_PASSWORD>",
-  roles: [ { role: "readWrite", db: "watcher" } ]
+  roles: [
+    { role: "readWrite", db: "watcher" },
+    { role: "userAdminAnyDatabase", db: "admin" }
+  ]
 })
 ```
 - Exit shell:
@@ -166,6 +169,7 @@ TRAKT_CLIENT_SECRET=<TRAKT_CLIENT_SECRET>,\
 TRAKT_REDIRECT_URI="http://localhost:8080/auth/trakt/callback"
 ```
 
+The `?authSource=admin` parameter in the `MONGODB_URI` is necessary since we created the user in the `admin` database.
 Once the backend is deployed, we replace `TRAKT_REDIRECT_URI` with the actual deployed URI:
 
 ```bash
@@ -201,3 +205,14 @@ IMAGE_DIR="./static/images"
 ## Verify Deployment
 
 The Watcher app should now be fully deployed! Access the UI URL provided by Cloud Run to start using the application.
+
+## Future Steps
+
+- Add precomputed embeddings and FAISS index to the backend image or make them accessible to Cloud Run.
+- Update the backend Dockerfile to include FAISS index if you want similarity search to work.
+- Rebuild the FAISS index whenever new TMDB items are added:
+  - Locally, run `./start.sh` to start the UI, use the Admin panel to perform a TMDB sync and rebuild the FAISS index.
+  - Then, dump the MongoDB collections and copy them to the GCP VM as done earlier. This will update the data used by the backend on GCP.
+  - To update the FAISS index in the backend container, either:
+    - Rebuild and redeploy the backend Docker image with the updated FAISS index.
+    - Or, modify the backend to load the FAISS index from a shared storage location accessible by Cloud Run (instead of having it as part of the Docker image).
