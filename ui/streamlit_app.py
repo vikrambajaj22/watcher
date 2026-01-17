@@ -1638,15 +1638,63 @@ def render_similar_results(results, source_title: Optional[str] = None):
             st.markdown("---")
 
 
+def _render_faiss_status():
+    """Helper function to render FAISS index status information."""
+    try:
+        status = api_request("/admin/faiss/status", method="GET")
+        if status:
+            st.markdown("**FAISS Sidecar Status**")
+            # show source (local vs gcs)
+            source = status.get("source", "local")
+            if source == "gcs":
+                st.info("📦 **Source:** GCS (downloaded from cloud storage)")
+            else:
+                st.info("💾 **Source:** Local filesystem")
+            if status.get("present"):
+                st.success("Sidecars/index present")
+            else:
+                st.info("No sidecars/index found")
+            # show whether the FAISS index is cached in this process
+            try:
+                cached = status.get("cached")
+                if cached:
+                    st.write("**Index cached in this process:** ✅")
+                else:
+                    st.write("**Index cached in this process:** ❌")
+            except Exception:
+                pass
+            if status.get("sidecar_meta"):
+                meta = status.get("sidecar_meta")
+                try:
+                    st.write(
+                        f"**Model:** {meta.get('embedding_model', 'unknown')}  "
+                    )
+                    st.write(f"**Vectors:** {meta.get('num_vectors', 'n/a')}  ")
+                    st.write(f"**Dims:** {meta.get('embedding_dims', 'n/a')}  ")
+                    ts = meta.get("embedding_ts")
+                    if ts:
+                        try:
+                            st.write(
+                                f"**Built:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))}"
+                            )
+                        except Exception:
+                            st.write(meta)
+                    else:
+                        st.write(meta)
+                except Exception:
+                    st.write(status.get("sidecar_meta"))
+    except Exception:
+        pass
+
+
 def show_admin_page():
     """Display admin panel for management tasks."""
     st.header("⚙️ Admin Panel")
     st.warning("⚠️ These actions can be resource-intensive. Use with caution.")
-    tab_status, tab_sync, tab_embedding, tab_faiss, tab_state = st.tabs(
+    tab_status, tab_sync, tab_faiss, tab_state = st.tabs(
         [
             "📊 Status",
             "🔄 Manual Sync",
-            "🧠 Embeddings",
             "📇 FAISS Index",
             "♻️ State/Cache Management",
         ]
@@ -1682,48 +1730,35 @@ def show_admin_page():
             except Exception:
                 pass
 
-    with tab_embedding:
-        st.subheader("🧠 Embeddings & FAISS")
-        st.write(
-            "FAISS index generation and embedding computation are coupled: triggering an embedding action will rebuild the FAISS index, compute embeddings from metadata, and write sidecar files."
-        )
+    with tab_faiss:
+        st.subheader("📇 FAISS Index Management")
 
-        st.markdown("#### Rebuild FAISS (for a single item — performs a full rebuild)")
+        st.write("Build or rebuild the FAISS index for fast similarity search and candidate generation for recommendations.")
+
+        # Show current FAISS status
+        st.markdown("---")
+        _render_faiss_status()
+        st.markdown("---")
+
+        # Incremental operations
+        st.markdown("#### ⚡ Incremental Operations")
+        st.write("Fast operations that update a single item without full rebuild")
+        
         col1, col2 = st.columns(2)
         with col1:
-            embed_id = st.number_input("TMDB ID", min_value=1, key="embed_id")
+            embed_id = st.number_input("TMDB ID", min_value=1, key="faiss_upsert_id")
         with col2:
             embed_media_type = st.selectbox(
-                "Media Type", ["movie", "tv"], key="embed_media"
+                "Media Type", ["movie", "tv"], key="faiss_upsert_media"
             )
 
         force_regen = st.checkbox(
-            "Force regenerate all embeddings (ignore existing sidecars)",
+            "Force regenerate embeddings (ignore existing sidecars)",
             value=False,
-            key="force_regen",
+            key="faiss_force_regen",
         )
 
-        if st.button("🎯 Rebuild FAISS (single item)"):
-            with st.spinner(
-                "Triggering FAISS rebuild (will compute embeddings for all items)..."
-            ):
-                result = api_request(
-                    "/admin/embed/item",
-                    method="POST",
-                    data={
-                        "id": embed_id,
-                        "media_type": embed_media_type,
-                        "force_regenerate": force_regen,
-                    },
-                )
-                if result:
-                    st.success(
-                        "✅ FAISS rebuild started (this will compute embeddings from metadata and write sidecars)."
-                    )
-                    st.json(result)
-
-        # Incremental single-item upsert (fast) - attempts to add/update only one vector without full rebuild
-        if st.button("⚡ Incremental index (fast) - upsert single item"):
+        if st.button("⚡ Incremental Upsert (Fast)", type="primary"):
             with st.spinner("Upserting single item into FAISS sidecars/index..."):
                 res = api_request(
                     "/admin/faiss/upsert-item",
@@ -1741,105 +1776,70 @@ def show_admin_page():
                         )
                     elif res.get("status") in ("rebuild_required", "rebuild_scheduled"):
                         st.warning(
-                            "⚠️ Incremental upsert not possible; a full rebuild is required. Use Rebuild FAISS (single item) or Rebuild FAISS (all items)."
+                            "⚠️ Incremental upsert not possible; a full rebuild is required. Use one of the full rebuild options below."
                         )
                     else:
                         st.info(res)
 
         st.markdown("---")
 
-        st.markdown("#### Rebuild FAISS for all items")
+        # Full rebuild operations
+        st.markdown("#### 🔨 Full Rebuild Operations")
         st.warning(
-            "⚠️ This will compute embeddings for all items and rebuild the FAISS index. This may take a while."
+            "⚠️ These operations will rebuild the entire FAISS index. This may take a while."
         )
 
-        if st.button("🚀 Rebuild FAISS (all items)", type="primary"):
-            with st.spinner("Starting FAISS rebuild..."):
-                result = api_request(
-                    "/admin/embed/full",
-                    method="POST",
-                    data={"force_regenerate": force_regen},
+        rebuild_type = st.radio(
+            "Rebuild Type",
+            [
+                "Compute embeddings + rebuild index (from metadata)",
+                "Rebuild index only (use existing embeddings)",
+            ],
+            key="faiss_rebuild_type",
+        )
+
+        if rebuild_type == "Rebuild index only (use existing embeddings)":
+            col1, col2 = st.columns(2)
+            with col1:
+                dim = st.number_input(
+                    "Embedding Dimensions", min_value=1, value=384, key="faiss_dim"
                 )
-                if result:
-                    st.success("✅ FAISS rebuild started!")
-                    st.json(result)
-        # show current sidecar/index status
-        try:
-            status = api_request("/admin/faiss/status", method="GET")
-            if status:
-                st.markdown("**FAISS Sidecar Status**")
-                if status.get("present"):
-                    st.success("Sidecars/index present")
-                else:
-                    st.info("No sidecars/index found")
-                # show whether the FAISS index is cached in this process
-                try:
-                    cached = status.get("cached")
-                    if cached:
-                        st.write("**Index cached in this process:** ✅")
-                    else:
-                        st.write("**Index cached in this process:** ❌")
-                except Exception:
-                    pass
-                if status.get("sidecar_meta"):
-                    meta = status.get("sidecar_meta")
-                    try:
-                        st.write(
-                            f"**Model:** {meta.get('embedding_model', 'unknown')}  "
-                        )
-                        st.write(f"**Vectors:** {meta.get('num_vectors', 'n/a')}  ")
-                        st.write(f"**Dims:** {meta.get('embedding_dims', 'n/a')}  ")
-                        ts = meta.get("embedding_ts")
-                        if ts:
-                            try:
-                                st.write(
-                                    f"**Built:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(ts)))}"
-                                )
-                            except Exception:
-                                st.write(meta)
-                        else:
-                            st.write(meta)
-                    except Exception:
-                        st.write(status.get("sidecar_meta"))
-        except Exception:
-            pass
-
-    with tab_faiss:
-        st.subheader("📇 FAISS Index Management")
-
-        st.write("Build or rebuild the FAISS index for fast similarity search")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            dim = st.number_input(
-                "Embedding Dimensions", min_value=1, value=384, key="faiss_dim"
-            )
-        with col2:
-            factory = st.text_input(
-                "Factory String", value="IDMap,IVF100,Flat", key="faiss_factory"
-            )
-
-        st.info("""
-        **Factory String Examples:**
-        - `Flat` - Exact search, no compression
-        - `IVF100,Flat` - Inverted file with 100 clusters
-        - `IVF100,PQ8` - Inverted file + product quantization
-        - `IDMap,IVF100,Flat` - With ID mapping (recommended)
-        """)
-
-        if st.button("🔨 Rebuild FAISS Index", type="primary"):
-            st.warning("⚠️ This operation will rebuild the entire FAISS index!")
-            with st.spinner("Rebuilding FAISS index..."):
-                result = api_request(
-                    "/admin/faiss/rebuild",
-                    method="POST",
-                    data={"dim": dim, "factory": factory},
+            with col2:
+                factory = st.text_input(
+                    "Factory String", value="IDMap,IVF100,Flat", key="faiss_factory"
                 )
-                if result:
-                    st.success("✅ FAISS rebuild started!")
-                    st.json(result)
-                    if "log" in result:
-                        st.info(f"Check logs at: {result['log']}")
+
+            st.info("""
+            **Factory String Examples:**
+            - `Flat` - Exact search, no compression
+            - `IVF100,Flat` - Inverted file with 100 clusters
+            - `IVF100,PQ8` - Inverted file + product quantization
+            - `IDMap,IVF100,Flat` - With ID mapping (recommended)
+            """)
+
+            if st.button("🔨 Rebuild FAISS Index", type="primary"):
+                with st.spinner("Rebuilding FAISS index..."):
+                    result = api_request(
+                        "/admin/faiss/rebuild",
+                        method="POST",
+                        data={"dim": dim, "factory": factory},
+                    )
+                    if result:
+                        st.success("✅ FAISS rebuild started!")
+                        st.json(result)
+                        if "log" in result:
+                            st.info(f"Check logs at: {result['log']}")
+        else:
+            if st.button("🚀 Rebuild FAISS (Compute Embeddings + Rebuild)", type="primary"):
+                with st.spinner("Starting FAISS rebuild with embedding computation..."):
+                    result = api_request(
+                        "/admin/embed/full",
+                        method="POST",
+                        data={"force_regenerate": force_regen},
+                    )
+                    if result:
+                        st.success("✅ FAISS rebuild started!")
+                        st.json(result)
 
     with tab_state:
         st.write("Manage caches.")

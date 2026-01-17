@@ -148,13 +148,18 @@ gcloud builds submit . --tag $BACKEND_IMAGE
 ### Deploy Backend to Cloud Run
 Deploy with all required environment variables:
 
+**Note:** The backend requires 8Gi memory to accommodate:
+- FAISS index loaded into memory
+- Embedding model (sentence-transformers)
+- Application overhead
+
 ```bash
 gcloud run deploy watcher-backend \
 --image $BACKEND_IMAGE \
 --region $REGION \
 --platform managed \
 --allow-unauthenticated \
---memory 4Gi \
+--memory 8Gi \
 --cpu 2 \
 --concurrency 1 \
 --timeout 900 \
@@ -226,6 +231,7 @@ This approach avoids:
 **Runtime behavior**
 - Local development → load FAISS from local filesystem
 - Cloud Run → download FAISS from GCS at startup into `/tmp/faiss`
+- **Memory requirement:** The backend needs at least 8Gi memory to load the FAISS index and embedding model into memory
 
 The backend uses these environment variables:
 
@@ -238,7 +244,7 @@ FAISS_PREFIX=v1  # versioned folder in bucket
 ### Local Embedding Computation
 **Optional**: Run a TMDB sync to get any new items into the local MongoDB - FAISS embeddings are computed during the sync.
 
-To recompute embeddings, start the UI using `./start.sh`, access the Admin panel, and perform a full embedding rebuild.
+To recompute embeddings, start the UI using `./start.sh`, access the Admin panel, and perform a full embedding rebuild (FAISS tab).
 
 ### Upload FAISS Index to GCS Bucket
 #### Create a GCS bucket:
