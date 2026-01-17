@@ -178,6 +178,8 @@ gcloud run services update watcher-backend \
 --set-env-vars TRAKT_REDIRECT_URI=<ACTUAL_REDIRECT_URI>
 ```
 
+For the FAISS setup, please refer to the FAISS section below. Use the required environment variables when deploying the backend.
+
 ## Build and Push UI Docker Image
 In the `ui` directory which has the Dockerfile for the UI, run:
 
