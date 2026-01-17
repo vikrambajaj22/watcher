@@ -174,11 +174,13 @@ OPENAI_API_KEY=<OPENAI_API_KEY>,\
 TMDB_API_KEY=<TMDB_API_KEY>,\
 TRAKT_CLIENT_ID=<TRAKT_CLIENT_ID>,\
 TRAKT_CLIENT_SECRET=<TRAKT_CLIENT_SECRET>,\
-TRAKT_REDIRECT_URI="http://localhost:8080/auth/trakt/callback"
+TRAKT_REDIRECT_URI="http://localhost:8080/auth/trakt/callback",\
+UI_BASE_URL="<UI_URL>"
 ```
 
 The `?authSource=admin` parameter in the `MONGODB_URI` is necessary since we created the user in the `admin` database.
 Once the backend is deployed, we replace `TRAKT_REDIRECT_URI` with the actual deployed URI (https://watcher-backend-391638080074.us-central1.run.app/auth/trakt/callback):
+and the UI URL (https://watcher-ui-391638080074.us-central1.run.app) in `UI_BASE_URL` after deploying the UI (see steps below).
 
 ```bash
 gcloud run services update watcher-backend \
