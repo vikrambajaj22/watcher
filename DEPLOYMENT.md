@@ -175,7 +175,7 @@ TMDB_API_KEY=<TMDB_API_KEY>,\
 TRAKT_CLIENT_ID=<TRAKT_CLIENT_ID>,\
 TRAKT_CLIENT_SECRET=<TRAKT_CLIENT_SECRET>,\
 TRAKT_REDIRECT_URI="http://localhost:8080/auth/trakt/callback",\
-UI_BASE_URL="<UI_URL>"
+UI_BASE_URL="<UI_BASE_URL>"
 ```
 
 The `?authSource=admin` parameter in the `MONGODB_URI` is necessary since we created the user in the `admin` database.
