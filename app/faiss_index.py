@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import List, Optional, Tuple
 import json
 import time
@@ -14,12 +15,53 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-INDEX_DIR = os.getenv("FAISS_INDEX_DIR", "./faiss_index")
-INDEX_FILE = os.path.join(INDEX_DIR, "tmdb.index")
-LABELS_FILE = os.path.join(INDEX_DIR, "labels.npy")
-VECS_FILE = os.path.join(INDEX_DIR, "vecs.npy")
-SIDECAR_META_FILE = os.path.join(INDEX_DIR, "sidecar_meta.json")
-# No separate metadata file: TMDB ids are stored as labels inside the FAISS index or sidecars
+TMP_DIR = None
+
+FAISS_SOURCE = os.getenv("FAISS_SOURCE", "local")  # "local" or "gcs"
+FAISS_BUCKET = os.getenv("FAISS_BUCKET", "watcher-faiss")
+FAISS_PREFIX = os.getenv("FAISS_PREFIX", "v1")
+
+
+def _download_from_gcs(filename: str):
+    """Download a file from GCS if it doesn't exist in /tmp/faiss.
+    
+    Args:
+        filename: Name of the file to download
+    Raises:
+        subprocess.CalledProcessError: If the file is not found in GCS
+        ValueError: If called when FAISS_SOURCE is not "gcs"
+    """
+    if TMP_DIR is None:
+        raise ValueError("_download_from_gcs() can only be called when FAISS_SOURCE=gcs")
+    target_file = TMP_DIR / filename
+    if not target_file.exists():
+        gcs_path = f"gs://{FAISS_BUCKET}/{FAISS_PREFIX}/{filename}"
+        logger.info("Downloading %s from GCS -> %s", gcs_path, target_file)
+        try:
+            subprocess.run(["gsutil", "cp", gcs_path, str(target_file)], check=True)
+        except subprocess.CalledProcessError:
+            logger.error("Failed to download %s from GCS", gcs_path)
+            raise
+    return str(target_file)
+
+
+if FAISS_SOURCE == "local":
+    INDEX_DIR = os.getenv("FAISS_INDEX_DIR", "./faiss_index")
+    INDEX_FILE = os.path.join(INDEX_DIR, "tmdb.index")
+    LABELS_FILE = os.path.join(INDEX_DIR, "labels.npy")
+    VECS_FILE = os.path.join(INDEX_DIR, "vecs.npy")
+    SIDECAR_META_FILE = os.path.join(INDEX_DIR, "sidecar_meta.json")
+else:
+    from pathlib import Path
+
+    TMP_DIR = Path("/tmp/faiss")
+    INDEX_DIR = str(TMP_DIR)
+    os.makedirs(TMP_DIR, exist_ok=True)
+
+    INDEX_FILE = _download_from_gcs("tmdb.index")
+    LABELS_FILE = _download_from_gcs("labels.npy")
+    VECS_FILE = _download_from_gcs("vecs.npy")
+    SIDECAR_META_FILE = _download_from_gcs("sidecar_meta.json")
 
 # GPU config
 FAISS_USE_GPU = os.getenv("FAISS_USE_GPU", "false").lower() == "true"

@@ -202,17 +202,107 @@ API_BASE_URL=<BACKEND_URL>,\
 IMAGE_DIR="./static/images"
 ```
 
+## FAISS for TMDB
+FAISS is used for similarity search, candidate generation for recommendations, etc.
+To enable FAISS functionality, you need to ensure that the FAISS index and precomputed embeddings are accessible to the backend service.
+We do this using local embedding computation and upload to a GCS bucket `watcher-faiss`.
+
+This approach avoids:
+- embedding data in Docker images
+- MongoDB size limits by keeping embeddings out of the database
+- rebuilding images when the index changes
+
+
+**FAISS artifacts**
+- `tmdb.index` – FAISS index
+- `labels.npy` – label → TMDB id mapping
+- `vecs.npy` – optional raw vectors
+
+**Runtime behavior**
+- Local development → load FAISS from local filesystem
+- Cloud Run → download FAISS from GCS at startup into `/tmp/faiss`
+
+The backend uses these environment variables:
+
+```bash
+FAISS_SOURCE=gcs  # or unset for local (defaults to ./faiss_index/ if unset)
+FAISS_BUCKET=watcher-faiss
+FAISS_PREFIX=v1  # versioned folder in bucket
+```
+
+### Local Embedding Computation
+**Optional**: Run a TMDB sync to get any new items into the local MongoDB - FAISS embeddings are computed during the sync.
+
+To recompute embeddings, start the UI using `./start.sh`, access the Admin panel, and perform a full embedding rebuild.
+
+### Upload FAISS Index to GCS Bucket
+#### Create a GCS bucket:
+```bash
+export PROJECT_ID=$(gcloud config get-value project)
+export REGION=us-central1
+export FAISS_BUCKET=watcher-faiss
+```
+
+```bash
+gsutil mb \
+-p $PROJECT_ID \
+-l $REGION \
+-c STANDARD \
+gs://$FAISS_BUCKET
+ ```
+
+#### Upload FAISS artifacts:
+```bash
+gsutil -m cp \
+tmdb.index \
+labels.npy \
+vecs.npy \
+sidecar_meta.json \
+gs://$FAISS_BUCKET/v1/
+```
+
+#### Get IAM permissions for Cloud Run service account:
+```bash
+gcloud projects describe $PROJECT_ID --format="value(projectNumber)"
+export PROJECT_NUMBER=<PREV_COMMAND_OUTPUT>
+export RUN_SA="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+gsutil iam ch \
+serviceAccount:$RUN_SA:objectViewer \
+gs://$FAISS_BUCKET
+```
+
+#### Update the backend service (no rebuild required):
+```bash
+gcloud run services update watcher-backend \
+--region $REGION \
+--set-env-vars FAISS_SOURCE=gcs,FAISS_BUCKET=$FAISS_BUCKET,FAISS_PREFIX=v1
+```
+
+On the next cold start, the backend will:
+- Download FAISS files from GCS
+- Store them in /tmp/faiss
+- Load the index into memory
+
+#### Keeping FAISS Updated
+Whenever you need to update the FAISS index or embeddings (e.g., after adding new items), repeat the upload step to overwrite the files in the GCS bucket.
+```bash
+gsutil -m cp \
+tmdb.index \
+labels.npy \
+vecs.npy \
+sidecar_meta.json \
+gs://$FAISS_BUCKET/v2/
+```
+
+Then update the backend service to point to the new prefix:
+```bash
+gcloud run services update watcher-backend \
+--region $REGION \
+--set-env-vars FAISS_PREFIX=v2
+```
+
+This will trigger a restart of the backend service, which will load the updated FAISS index, with zero downtime and no new image creation required.
+
 ## Verify Deployment
 
 The Watcher app should now be fully deployed! Access the UI URL provided by Cloud Run to start using the application.
-
-## Future Steps
-
-- Add precomputed embeddings and FAISS index to the backend image or make them accessible to Cloud Run.
-- Update the backend Dockerfile to include FAISS index if you want similarity search to work.
-- Rebuild the FAISS index whenever new TMDB items are added:
-  - Locally, run `./start.sh` to start the UI, use the Admin panel to perform a TMDB sync and rebuild the FAISS index.
-  - Then, dump the MongoDB collections and copy them to the GCP VM as done earlier. This will update the data used by the backend on GCP.
-  - To update the FAISS index in the backend container, either:
-    - Rebuild and redeploy the backend Docker image with the updated FAISS index.
-    - Or, modify the backend to load the FAISS index from a shared storage location accessible by Cloud Run (instead of having it as part of the Docker image).
