@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from typing import List, Optional, Tuple
 import json
 import time
@@ -25,22 +24,30 @@ FAISS_PREFIX = os.getenv("FAISS_PREFIX", "v1")
 def _download_from_gcs(filename: str):
     """Download a file from GCS if it doesn't exist in /tmp/faiss.
     
+    Uses the google-cloud-storage Python client (works in Cloud Run without gsutil).
+    
     Args:
         filename: Name of the file to download
     Raises:
-        subprocess.CalledProcessError: If the file is not found in GCS
+        Exception: If the file is not found in GCS or download fails
         ValueError: If called when FAISS_SOURCE is not "gcs"
     """
     if TMP_DIR is None:
         raise ValueError("_download_from_gcs() can only be called when FAISS_SOURCE=gcs")
     target_file = TMP_DIR / filename
     if not target_file.exists():
-        gcs_path = f"gs://{FAISS_BUCKET}/{FAISS_PREFIX}/{filename}"
-        logger.info("Downloading %s from GCS -> %s", gcs_path, target_file)
+        from google.cloud import storage
+        
+        blob_path = f"{FAISS_PREFIX}/{filename}"
+        logger.info("Downloading gs://%s/%s -> %s", FAISS_BUCKET, blob_path, target_file)
         try:
-            subprocess.run(["gsutil", "cp", gcs_path, str(target_file)], check=True)
-        except subprocess.CalledProcessError:
-            logger.error("Failed to download %s from GCS", gcs_path)
+            client = storage.Client()
+            bucket = client.bucket(FAISS_BUCKET)
+            blob = bucket.blob(blob_path)
+            blob.download_to_filename(str(target_file))
+            logger.info("Downloaded %s successfully", filename)
+        except Exception as e:
+            logger.error("Failed to download gs://%s/%s: %s", FAISS_BUCKET, blob_path, repr(e))
             raise
     return str(target_file)
 

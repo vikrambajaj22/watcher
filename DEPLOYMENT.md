@@ -173,7 +173,7 @@ TRAKT_REDIRECT_URI="http://localhost:8080/auth/trakt/callback"
 ```
 
 The `?authSource=admin` parameter in the `MONGODB_URI` is necessary since we created the user in the `admin` database.
-Once the backend is deployed, we replace `TRAKT_REDIRECT_URI` with the actual deployed URI:
+Once the backend is deployed, we replace `TRAKT_REDIRECT_URI` with the actual deployed URI (https://watcher-backend-391638080074.us-central1.run.app/auth/trakt/callback):
 
 ```bash
 gcloud run services update watcher-backend \
