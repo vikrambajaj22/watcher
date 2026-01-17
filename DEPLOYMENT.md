@@ -314,7 +314,7 @@ gcloud run services update watcher-backend \
 --set-env-vars FAISS_PREFIX=v2
 ```
 
-This will trigger a restart of the backend service, which will load the updated FAISS index, with zero downtime and no new image creation required.
+This will trigger a restart of the backend service, which will load the updated FAISS index on app start before serving requests, without requiring new backend image build.
 
 ## Verify Deployment
 
