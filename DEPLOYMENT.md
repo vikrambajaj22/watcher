@@ -228,6 +228,7 @@ gcloud run deploy watcher-ui \
 --platform managed \
 --memory 512Mi \
 --allow-unauthenticated \
+--max-instances=1 \
 --set-env-vars \
 API_BASE_URL=<BACKEND_URL>,\
 IMAGE_DIR="./static/images"
@@ -338,3 +339,10 @@ This will trigger a restart of the backend service, which will load the updated 
 ## Verify Deployment
 
 The Watcher app should now be fully deployed! Access the UI URL provided by Cloud Run to start using the application.
+
+## Future Improvements
+- Stateless UI & Horizontal Scaling: Refactor the Streamlit UI to externalize session state (e.g., via backend APIs or a shared store like Redis/Firestore). This will allow safe horizontal scaling on Cloud Run without relying on single-instance constraints.
+- FAISS Index Lifecycle Management: Automate FAISS index rebuilds and versioning when new TMDB items arrive, with background jobs and atomic index swaps to avoid downtime.
+- GPU-Backed Recommendations: Evaluate deploying the backend on GPU-enabled infrastructure for faster embedding search once FAISS usage and query volume increase.
+- Improved Auth & Secrets Management: Migrate all secrets (API keys, OAuth credentials) to Secret Manager and tighten IAM roles for least-privilege access.
+- Observability & Cost Controls: Add structured metrics (latency, cache hit rate, index load time) and alerts to better understand performance and manage GCP costs as usage grows.
