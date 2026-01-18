@@ -55,6 +55,25 @@ sudo apt-get update
 sudo apt-get install -y mongodb-org
 ```
 
+#### Configure MongoDB to use less memory (optional for e2-micro) for cache size:
+
+In the file `/etc/mongod.conf`, add the following under `storage` (use `sudo` if needed):
+
+```yaml
+wiredTiger:
+  engineConfig:
+    cacheSizeGB: 0.3
+```
+
+#### Configure MongoDB to bind to all IP addresses:
+In the same file `/etc/mongod.conf`, modify the `bindIp` under `net` to:
+
+```yaml
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+```
+
 ### Start MongoDB:
 
 ```bash
