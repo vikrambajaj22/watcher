@@ -65,6 +65,14 @@ wiredTiger:
     cacheSizeGB: 0.3
 ```
 
+#### Persist MongoDB data on disk (override auto-deletion on VM stop):
+```bash
+gcloud compute instances set-disk-auto-delete watcher-mongo \
+--zone=us-central1-a \
+--disk=watcher-mongo \
+--no-auto-delete
+```
+
 #### Configure MongoDB to bind to all IP addresses:
 In the same file `/etc/mongod.conf`, modify the `bindIp` under `net` to:
 
