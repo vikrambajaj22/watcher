@@ -234,7 +234,7 @@ gcloud run deploy watcher-ui \
 --image $UI_IMAGE \
 --region us-central1 \
 --platform managed \
---memory 512Mi \
+--memory 1Gi \
 --allow-unauthenticated \
 --max-instances=1 \
 --set-env-vars \
