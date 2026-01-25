@@ -1334,82 +1334,9 @@ def show_similar_items_page():
             }
         )
 
-    tab_id, tab_title, tab_text = st.tabs(
-        ["By TMDB ID", "By Title", "By Text Description"]
+    tab_title, tab_text, tab_id = st.tabs(
+        ["By Title", "By Text Description", "By TMDB ID"]
     )
-
-    # --- By TMDB ID ---
-    with tab_id:
-        st.subheader("Search by TMDB ID")
-        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-        with col1:
-            tmdb_id = st.number_input(
-                "Enter TMDB ID", min_value=1, value=550, key="tmdb_id_input"
-            )
-        with col2:
-            # input media type: used to resolve the TMDB id (movie or tv)
-            input_media = st.selectbox(
-                "ID Type",
-                ["movie", "tv"],
-                key="tmdb_input_media",
-                help="Type of the provided TMDB ID (movie or tv)",
-            )
-        with col3:
-            # results media type: filter applied to KNN results
-            results_media = st.selectbox(
-                "Results Type",
-                ["movie", "tv", "all"],
-                index=2,
-                key="tmdb_results_media",
-                help="Filter results to movie/tv/all",
-            )
-        with col4:
-            k = st.number_input(
-                "Results", min_value=1, max_value=50, value=10, key="tmdb_k"
-            )
-
-        if st.button("🔍 Find Similar by ID", type="primary"):
-            # resolve metadata using the backend API (/admin/tmdb/<id>)
-            source_title = None
-            try:
-                endpoint = f"/admin/tmdb/{tmdb_id}"
-                if input_media:
-                    endpoint = f"{endpoint}?media_type={input_media}"
-                md_resp = api_request(endpoint, method="GET")
-                md = None
-                # admin returns a list of matching documents; pick first if present
-                if isinstance(md_resp, list):
-                    md = md_resp[0] if len(md_resp) > 0 else None
-                elif isinstance(md_resp, dict):
-                    md = md_resp
-
-                if not md:
-                    raise Exception("metadata not found")
-
-                source_title = md.get("title") or md.get("name")
-                st.session_state["similar_source_metadata"] = md
-                if source_title:
-                    st.info(
-                        f"Searching similar to: {source_title} (TMDB id={tmdb_id}, id_type={input_media})"
-                    )
-            except Exception as e:
-                st.warning(
-                    f"Could not fetch metadata for TMDB id {tmdb_id} (type={input_media}): {e}"
-                )
-                if "similar_source_metadata" in st.session_state:
-                    try:
-                        del st.session_state["similar_source_metadata"]
-                    except Exception:
-                        pass
-
-            # Use results_media as the results_media_type filter for returned items; pass input_media_type for ID resolution
-            search_similar(
-                tmdb_id=tmdb_id,
-                input_media_type=input_media,
-                results_media_type=results_media,
-                k=k,
-                source_title=source_title,
-            )
 
     # --- By Title ---
     with tab_title:
@@ -1478,6 +1405,80 @@ def show_similar_items_page():
             search_similar(
                 text=text_query, results_media_type=text_results_media, k=k_text
             )
+
+        # --- By TMDB ID ---
+        with tab_id:
+            st.subheader("Search by TMDB ID")
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
+                tmdb_id = st.number_input(
+                    "Enter TMDB ID", min_value=1, value=550, key="tmdb_id_input"
+                )
+            with col2:
+                # input media type: used to resolve the TMDB id (movie or tv)
+                input_media = st.selectbox(
+                    "ID Type",
+                    ["movie", "tv"],
+                    key="tmdb_input_media",
+                    help="Type of the provided TMDB ID (movie or tv)",
+                )
+            with col3:
+                # results media type: filter applied to KNN results
+                results_media = st.selectbox(
+                    "Results Type",
+                    ["movie", "tv", "all"],
+                    index=2,
+                    key="tmdb_results_media",
+                    help="Filter results to movie/tv/all",
+                )
+            with col4:
+                k = st.number_input(
+                    "Results", min_value=1, max_value=50, value=10, key="tmdb_k"
+                )
+
+            if st.button("🔍 Find Similar by ID", type="primary"):
+                # resolve metadata using the backend API (/admin/tmdb/<id>)
+                source_title = None
+                try:
+                    endpoint = f"/admin/tmdb/{tmdb_id}"
+                    if input_media:
+                        endpoint = f"{endpoint}?media_type={input_media}"
+                    md_resp = api_request(endpoint, method="GET")
+                    md = None
+                    # admin returns a list of matching documents; pick first if present
+                    if isinstance(md_resp, list):
+                        md = md_resp[0] if len(md_resp) > 0 else None
+                    elif isinstance(md_resp, dict):
+                        md = md_resp
+
+                    if not md:
+                        raise Exception("metadata not found")
+
+                    source_title = md.get("title") or md.get("name")
+                    st.session_state["similar_source_metadata"] = md
+                    if source_title:
+                        st.info(
+                            f"Searching similar to: {source_title} (TMDB id={tmdb_id}, id_type={input_media})"
+                        )
+                except Exception as e:
+                    st.warning(
+                        f"Could not fetch metadata for TMDB id {tmdb_id} (type={input_media}): {e}"
+                    )
+                    if "similar_source_metadata" in st.session_state:
+                        try:
+                            del st.session_state["similar_source_metadata"]
+                        except Exception:
+                            pass
+
+                # Use results_media as the results_media_type filter for returned items; pass input_media_type for ID resolution
+                search_similar(
+                    tmdb_id=tmdb_id,
+                    input_media_type=input_media,
+                    results_media_type=results_media,
+                    k=k,
+                    source_title=source_title,
+                )
+
 
     # if results exist in session state (from previous search), render them here so callbacks don't clear the page
     if st.session_state.get("similar_results") is not None:
