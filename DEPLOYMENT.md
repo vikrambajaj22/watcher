@@ -239,7 +239,7 @@ gcloud run deploy watcher-ui \
 --max-instances=1 \
 --set-env-vars \
 API_BASE_URL=<BACKEND_URL>,\
-IMAGE_DIR="./static/images"
+IMAGES_DIR="./static/images"
 ```
 
 ## FAISS for TMDB
