@@ -65,6 +65,14 @@ wiredTiger:
     cacheSizeGB: 0.3
 ```
 
+#### Enable journaling (recommended):
+In the same file `/etc/mongod.conf`, ensure the following under `storage`:
+
+```yaml
+journal:
+  enabled: true
+```
+
 #### Persist MongoDB data on disk (override auto-deletion on VM stop):
 ```bash
 gcloud compute instances set-disk-auto-delete watcher-mongo \
