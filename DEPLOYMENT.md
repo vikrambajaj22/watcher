@@ -73,6 +73,8 @@ journal:
   enabled: true
 ```
 
+Journaling helps maintain data integrity in case of crashes, so crashes don’t wipe out recent writes.
+
 #### Persist MongoDB data on disk (override auto-deletion on VM stop):
 ```bash
 gcloud compute instances set-disk-auto-delete watcher-mongo \
