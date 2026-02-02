@@ -249,7 +249,7 @@ gcloud run deploy watcher-ui \
 --allow-unauthenticated \
 --max-instances=1 \
 --set-env-vars \
-API_BASE_URL=<BACKEND_URL>,\
+API_BASE_URL=$BACKEND_URL,\
 IMAGES_DIR="./static/images"
 ```
 
