@@ -1645,9 +1645,12 @@ def _render_faiss_status():
         status = api_request("/admin/faiss/status", method="GET")
         if status:
             st.markdown("**FAISS Sidecar Status**")
-            # show source (local vs gcs)
+            # show source (local vs gcs vs gcs mounted)
             source = status.get("source", "local")
-            if source == "gcs":
+            mount_path = status.get("mount_path")
+            if source == "gcs" and mount_path:
+                st.info(f"📂 **Source:** GCS (mounted at `{mount_path}`)")
+            elif source == "gcs":
                 st.info("📦 **Source:** GCS (downloaded from cloud storage)")
             else:
                 st.info("💾 **Source:** Local filesystem")

@@ -442,7 +442,7 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
 def admin_faiss_status():
     """Return sidecar metadata (if any) and index presence info, plus whether the index is cached in this process."""
     try:
-        from app.faiss_index import load_sidecar_meta, is_index_cached, FAISS_SOURCE
+        from app.faiss_index import load_sidecar_meta, is_index_cached, FAISS_SOURCE, FAISS_MOUNT_PATH
 
         meta = load_sidecar_meta()
         present = os.path.exists(INDEX_FILE) or (meta is not None)
@@ -451,7 +451,13 @@ def admin_faiss_status():
             cached = bool(is_index_cached())
         except Exception:
             cached = False
-        return {"present": bool(present), "sidecar_meta": meta, "cached": cached, "source": FAISS_SOURCE}
+        return {
+            "present": bool(present),
+            "sidecar_meta": meta,
+            "cached": cached,
+            "source": FAISS_SOURCE,
+            "mount_path": FAISS_MOUNT_PATH,
+        }
     except Exception as e:
         logger.error("admin_faiss_status error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

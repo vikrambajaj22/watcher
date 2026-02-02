@@ -207,6 +207,7 @@ FAISS_USE_GPU=false,\
 FAISS_SOURCE=$FAISS_SOURCE,\
 FAISS_BUCKET=$FAISS_BUCKET,\
 FAISS_PREFIX=$FAISS_PREFIX,\
+FAISS_MOUNT_PATH=$FAISS_MOUNT_PATH,\
 OPENAI_API_KEY=$OPENAI_API_KEY,\
 TMDB_API_KEY=$TMDB_API_KEY,\
 TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID,\
@@ -225,7 +226,7 @@ gcloud run services update watcher-backend \
 --set-env-vars TRAKT_REDIRECT_URI=<ACTUAL_REDIRECT_URI>
 ```
 
-For the FAISS setup, please refer to the FAISS section below. Use the required environment variables when deploying the backend.
+For the FAISS setup, please refer to the FAISS section below. Use the required environment variables when deploying the backend. To avoid cold-start download latency, use **Option A (Mount GCS bucket)** in the FAISS section and add `--execution-environment gen2`, `--add-volume`, `--add-volume-mount`, and `FAISS_MOUNT_PATH=/mnt/faiss/v1` to the deploy command.
 
 ## Build and Push UI Docker Image
 In the `ui` directory which has the Dockerfile for the UI, run:
@@ -270,7 +271,8 @@ This approach avoids:
 
 **Runtime behavior**
 - Local development → load FAISS from local filesystem
-- Cloud Run → download FAISS from GCS at startup into `/tmp/faiss`
+- Cloud Run (download) → download FAISS from GCS at startup into `/tmp/faiss` (adds cold-start latency)
+- Cloud Run (mount) → mount GCS bucket as a volume; backend reads index directly (no download, faster cold starts)
 - **Memory requirement:** The backend needs at least 8Gi memory to load the FAISS index and embedding model into memory
 
 The backend uses these environment variables:
@@ -279,6 +281,7 @@ The backend uses these environment variables:
 FAISS_SOURCE=gcs  # or unset for local (defaults to ./faiss_index/ if unset)
 FAISS_BUCKET=watcher-faiss
 FAISS_PREFIX=v1  # versioned folder in bucket
+FAISS_MOUNT_PATH=  # optional: when set (e.g. /mnt/faiss/v1), read from this path instead of downloading (use with Cloud Run volume mount)
 ```
 
 ### Local Embedding Computation
@@ -322,7 +325,45 @@ serviceAccount:$RUN_SA:objectViewer \
 gs://$FAISS_BUCKET
 ```
 
-#### Update the backend service (no rebuild required):
+#### Option A: Mount GCS bucket (recommended — no download, faster cold starts)
+Mount the `watcher-faiss` bucket so the backend reads FAISS files directly from the volume instead of downloading at startup. Requires Cloud Run **Gen 2** (`--execution-environment gen2`).
+
+**Deploy (or update) the backend with a volume and env:**
+
+```bash
+gcloud run deploy watcher-backend \
+--image $BACKEND_IMAGE \
+--region $REGION \
+--platform managed \
+--execution-environment gen2 \
+--allow-unauthenticated \
+--memory 8Gi \
+--cpu 2 \
+--concurrency 1 \
+--timeout 900 \
+--add-volume=name=faiss-data,type=cloud-storage,bucket=$FAISS_BUCKET \
+--add-volume-mount=volume=faiss-data,mount-path=/mnt/faiss \
+--set-env-vars \
+MONGODB_URI="mongodb://...",\
+FAISS_MOUNT_PATH=/mnt/faiss/v1,\
+FAISS_SOURCE=gcs,\
+...other env vars...
+```
+
+If the service already exists and you only need to add the volume and mount:
+
+```bash
+gcloud run services update watcher-backend \
+--region $REGION \
+--execution-environment gen2 \
+--add-volume=name=faiss-data,type=cloud-storage,bucket=$FAISS_BUCKET \
+--add-volume-mount=volume=faiss-data,mount-path=/mnt/faiss \
+--set-env-vars FAISS_MOUNT_PATH=/mnt/faiss/v1,FAISS_SOURCE=gcs,FAISS_BUCKET=$FAISS_BUCKET,FAISS_PREFIX=v1
+```
+
+The bucket root is mounted at `/mnt/faiss`, so with artifacts under `v1/` in the bucket, the app reads from `/mnt/faiss/v1` (set `FAISS_MOUNT_PATH=/mnt/faiss/v1`). On cold start the backend loads the index from the mount immediately — no GCS download step.
+
+#### Option B: Download from GCS at startup (no volume mount)
 ```bash
 gcloud run services update watcher-backend \
 --region $REGION \
@@ -335,7 +376,7 @@ On the next cold start, the backend will:
 - Load the index into memory
 
 #### Keeping FAISS Updated
-Whenever you need to update the FAISS index or embeddings (e.g., after adding new items), repeat the upload step to overwrite the files in the GCS bucket.
+Whenever you need to update the FAISS index or embeddings (e.g., after adding new items), repeat the upload step to the GCS bucket (e.g. under a new version folder):
 ```bash
 gsutil -m cp \
 tmdb.index \
@@ -345,14 +386,18 @@ sidecar_meta.json \
 gs://$FAISS_BUCKET/v2/
 ```
 
-Then update the backend service to point to the new prefix:
+Then update the backend to use the new version:
+- **Option A (volume mount):** set `FAISS_MOUNT_PATH=/mnt/faiss/v2` and redeploy/update the service.
+- **Option B (download):** set `FAISS_PREFIX=v2` and update the service.
+
 ```bash
 gcloud run services update watcher-backend \
 --region $REGION \
---set-env-vars FAISS_PREFIX=v2
+--set-env-vars FAISS_MOUNT_PATH=/mnt/faiss/v2
+# or for Option B: --set-env-vars FAISS_PREFIX=v2
 ```
 
-This will trigger a restart of the backend service, which will load the updated FAISS index on app start before serving requests, without requiring new backend image build.
+This will trigger a restart of the backend service, which will load the updated FAISS index on app start before serving requests, without requiring a new backend image build.
 
 ## Verify Deployment
 

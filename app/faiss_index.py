@@ -19,6 +19,8 @@ TMP_DIR = None
 FAISS_SOURCE = os.getenv("FAISS_SOURCE", "local")  # "local" or "gcs"
 FAISS_BUCKET = os.getenv("FAISS_BUCKET", "watcher-faiss")
 FAISS_PREFIX = os.getenv("FAISS_PREFIX", "v1")
+# when set (e.g. Cloud Run GCS volume mount), read index from this path instead of downloading from GCS.
+FAISS_MOUNT_PATH = os.getenv("FAISS_MOUNT_PATH", "").strip() or None
 
 
 def _download_from_gcs(filename: str):
@@ -52,7 +54,14 @@ def _download_from_gcs(filename: str):
     return str(target_file)
 
 
-if FAISS_SOURCE == "local":
+if FAISS_MOUNT_PATH:
+    # GCS bucket mounted at FAISS_MOUNT_PATH (e.g. Cloud Run volume mount); no download.
+    INDEX_DIR = FAISS_MOUNT_PATH.rstrip("/")
+    INDEX_FILE = os.path.join(INDEX_DIR, "tmdb.index")
+    LABELS_FILE = os.path.join(INDEX_DIR, "labels.npy")
+    VECS_FILE = os.path.join(INDEX_DIR, "vecs.npy")
+    SIDECAR_META_FILE = os.path.join(INDEX_DIR, "sidecar_meta.json")
+elif FAISS_SOURCE == "local":
     INDEX_DIR = os.getenv("FAISS_INDEX_DIR", "./faiss_index")
     INDEX_FILE = os.path.join(INDEX_DIR, "tmdb.index")
     LABELS_FILE = os.path.join(INDEX_DIR, "labels.npy")
