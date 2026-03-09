@@ -177,18 +177,33 @@ gcloud compute ssh watcher-mongo --zone=us-central1-a
 - Restore the collections:
 
 ```bash
-mongorestore --drop --db watcher --collection tmdb_metadata tmdb_metadata.bson
-mongorestore --drop --db watcher --collection watch_history watch_history.bson
+mongorestore --drop --db watcher --collection tmdb_metadata mongo_dumps/tmdb_metadata.bson
+mongorestore --drop --db watcher --collection watch_history mongo_dumps/watch_history.bson
 ... (repeat for other collections)
 ```
 
 - Verify data:
 
- ```bash
+```bash
 mongosh
 > use watcher
 > db.tmdb_metadata.count()
- ```
+```
+
+- Delete mongo_dumps export:
+
+First `exit` from `mongosh`, then:
+
+```bash
+rm -rf mongo_dumps
+```
+
+- Restart mongo
+
+```bash
+sudo systemctl restart mongod
+```
+
 
 ## Build and Push Backend Docker Image
 
