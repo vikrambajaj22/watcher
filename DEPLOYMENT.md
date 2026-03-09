@@ -229,11 +229,14 @@ gcloud run deploy watcher-backend \
 --image $BACKEND_IMAGE \
 --region $REGION \
 --platform managed \
+--execution-environment gen2 \
 --allow-unauthenticated \
 --memory 8Gi \
 --cpu 2 \
 --concurrency 1 \
 --timeout 900 \
+--add-volume=name=faiss-data,type=cloud-storage,bucket=$FAISS_BUCKET \
+--add-volume-mount=volume=faiss-data,mount-path=/mnt/faiss \
 --set-env-vars \
 MONGODB_URI="mongodb://$GCP_MONGO_DB_USER:$GCP_MONGO_DB_PASSWORD@$MONGO_VM_IP:27017/watcher?authSource=admin",\
 EMBED_DEVICE=cpu,\
@@ -374,36 +377,9 @@ Mount the `watcher-faiss` bucket so the backend reads FAISS files directly from 
 
 **Deploy (or update) the backend with a volume and env:**
 
-```bash
-gcloud run deploy watcher-backend \
---image $BACKEND_IMAGE \
---region $REGION \
---platform managed \
---execution-environment gen2 \
---allow-unauthenticated \
---memory 8Gi \
---cpu 2 \
---concurrency 1 \
---timeout 900 \
---add-volume=name=faiss-data,type=cloud-storage,bucket=$FAISS_BUCKET \
---add-volume-mount=volume=faiss-data,mount-path=/mnt/faiss \
---set-env-vars \
-MONGODB_URI="mongodb://...",\
-FAISS_MOUNT_PATH=/mnt/faiss/v1,\
-FAISS_SOURCE=gcs,\
-...other env vars...
-```
+Deploy the backend using the gen2 execution environment, making sure to include all mount-related flags and environment variables. If you are deploying for the first time, include the `--add-volume` and `--add-volume-mount` flags in the deploy command as shown in the backend deployment command previously.
 
-If the service already exists and you only need to add the volume and mount:
-
-```bash
-gcloud run services update watcher-backend \
---region $REGION \
---execution-environment gen2 \
---add-volume=name=faiss-data,type=cloud-storage,bucket=$FAISS_BUCKET \
---add-volume-mount=volume=faiss-data,mount-path=/mnt/faiss \
---set-env-vars FAISS_MOUNT_PATH=/mnt/faiss/v1,FAISS_SOURCE=gcs,FAISS_BUCKET=$FAISS_BUCKET,FAISS_PREFIX=v1
-```
+If the service already exists, and you only need to add the volume and mount:
 
 The bucket root is mounted at `/mnt/faiss`, so with artifacts under `v1/` in the bucket, the app reads from `/mnt/faiss/v1` (set `FAISS_MOUNT_PATH=/mnt/faiss/v1`). On cold start the backend loads the index from the mount immediately — no GCS download step.
 
