@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 import json
 import time
 
+from pathlib import Path
 import faiss
 import numpy as np
 import threading
@@ -14,17 +15,28 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-TMP_DIR = None
-
 FAISS_SOURCE = os.getenv("FAISS_SOURCE", "local")  # "local" or "gcs"
 FAISS_BUCKET = os.getenv("FAISS_BUCKET", "watcher-faiss")
 FAISS_PREFIX = os.getenv("FAISS_PREFIX", "v1")
 # when set (e.g. Cloud Run GCS volume mount), read index from this path instead of downloading from GCS.
 FAISS_MOUNT_PATH = os.getenv("FAISS_MOUNT_PATH", "").strip() or None
 
+FAISS_PERSIST_DIR = Path(os.getenv("FAISS_PERSIST_DIR", "/var/lib/faiss"))
+try:
+    FAISS_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    # If /var/lib/faiss isn't writable (common in non-root containers), fall back to /tmp.
+    logger.warning(
+        "Failed to create FAISS_PERSIST_DIR=%s (%s); falling back to /tmp/faiss",
+        str(FAISS_PERSIST_DIR),
+        repr(e),
+    )
+    FAISS_PERSIST_DIR = Path("/tmp/faiss")
+    FAISS_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def _download_from_gcs(filename: str):
-    """Download a file from GCS if it doesn't exist in /tmp/faiss.
+    """Download a file from GCS if it doesn't exist locally.
     
     Uses the google-cloud-storage Python client (works in Cloud Run without gsutil).
     
@@ -34,9 +46,9 @@ def _download_from_gcs(filename: str):
         Exception: If the file is not found in GCS or download fails
         ValueError: If called when FAISS_SOURCE is not "gcs"
     """
-    if TMP_DIR is None:
-        raise ValueError("_download_from_gcs() can only be called when FAISS_SOURCE=gcs")
-    target_file = TMP_DIR / filename
+    if FAISS_SOURCE != "gcs":
+        raise ValueError("_download_from_gcs() called but FAISS_SOURCE != 'gcs'")
+    target_file = FAISS_PERSIST_DIR / filename
     if not target_file.exists():
         from google.cloud import storage
         
@@ -68,11 +80,7 @@ elif FAISS_SOURCE == "local":
     VECS_FILE = os.path.join(INDEX_DIR, "vecs.npy")
     SIDECAR_META_FILE = os.path.join(INDEX_DIR, "sidecar_meta.json")
 else:
-    from pathlib import Path
-
-    TMP_DIR = Path("/tmp/faiss")
-    INDEX_DIR = str(TMP_DIR)
-    os.makedirs(TMP_DIR, exist_ok=True)
+    INDEX_DIR = str(FAISS_PERSIST_DIR)
 
     INDEX_FILE = _download_from_gcs("tmdb.index")
     LABELS_FILE = _download_from_gcs("labels.npy")

@@ -271,7 +271,7 @@ This approach avoids:
 
 **Runtime behavior**
 - Local development → load FAISS from local filesystem
-- Cloud Run (download) → download FAISS from GCS at startup into `/tmp/faiss` (adds cold-start latency)
+- Cloud Run (download) → download FAISS from GCS into `FAISS_PERSIST_DIR` if missing, then load into memory (adds cold-start latency)
 - Cloud Run (mount) → mount GCS bucket as a volume; backend reads index directly (no download, faster cold starts)
 - **Memory requirement:** The backend needs at least 8Gi memory to load the FAISS index and embedding model into memory
 
@@ -282,6 +282,7 @@ FAISS_SOURCE=gcs  # or unset for local (defaults to ./faiss_index/ if unset)
 FAISS_BUCKET=watcher-faiss
 FAISS_PREFIX=v1  # versioned folder in bucket
 FAISS_MOUNT_PATH=  # optional: when set (e.g. /mnt/faiss/v1), read from this path instead of downloading (use with Cloud Run volume mount)
+FAISS_PERSIST_DIR=/var/lib/faiss  # optional: where downloads are cached on-disk when FAISS_SOURCE=gcs and FAISS_MOUNT_PATH is unset
 ```
 
 ### Local Embedding Computation
@@ -370,10 +371,14 @@ gcloud run services update watcher-backend \
 --set-env-vars FAISS_SOURCE=gcs,FAISS_BUCKET=$FAISS_BUCKET,FAISS_PREFIX=v1
 ```
 
-On the next cold start, the backend will:
+On the next cold start (or first start on a new instance), the backend will:
 - Download FAISS files from GCS
-- Store them in /tmp/faiss
+- Store them in `FAISS_PERSIST_DIR` (defaults to `/var/lib/faiss`; if not writable it falls back to `/tmp/faiss`)
 - Load the index into memory
+
+Notes:
+- If `FAISS_PERSIST_DIR` is writable, subsequent reloads within the same Cloud Run instance won’t re-download the 2GB index (files are cached on disk and the process also keeps an in-memory `_cached_index`).
+- To fully avoid cold-start download latency across new instances, use **Option A (volume mount)**.
 
 #### Keeping FAISS Updated
 Whenever you need to update the FAISS index or embeddings (e.g., after adding new items), repeat the upload step to the GCS bucket (e.g. under a new version folder):
