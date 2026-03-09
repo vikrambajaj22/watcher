@@ -320,6 +320,14 @@ FAISS_MOUNT_PATH=  # optional: when set (e.g. /mnt/faiss/v1), read from this pat
 FAISS_PERSIST_DIR=/var/lib/faiss  # optional: where downloads are cached on-disk when FAISS_SOURCE=gcs and FAISS_MOUNT_PATH is unset
 ```
 
++ **Recommendation & precedence (explicit):**
+  - `FAISS_MOUNT_PATH` takes precedence over download mode: if `FAISS_MOUNT_PATH` is set (non-empty), the app will read `tmdb.index`, `labels.npy`, `vecs.npy`, and `sidecar_meta.json` directly from that filesystem path and will not perform a GCS download. Use this when you have mounted the bucket (see Option A).
+  - Mounting the bucket (Option A) is the recommended production setup: it avoids per-instance downloads, greatly reduces cold-start latency, and presents a single canonical copy of the FAISS artifacts. Mounting requires Cloud Run **Gen2** and the `--add-volume` / `--add-volume-mount` flags.
+  - If you cannot mount (Option B — download), explicitly set `FAISS_PERSIST_DIR` to a known writable directory (for example `/tmp/faiss`) to avoid unexpected fallbacks from the default `/var/lib/faiss`. Example deploy using download mode:
+
+  - If you use download mode and care about user-facing cold starts, consider keeping at least one pre-warmed instance (`min-instances`) or using a mount.
+  - Ensure the Cloud Run service account has `storage.objectViewer` on the FAISS bucket in either mode (download or mount).
+
 ### Local Embedding Computation
 **Optional**: Run a TMDB sync to get any new items into the local MongoDB - FAISS embeddings are computed during the sync.
 

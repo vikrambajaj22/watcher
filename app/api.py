@@ -442,7 +442,7 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
 def admin_faiss_status():
     """Return sidecar metadata (if any) and index presence info, plus whether the index is cached in this process."""
     try:
-        from app.faiss_index import load_sidecar_meta, is_index_cached, FAISS_SOURCE, FAISS_MOUNT_PATH
+        from app.faiss_index import load_sidecar_meta, is_index_cached, FAISS_SOURCE, FAISS_MOUNT_PATH, LABELS_FILE, VECS_FILE, SIDECAR_META_FILE
 
         meta = load_sidecar_meta()
         present = os.path.exists(INDEX_FILE) or (meta is not None)
@@ -457,6 +457,13 @@ def admin_faiss_status():
             "cached": cached,
             "source": FAISS_SOURCE,
             "mount_path": FAISS_MOUNT_PATH,
+            # resolved file paths for easier debugging in Cloud Run logs
+            "paths": {
+                "index_file": INDEX_FILE,
+                "labels_file": LABELS_FILE,
+                "vecs_file": VECS_FILE,
+                "sidecar_meta_file": SIDECAR_META_FILE,
+            },
         }
     except Exception as e:
         logger.error("admin_faiss_status error: %s", repr(e), exc_info=True)

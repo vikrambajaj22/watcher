@@ -34,6 +34,20 @@ except Exception as e:
     FAISS_PERSIST_DIR = Path("/tmp/faiss")
     FAISS_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- Startup diagnostics: log resolved FAISS configuration so it's easy to see in Cloud Run logs ---
+try:
+    logger.info(
+        "FAISS config resolved: source=%s, bucket=%s, prefix=%s, mount_path=%s, persist_dir=%s",
+        FAISS_SOURCE,
+        FAISS_BUCKET,
+        FAISS_PREFIX,
+        FAISS_MOUNT_PATH,
+        str(FAISS_PERSIST_DIR),
+    )
+except Exception:
+    # best-effort logging; avoid raising on module import
+    pass
+
 
 def _download_from_gcs(filename: str):
     """Download a file from GCS if it doesn't exist locally.
@@ -51,13 +65,30 @@ def _download_from_gcs(filename: str):
     target_file = FAISS_PERSIST_DIR / filename
     if not target_file.exists():
         from google.cloud import storage
-        
+
         blob_path = f"{FAISS_PREFIX}/{filename}"
         logger.info("Downloading gs://%s/%s -> %s", FAISS_BUCKET, blob_path, target_file)
         try:
             client = storage.Client()
             bucket = client.bucket(FAISS_BUCKET)
             blob = bucket.blob(blob_path)
+            # Check blob existence first and log a helpful hint if it's missing
+            try:
+                exists = blob.exists(client=client)
+            except Exception as ee:
+                # If the exists check fails (credentials/network), log and continue to attempt download so the original error surfaces
+                logger.warning("Failed to verify blob existence for gs://%s/%s: %s", FAISS_BUCKET, blob_path, repr(ee))
+                exists = None
+
+            if exists is False:
+                hint = (
+                    f"FAISS artifact not found in bucket. Confirm files uploaded under prefix '{FAISS_PREFIX}'\n"
+                    f"Suggested check (run locally with gcloud auth): gsutil ls -l gs://{FAISS_BUCKET}/{FAISS_PREFIX}/"
+                )
+                logger.error("%s", hint)
+                raise FileNotFoundError(f"gs://{FAISS_BUCKET}/{blob_path} not found: {hint}")
+
+            # proceed with download (may raise on network/permission errors)
             blob.download_to_filename(str(target_file))
             logger.info("Downloaded %s successfully", filename)
         except Exception as e:
