@@ -19,7 +19,11 @@ class Settings(BaseSettings):
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "watcher"
     TRAKT_LAST_ACTIVITIES_API_URL: str = "https://api.trakt.tv/sync/last_activities"
-    TRAKT_HISTORY_API_URL: str = "https://api.trakt.tv/sync/history"
+    TRAKT_HISTORY_API_URL: str = "https://api.trakt.tv/sync/history"  # legacy, not used for full sync
+    TRAKT_WATCHED_MOVIES_API_URL: str = (
+        "https://api.trakt.tv/sync/watched/movies"
+    )
+    TRAKT_WATCHED_SHOWS_API_URL: str = "https://api.trakt.tv/sync/watched/shows"
     TMDB_API_URL: str = "https://api.themoviedb.org/3"
     OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
     # Base URL for the UI (Streamlit app). Used for OAuth redirect back to the UI when auth flow starts from the UI.

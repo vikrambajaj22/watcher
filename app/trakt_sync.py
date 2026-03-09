@@ -51,34 +51,28 @@ def sync_trakt_history():
     all_history = []
     seen_movies = {}
     seen_shows = {}
-    page = 1
-    per_page = 100  # trakt's max limit per page is 100
     unique = set()
-    while True:
-        params = {"page": page, "limit": per_page}
-        response = requests.get(
-            settings.TRAKT_HISTORY_API_URL,
+    # --- Movies: use /sync/watched/movies for full watched list ---
+    try:
+        resp_movies = requests.get(
+            settings.TRAKT_WATCHED_MOVIES_API_URL,
             headers=settings.trakt_headers,
-            params=params,
         )
-        logger.info("Syncing Trakt history: %s (page %s)", response.status_code, page)
-        if response.status_code != 200:
-            break
-        page_data = response.json()
-        logger.info("Fetched %s items on page %s", len(page_data), page)
-        if not page_data:
-            break
-        for item in page_data:
-            item_type = item.get("type")
-            watched_at = item.get("watched_at")
-            if item_type == "movie":
-                movie = item.get("movie")
-                tmdb_movie_id = None
-                if movie and movie.get("ids"):
-                    tmdb_movie_id = movie.get("ids", {}).get("tmdb")
-                    unique.add(("movie", tmdb_movie_id))
+        logger.info(
+            "Syncing Trakt watched movies: %s", resp_movies.status_code
+        )
+        if resp_movies.status_code == 200:
+            movies_data = resp_movies.json() or []
+            logger.info("Fetched %s watched movies from Trakt", len(movies_data))
+            for item in movies_data:
+                movie = item.get("movie") or {}
+                ids = movie.get("ids") or {}
+                tmdb_movie_id = ids.get("tmdb")
                 if not tmdb_movie_id:
                     continue
+                unique.add(("movie", tmdb_movie_id))
+                watched_at = item.get("last_watched_at")
+                plays = int(item.get("plays") or 0)
                 movie_entry = seen_movies.setdefault(
                     tmdb_movie_id,
                     {
@@ -88,8 +82,7 @@ def sync_trakt_history():
                         "latest": watched_at,
                     },
                 )
-                movie_entry["count"] += 1
-                # update earliest and latest watched_at
+                movie_entry["count"] += plays
                 if watched_at:
                     if (
                         not movie_entry["earliest"]
@@ -98,48 +91,92 @@ def sync_trakt_history():
                         movie_entry["earliest"] = watched_at
                     if not movie_entry["latest"] or watched_at > movie_entry["latest"]:
                         movie_entry["latest"] = watched_at
-            elif item_type == "episode":
-                show = item.get("show")
-                episode = item.get("episode")
-                tmdb_show_id = None
-                if show and show.get("ids"):
-                    tmdb_show_id = show.get("ids", {}).get("tmdb")
-                    unique.add(("tv", tmdb_show_id))
-                if not (
-                    tmdb_show_id
-                    and episode
-                    and episode.get("season") is not None
-                    and episode.get("number") is not None
-                ):
+        else:
+            logger.warning(
+                "Failed to fetch Trakt watched movies: %s", resp_movies.status_code
+            )
+    except Exception as e:
+        logger.error("Error fetching Trakt watched movies: %s", repr(e), exc_info=True)
+
+    # --- Shows: use /sync/watched/shows for full watched list + per-episode plays ---
+    try:
+        resp_shows = requests.get(
+            settings.TRAKT_WATCHED_SHOWS_API_URL,
+            headers=settings.trakt_headers,
+        )
+        logger.info(
+            "Syncing Trakt watched shows: %s", resp_shows.status_code
+        )
+        if resp_shows.status_code == 200:
+            shows_data = resp_shows.json() or []
+            logger.info("Fetched %s watched shows from Trakt", len(shows_data))
+            for item in shows_data:
+                show = item.get("show") or {}
+                ids = show.get("ids") or {}
+                tmdb_show_id = ids.get("tmdb")
+                if not tmdb_show_id:
                     continue
-                ep_key = (episode["season"], episode["number"])
+                unique.add(("tv", tmdb_show_id))
+
+                # Build episode watch map from seasons/episodes
+                episodes_map = {}
+                episode_watch_total = 0
+                earliest = None
+                latest = None
+                seasons = item.get("seasons") or []
+                for season in seasons:
+                    season_number = season.get("number")
+                    if season_number is None:
+                        continue
+                    for ep in season.get("episodes") or []:
+                        ep_number = ep.get("number")
+                        if ep_number is None:
+                            continue
+                        ep_key = (season_number, ep_number)
+                        plays = int(ep.get("plays") or 0)
+                        episodes_map[ep_key] = episodes_map.get(ep_key, 0) + plays
+                        episode_watch_total += plays
+                        ep_last = ep.get("last_watched_at") or item.get(
+                            "last_watched_at"
+                        )
+                        if ep_last:
+                            if not earliest or ep_last < earliest:
+                                earliest = ep_last
+                            if not latest or ep_last > latest:
+                                latest = ep_last
+
+                if not episodes_map:
+                    # no usable episode data; skip
+                    continue
+
                 show_entry = seen_shows.setdefault(
                     tmdb_show_id,
                     {
                         "item": item,
                         "episodes": {},
                         "episode_watch_total": 0,
-                        "earliest": watched_at,
-                        "latest": watched_at,
+                        "earliest": earliest,
+                        "latest": latest,
                     },
                 )
-                show_entry["episodes"].setdefault(ep_key, 0)
-                show_entry["episodes"][ep_key] += 1
-                show_entry["episode_watch_total"] += 1
-                # update earliest and latest watched_at
-                if watched_at:
-                    if (
-                        not show_entry["earliest"]
-                        or watched_at < show_entry["earliest"]
-                    ):
-                        show_entry["earliest"] = watched_at
-                    if not show_entry["latest"] or watched_at > show_entry["latest"]:
-                        show_entry["latest"] = watched_at
-        if len(page_data) < per_page:
-            break
-        page += 1
+                # merge episodes and totals in case of duplicates
+                for k, v in episodes_map.items():
+                    show_entry["episodes"][k] = show_entry["episodes"].get(k, 0) + v
+                show_entry["episode_watch_total"] += episode_watch_total
+                if earliest:
+                    if not show_entry["earliest"] or earliest < show_entry["earliest"]:
+                        show_entry["earliest"] = earliest
+                if latest:
+                    if not show_entry["latest"] or latest > show_entry["latest"]:
+                        show_entry["latest"] = latest
+        else:
+            logger.warning(
+                "Failed to fetch Trakt watched shows: %s", resp_shows.status_code
+            )
+    except Exception as e:
+        logger.error("Error fetching Trakt watched shows: %s", repr(e), exc_info=True)
 
-    logger.info("Total unique items fetched from Trakt history: %s", len(unique))
+    logger.info("Total unique items from Trakt watched lists: %s", len(unique))
 
     for tmdb_id, movie in seen_movies.items():
         item = movie["item"]

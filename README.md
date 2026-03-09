@@ -50,6 +50,8 @@ OPENAI_API_KEY=your-openai-key
 FAISS_INDEX_DIR=./faiss_index
 ```
 
+Watcher stores an aggregated view of your Trakt activity by calling Trakt's `/sync/watched/movies` and `/sync/watched/shows` endpoints (for full watched lists) and uses `/sync/last_activities` only to detect when it needs to resync.
+
 Install dependencies
 
 ```bash
@@ -178,7 +180,9 @@ curl -X POST http://localhost:8080/admin/faiss/rebuild -H 'Content-Type: applica
 - During a very large initial ingest avoid computing embeddings inline to reduce load on embedding providers and TMDB. After metadata is stable, run embedding/indexing passes with throttling and batching.
 
 ## Deployment
-TBD
+
+For a full, step-by-step guide to deploying Watcher (MongoDB VM + Cloud Run services + FAISS on GCP), see `DEPLOYMENT.md` in this repo.
+
 License
 
 MIT

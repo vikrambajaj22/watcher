@@ -265,8 +265,9 @@ def api_request(
     endpoint: str, method: str = "GET", data: Optional[Dict] = None
 ) -> Optional[Dict]:
     """Make API request to backend."""
-    # Use cache for GET requests
-    if method == "GET" and data is None:
+    # Use cache for GET requests, except for /history which should always reflect
+    # the latest synced watch history.
+    if method == "GET" and data is None and not endpoint.startswith("/history"):
         return cached_api_get(endpoint)
 
     url = f"{API_BASE_URL}{endpoint}"

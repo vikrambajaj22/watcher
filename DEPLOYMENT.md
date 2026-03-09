@@ -7,6 +7,8 @@ e2-micro VM, pushing data from local to GCP, and deploying backend and UI contai
 
 ## Set Up GCP Project
 
+You can either export environment variables manually as shown below, or (recommended for local workflows) keep them in a `.env.gcp` file at the repo root and run `source .env.gcp` before executing these commands.
+
 ### Create a new GCP project:
 ```bash
 gcloud projects create watcher-project --name="Watcher"
@@ -54,6 +56,23 @@ echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb
 sudo apt-get update
 sudo apt-get install -y mongodb-org
 ```
+
+#### Add swap to reduce OOM kills on e2-micro
+
+On many small GCE VMs (including e2-micro), there is no swap configured by default. When MongoDB plus the OS exceed physical RAM, the kernel may kill `mongod`. Adding a small swapfile uses disk as a safety valve and greatly reduces OOM crashes (at the cost of slower performance under heavy memory pressure).
+
+Run these commands **on the VM shell (not inside `mongosh`)**:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h
+```
+
+If `free -h` shows a non-zero `Swap` line, swap is enabled and will persist across reboots.
 
 #### Configure MongoDB to use less memory (optional for e2-micro) for cache size:
 
@@ -208,6 +227,7 @@ FAISS_SOURCE=$FAISS_SOURCE,\
 FAISS_BUCKET=$FAISS_BUCKET,\
 FAISS_PREFIX=$FAISS_PREFIX,\
 FAISS_MOUNT_PATH=$FAISS_MOUNT_PATH,\
+FAISS_PERSIST_DIR=$FAISS_PERSIST_DIR,\
 OPENAI_API_KEY=$OPENAI_API_KEY,\
 TMDB_API_KEY=$TMDB_API_KEY,\
 TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID,\
@@ -368,7 +388,7 @@ The bucket root is mounted at `/mnt/faiss`, so with artifacts under `v1/` in the
 ```bash
 gcloud run services update watcher-backend \
 --region $REGION \
---set-env-vars FAISS_SOURCE=gcs,FAISS_BUCKET=$FAISS_BUCKET,FAISS_PREFIX=v1
+--set-env-vars FAISS_SOURCE=gcs,FAISS_BUCKET=$FAISS_BUCKET,FAISS_PREFIX=v1,FAISS_PERSIST_DIR=/var/lib/faiss
 ```
 
 On the next cold start (or first start on a new instance), the backend will:

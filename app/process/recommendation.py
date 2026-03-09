@@ -28,24 +28,23 @@ class MediaRecommender:
         """Format watch history and keep the TMDB id for deduplication."""
         formatted_watch_history = []
         for item in watch_history:
-            if item.get("action") == "watch":
-                formatted_watch_history.append(
-                    {
-                        k: item.get(k)
-                        for k in [
-                            "id",
-                            "title",
-                            "year",
-                            "media_type",
-                            "watch_count",
-                            "completion_ratio",
-                            "watched_at",
-                            "earliest_watched_at",
-                            "latest_watched_at",
-                            "rewatch_engagement",
-                        ]
-                    }
-                )
+            formatted_watch_history.append(
+                {
+                    k: item.get(k)
+                    for k in [
+                        "id",
+                        "title",
+                        "year",
+                        "media_type",
+                        "watch_count",
+                        "completion_ratio",
+                        "watched_at",
+                        "earliest_watched_at",
+                        "latest_watched_at",
+                        "rewatch_engagement",
+                    ]
+                }
+            )
         return formatted_watch_history
 
     def load_watch_history(self, media_type: str = "movie"):
