@@ -644,6 +644,7 @@ def show_history_page():
 
     # compute metrics: if the user applied a server-side media filter, fetch an unfiltered (cached) summary
     # to show totals across all media; otherwise compute from the returned history_data.
+    overall = None
     try:
         if media_type_param:
             # fetch unfiltered, no-posters summary (cached) for totals
@@ -659,9 +660,71 @@ def show_history_page():
         total_movies = sum(1 for it in history_data if it.get("media_type") == "movie")
         total_shows = sum(1 for it in history_data if it.get("media_type") == "tv")
 
+    # --- Stats: compute total minutes including rewatches and convert to days ---
+    try:
+        # use overall if available to compute totals across all media when filter applied
+        items_for_calc = overall if (media_type_param and overall) else history_data
+        total_minutes = 0
+        movie_minutes = 0
+        show_minutes = 0
+        for it in items_for_calc:
+            try:
+                if it.get("media_type") == "movie":
+                    runtime = int(it.get("runtime_minutes") or 0)
+                    watch_count = int(it.get("watch_count") or 0)
+                    mins = runtime * watch_count
+                    total_minutes += mins
+                    movie_minutes += mins
+                else:
+                    # TV shows: use episode runtime and total episode watch count (includes rewatches)
+                    ep_runtime = int(it.get("episode_runtime_minutes") or 0)
+                    ep_watch_count = int(it.get("episode_watch_count") or 0)
+                    # fallback: if episode_watch_count missing but watched_episodes available, use watched_episodes * avg watch per episode
+                    if ep_watch_count == 0:
+                        watched_eps = int(it.get("watched_episodes") or 0)
+                        # derive avg watches per episode from rewatch_engagement if present
+                        re_eng = float(it.get("rewatch_engagement") or 0.0)
+                        # approximate avg watches = rewatch_engagement / completion_ratio when available
+                        completion = float(it.get("completion_ratio") or 0.0)
+                        if completion > 0 and re_eng > 0:
+                            try:
+                                avg_watches = re_eng / completion
+                            except Exception:
+                                avg_watches = 1.0
+                        else:
+                            avg_watches = 1.0
+                        ep_watch_count = int(watched_eps * avg_watches)
+                    mins = ep_runtime * ep_watch_count
+                    total_minutes += mins
+                    show_minutes += mins
+            except Exception:
+                continue
+        # prepare display strings (compute hours/days inside formatter as needed)
+        def fmt_minutes(m):
+            # Format as: "M min (D days and H hrs)"
+            try:
+                mm = int(m or 0)
+            except Exception:
+                return "N/A"
+            days = mm // (60 * 24)
+            hours = (mm - days * 24 * 60) // 60
+            return f"{mm:,} min ({days} days and {hours} hrs)"
+
+        minutes_display = fmt_minutes(total_minutes)
+        movie_minutes_display = fmt_minutes(movie_minutes)
+        show_minutes_display = fmt_minutes(show_minutes)
+    except Exception:
+        minutes_display = "N/A"
+        movie_minutes_display = "N/A"
+        show_minutes_display = "N/A"
+
     mcol1, mcol2, mcol3 = st.columns(3)
     mcol1.metric("🎬 Movies Watched", total_movies)
+    mcol1.caption(f"{movie_minutes_display} (includes rewatches)")
     mcol2.metric("📺 Shows Watched", total_shows)
+    mcol2.caption(f"{show_minutes_display} (includes rewatches)")
+    mcol3.metric("⏱️ Total Watch Time", "")
+    mcol3.caption(f"{minutes_display} (includes rewatches)")
 
     # if a sync job was scheduled, probe job status and poll if needed; once completed, clear job flags
     if st.session_state.get("sync_in_progress", False):
@@ -692,13 +755,13 @@ def show_history_page():
                         _safe_rerun()
                 else:
                     # still running - show ephemeral message and allow polling below
-                    st.warning("⏳ Sync running in background... Polling job status...")
+                    st.warning("⏳ Sync running in background... Polling job status")
             except Exception:
-                st.warning("⏳ Sync running in background... Polling job status...")
+                st.warning("⏳ Sync running in background... Polling job status")
 
         # Poll job status (blocking spinner for up to 60s) if not already polled in this session run
         elif job_id and not polled:
-            st.warning("⏳ Sync running in background... Polling job status...")
+            st.warning("⏳ Sync running in background... Polling job status")
             with st.spinner("Waiting for sync to complete (this may take a while)..."):
                 interval = 2
                 waited = 0

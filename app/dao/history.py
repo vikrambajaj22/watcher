@@ -100,12 +100,15 @@ def get_watch_history(media_type=None, include_posters: bool = True):
         if unique_ids:
             try:
                 # single query to fetch poster paths and media_type for all ids
+                # also fetch runtime fields so UI can compute minutes/days
                 cursor = tmdb_metadata_collection.find(
                     {"id": {"$in": unique_ids}},
-                    {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1},
+                    {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1, "runtime": 1, "episode_run_time": 1},
                 )
                 # build exact map keyed by (id, media_type) only
                 poster_map_exact = {}
+                runtime_map = {}
+                episode_runtime_map = {}
                 for d in cursor:
                     try:
                         _id = int(d.get("id"))
@@ -115,10 +118,30 @@ def get_watch_history(media_type=None, include_posters: bool = True):
                     ppath = d.get("poster_path")
                     if ppath:
                         poster_map_exact[(_id, mtype)] = ppath
+                    # movie runtime
+                    rt = d.get("runtime")
+                    if rt:
+                        try:
+                            runtime_map[(_id, mtype)] = int(rt)
+                        except Exception:
+                            pass
+                    # tv episode runtime - TMDB stores as list sometimes
+                    ert = d.get("episode_run_time") or d.get("episode_runtime")
+                    if ert:
+                        try:
+                            # if list, take first element; if int, use directly
+                            if isinstance(ert, list) and len(ert) > 0:
+                                episode_runtime_map[(_id, mtype)] = int(ert[0])
+                            else:
+                                episode_runtime_map[(_id, mtype)] = int(ert)
+                        except Exception:
+                            pass
             except Exception:
                 poster_map_exact = {}
+                runtime_map = {}
+                episode_runtime_map = {}
 
-            # attach poster_path to history items where available, require exact media_type match
+            # attach poster_path and runtime info to history items where available, require exact media_type match
             for item in history:
                 tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
                 if not tmdb_id:
@@ -131,6 +154,13 @@ def get_watch_history(media_type=None, include_posters: bool = True):
                 p = poster_map_exact.get((key_id, media))
                 if p:
                     item["poster_path"] = p
+                # attach runtime info
+                m_rt = runtime_map.get((key_id, media))
+                if m_rt is not None:
+                    item["runtime_minutes"] = m_rt
+                e_rt = episode_runtime_map.get((key_id, media))
+                if e_rt is not None:
+                    item["episode_runtime_minutes"] = e_rt
         enrich_time = time.time() - t0
     else:
         enrich_time = 0.0

@@ -27,7 +27,11 @@ TMDB_FIELDS = [
     "rewatch_engagement",
     "credits",
     "keywords",
-    "popularity"
+    "popularity",
+    # runtime fields
+    "runtime",
+    "episode_run_time",
+    "episode_runtime",
 ]
 
 # ----- Connect -----
