@@ -6,13 +6,50 @@ A single consolidated plan covering optimizations, TMDB sync, LangGraph agentic 
 
 ---
 
+## Phase 0: Prevent tmdb_metadata Loss (URGENT)
+
+**Problem:** `tmdb_metadata` keeps vanishing on watcher-mongo (e2-micro VM). Swap helped with watch_history OOMs but tmdb_metadata is still being lost. Likely triggers:
+- **Trakt sync (watch history)** — Runs when you hit Recommend and there's new Trakt activity. Does `delete_many({})` + `insert_many()` on watch_history. That burst of writes can spike MongoDB memory on the VM. OOM kill → mongod dies → recovery corrupts/loses all collections including tmdb_metadata. Sync only touches watch_history, but the crash affects the whole DB.
+- **GCE VM restarts** (maintenance, preemption) — abrupt shutdown, MongoDB recovery fails
+- **OOM from MongoDB alone** — 1.34GB tmdb_metadata (largest collection) + 0.3GB cache on 1GB VM; tight headroom
+
+**No app code deletes tmdb_metadata** — the app only does `update_one` upserts. The loss is from MongoDB process crashes.
+
+### 0.1 Options (pick one or combine)
+
+| Option | Effort | Description |
+|--------|--------|-------------|
+| **A) Automated backup off-VM** | Low | MongoDB data lives on the VM disk (DEPLOYMENT.md: persistent disk, no auto-delete). When mongod crashes, that disk can be corrupted — backup on the same disk doesn't help. Use `mongodump` → upload to **GCS** (or another off-VM location) so you have a copy that survives VM crashes. Cron on VM or Cloud Run Job. Add `tools/backup_to_gcs.sh` and `tools/restore_from_gcs.sh`. |
+| **B) Larger VM** | Low | Upgrade watcher-mongo from e2-micro (1GB) to e2-small (2GB). ~$7/mo vs ~$3.5/mo. Reduces OOM frequency. |
+| **C) MongoDB Atlas** | N/A | Atlas M0 free tier is 512MB — tmdb_metadata.bson alone is ~1.34GB, so not viable. Paid tiers would work but add cost. |
+| **D) Accelerate Turso migration** | Medium | Move Phase 8 (Turso) to now. Turso free tier has 9GB; no OOM. Removes MongoDB VM entirely. |
+| **E) Reduce MongoDB cache further** | Low | In `mongod.conf`, try `cacheSizeGB: 0.2` (from 0.3). Frees RAM; may slow queries. |
+
+### 0.2 Recommended Immediate Actions
+
+1. **Backup now** — Run `python tools/mongo_local_dump_export.py` locally (or from a machine that can reach the VM), dump to a safe location. You need a restore point.
+2. **Add off-VM backup cron** — Daily `mongodump` of `watcher` DB → upload to GCS (or other off-VM storage). The VM disk is where MongoDB lives; when it corrupts, you need a copy elsewhere. Document restore steps in DEPLOYMENT.md.
+3. **Move Trakt check off recommend path** (Phase 2) — `check_trakt_last_activities_and_sync` runs on every Recommend and can trigger a full watch_history sync. That write burst may be the OOM trigger. Run Trakt sync only via sync_worker (or a dedicated job), not on every recommend.
+4. **Consider B** — If backups aren't enough (restoring is painful), upgrade to e2-small. Atlas free tier is too small (512MB limit; tmdb_metadata is ~1.34GB).
+
+### 0.3 Restore When Empty
+
+If tmdb_metadata is empty and you have a dump:
+
+```bash
+# From machine with dump
+mongorestore --drop --db watcher --collection tmdb_metadata mongo_dumps/tmdb_metadata.bson --host <MONGO_VM_IP> -u <user> -p <pass> --authenticationDatabase admin
+```
+
+---
+
 ## Current State Summary
 
 | Area | Current | Gap |
 |------|---------|-----|
 | **Users** | Single user (one token file, last auth wins) | No user isolation |
 | **TMDB sync** | Manual via Admin; `sync_worker` not deployed | No automatic new-item sync in production |
-| **DB** | MongoDB on e2-micro (0.3GB cache, size limits) | Scaling and cost concerns |
+| **DB** | MongoDB on e2-micro (0.3GB cache, size limits) | tmdb_metadata keeps vanishing (OOM/crash); scaling and cost concerns |
 | **Recommendations** | Linear flow: KNN → LLM | No agentic orchestration, no human-in-loop |
 | **Performance** | N+1 in clusters, no indexes | Slower than necessary |
 
@@ -363,6 +400,7 @@ Single user is fine for now. Defer until needed.
 
 | Phase | Files |
 |-------|------|
+| 0 | `tools/backup_to_gcs.sh`, `tools/restore_from_gcs.sh`, `DEPLOYMENT.md`, VM/cron config |
 | 1 | `app/db.py`, `app/api.py`, `pyproject.toml` (Ruff) |
 | 2 | `app/embeddings.py`, `app/process/recommendation.py`, `app/mcp_will_like.py`, `app/utils/llm_orchestrator.py`, `app/utils/knn_utils.py`, `ui/streamlit_app.py` |
 | 3 | `app/tmdb_sync.py`, `sync_worker.py`, `Dockerfile`, `DEPLOYMENT.md`, `app/api.py` |
