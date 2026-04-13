@@ -1,0 +1,21 @@
+# Build and push the React UI image. Invoke from repo root, e.g.:
+#   gcloud builds submit ./frontend --config=./frontend/cloudbuild.yaml \
+#     --substitutions=_UI_IMAGE="$UI_IMAGE",_VITE_API_BASE_URL="$BACKEND_URL",_VITE_ADMIN_API_KEY="$ADMIN_API_KEY"
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - VITE_API_BASE_URL=${_VITE_API_BASE_URL}
+      - --build-arg
+      - VITE_ADMIN_API_KEY=${_VITE_ADMIN_API_KEY}
+      - -t
+      - ${_UI_IMAGE}
+      - .
+images:
+  - ${_UI_IMAGE}
+# Override all of these via --substitutions when invoking (see DEPLOYMENT.md).
+substitutions:
+  _UI_IMAGE: us-central1-docker.pkg.dev/REPLACE_PROJECT_ID/watcher/ui
+  _VITE_API_BASE_URL: ""
+  _VITE_ADMIN_API_KEY: ""

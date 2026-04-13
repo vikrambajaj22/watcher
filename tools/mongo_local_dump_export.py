@@ -1,3 +1,8 @@
+"""Export watcher DB to flat per-collection .bson files for small hosts (e.g. e2-micro).
+
+By default, tmdb_metadata is pruned to TMDB_FIELDS below to save disk and transfer size.
+Use MONGO_DUMP_PRUNE_TMDB=0 for full TMDB documents. See DEPLOYMENT.md Option B.
+"""
 import os
 from pymongo import MongoClient
 from bson import encode
@@ -8,6 +13,12 @@ MONGO_URI = "mongodb://localhost:27017"
 DB_NAME = "watcher"
 OUTPUT_DIR = Path("mongo_dumps")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Preserve ObjectIds by default so mongorestore round-trips match your local DB.
+# Set MONGO_DUMP_STRIP_OBJECT_ID=1 to drop _id (smaller files; new ids on restore).
+_STRIP_OBJECT_ID = os.environ.get("MONGO_DUMP_STRIP_OBJECT_ID", "0") == "1"
+# Default pruning keeps exporter output small; set MONGO_DUMP_PRUNE_TMDB=0 for full tmdb_metadata docs.
+_PRUNE_TMDB = os.environ.get("MONGO_DUMP_PRUNE_TMDB", "1") == "1"
 
 # Columns to keep for tmdb_metadata
 TMDB_FIELDS = [
@@ -76,6 +87,12 @@ def _prune_credits(credits: dict) -> dict:
         "crew": pruned_crew,
     }
 
+print(
+    "mongo_local_dump_export: "
+    f"STRIP_OBJECT_ID={_STRIP_OBJECT_ID}, PRUNE_TMDB={_PRUNE_TMDB} "
+    "(set MONGO_DUMP_STRIP_OBJECT_ID=1 / MONGO_DUMP_PRUNE_TMDB=0 to change)"
+)
+
 # ----- Iterate collections -----
 for coll_name in db.list_collection_names():
     coll = db[coll_name]
@@ -87,10 +104,11 @@ for coll_name in db.list_collection_names():
         cursor = coll.find({})
         for doc in cursor:
             doc_copy = doc.copy()
-            doc_copy.pop("_id", None)  # optional: remove ObjectId to reduce size
+            if _STRIP_OBJECT_ID:
+                doc_copy.pop("_id", None)
 
-            # Field filtering for tmdb_metadata
-            if coll_name == "tmdb_metadata":
+            # Field filtering for tmdb_metadata (optional; off = full documents)
+            if coll_name == "tmdb_metadata" and _PRUNE_TMDB:
                 doc_copy = {k: v for k, v in doc_copy.items() if k in TMDB_FIELDS}
 
                 if "credits" in doc_copy:

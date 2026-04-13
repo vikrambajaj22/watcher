@@ -11,29 +11,43 @@ Watcher is a personal media discovery and recommendation application that integr
 - ✨ AI-powered recommendations with human-readable reasoning
 - 🔍 Similar-item search by TMDB id or free-text
 - ❓Will I Like It? — personalized LLM predictions on specific titles
-- ⚙️ Admin panel for sync, embedding generation, FAISS management, and cache control
+- ⚙️ Maintenance tools for sync, embeddings, search index, and cache control
 
 ## Quick Start
 
-Start the whole project:
+### Local dev (React UI)
+
+**One command** from the repo root (loads `.env`, starts API on **8080** and Vite on **8501**):
 
 ```bash
 ./start.sh
 ```
 
-Access:
-- Streamlit UI: http://localhost:8501
-- Backend API docs: http://localhost:8080/docs
+`start.sh` sets **`UI_BASE_URL=http://localhost:8501`** when unset (match this in your **Trakt app** redirect / allowed origins). Logs: `backend.log`, `frontend.log`.
 
-Or start components separately:
+Open **http://localhost:8501**. The SPA uses Vite’s **`/api-proxy`** → `http://127.0.0.1:8080` in dev (no `VITE_API_BASE_URL` needed).
+
+Keep **`TRAKT_REDIRECT_URI`** on the API callback (e.g. `http://127.0.0.1:8080/auth/trakt/callback`).
+
+If the API has **`ADMIN_API_KEY`** set, add **`frontend/.env`** (or `.env.local`):
+
+```env
+VITE_ADMIN_API_KEY=your-same-secret-as-backend
+```
+
+More detail: [frontend/README.md](frontend/README.md). How the SPA calls the API and optional `ADMIN_API_KEY` / `VITE_ADMIN_API_KEY`: [DEVELOPMENT.md](DEVELOPMENT.md).
+
+**Or two terminals** (same behavior without `start.sh`):
 
 ```bash
-# Backend
-uvicorn app.main:app --reload --port 8080
+# Terminal 1
+source .env && export UI_BASE_URL=http://localhost:8501 && uvicorn app.main:app --reload --port 8080
 
-# Frontend (Streamlit)
-./run_streamlit.sh
+# Terminal 2
+cd frontend && npm install && npm run dev
 ```
+
+Production builds of the React app use **`VITE_API_BASE_URL`** and **`WATCHER_CORS_ORIGINS`** on the API; local API defaults allow `http://localhost:8501`.
 
 ### Environment
 
@@ -43,13 +57,15 @@ Create a `.env` in the repo root with the following values (examples):
 TRAKT_CLIENT_ID=your-client-id
 TRAKT_CLIENT_SECRET=your-client-secret
 TRAKT_REDIRECT_URI=http://127.0.0.1:8080/auth/trakt/callback
+# Browser UI after Trakt login (Vite dev + Trakt app should match this host/port).
+UI_BASE_URL=http://localhost:8501
 TMDB_API_KEY=your-tmdb-key
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=watcher
 OPENAI_API_KEY=your-openai-key
 FAISS_INDEX_DIR=./faiss_index
 
-# Optional: if set, required on admin/MCP/sync routes as header X-API-Key (see Streamlit / curl below)
+# Optional: if set, required on admin/MCP/sync routes as header X-API-Key (see curl examples below)
 # ADMIN_API_KEY=your-long-random-secret
 ```
 
@@ -119,7 +135,7 @@ If `ADMIN_API_KEY` is set in the environment, these routes (and other admin/MCP/
 
 Use `localhost:8080/redoc` to explore the full API.
 
-UI: Streamlit admin pages let you:
+UI: The React app **Maintenance** section (and these HTTP endpoints) let you:
 - Trigger full rebuilds, per-item upserts, and detached rebuilds
 - Inspect `sidecar_meta` (model, dims, num_vectors)
 - See whether the current process has the index cached
@@ -144,7 +160,7 @@ PY
 python -m app.faiss_rebuild_cli --dim 384 --factory "IDMap,IVF100,Flat"
 ```
 
-Or trigger from the API/UI (admin panel) using the "Rebuild FAISS" controls.
+Or trigger from the API / React **Maintenance** page using the rebuild controls.
 
 - Small updates: use single-item upsert flows from the UI or `POST /admin/embed/item` to avoid full rebuilds when possible.
 
@@ -183,7 +199,7 @@ curl -X POST http://localhost:8080/admin/embed/item -H 'Content-Type: applicatio
 curl -X POST http://localhost:8080/admin/faiss/rebuild -H 'Content-Type: application/json' -d '{"dim": 384, "factory": "IDMap,IVF100,Flat"}'
 ```
 
-When `ADMIN_API_KEY` is configured, pass the same value in the `X-API-Key` header on every admin/MCP/visualize request. `./start.sh` and `./run_streamlit.sh` load `.env` so Streamlit picks up `ADMIN_API_KEY` automatically.
+When `ADMIN_API_KEY` is configured, pass the same value in the `X-API-Key` header on every admin/MCP/visualize request. `./start.sh` loads `.env` for the API; set `VITE_ADMIN_API_KEY` in `frontend/.env` when the browser must call those routes (see [DEVELOPMENT.md](DEVELOPMENT.md)).
 
 #### Development Notes
 

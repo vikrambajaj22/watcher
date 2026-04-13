@@ -10,3 +10,6 @@ build/
 dist/
 .git
 .gitignore
+
+# React UI is built separately (frontend/Dockerfile); not copied into API image.
+frontend/

@@ -1,87 +1,111 @@
 #!/bin/bash
 
-# Watcher - Start Both Backend and Frontend
+# Watcher — start FastAPI + React (Vite) UI
 
-echo "🎬 Starting Watcher Application..."
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT" || exit 1
+
+BACKEND_PID=""
+FRONTEND_PID=""
+
+echo "Starting Watcher Application..."
 echo ""
 
-# Check if .env exists
 if [ ! -f .env ]; then
-    echo "❌ Error: .env file not found!"
+    echo "Error: .env file not found!"
     echo "Please create a .env file with required configuration."
     exit 1
 fi
-# Export vars for child processes (Streamlit uses os.environ; matches backend when using ADMIN_API_KEY).
+
 set -a
 # shellcheck disable=SC1091
 source .env
 set +a
 
-# Function to cleanup background processes
+# Trakt OAuth return URL — must match Vite dev port and your Trakt app settings.
+export UI_BASE_URL="${UI_BASE_URL:-http://localhost:8501}"
+
 cleanup() {
     echo ""
-    echo "🛑 Shutting down..."
-    kill -9 $BACKEND_PID 2>/dev/null
-    kill -9 $FRONTEND_PID 2>/dev/null
+    echo "Shutting down..."
+    [ -n "${BACKEND_PID}" ] && kill -9 "${BACKEND_PID}" 2>/dev/null || true
+    [ -n "${FRONTEND_PID}" ] && kill -9 "${FRONTEND_PID}" 2>/dev/null || true
+    # npm/vite may leave children; free dev ports
+    for port in 8080 8501; do
+        pids=$(lsof -t -i:"$port" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            # shellcheck disable=SC2086
+            kill -9 $pids 2>/dev/null || true
+        fi
+    done
     exit 0
 }
 
-# Set trap to cleanup on exit
 trap cleanup SIGINT SIGTERM
 
-# Start the FastAPI backend
-echo "🚀 Starting FastAPI backend on http://localhost:8080..."
-# kill any existing processes on the same port 8080
-kill -9 $(lsof -t -i:8080)
-uvicorn app.main:app --reload --port 8080 > backend.log 2>&1 &
+echo "Starting FastAPI backend on http://localhost:8080..."
+pids=$(lsof -t -i:8080 2>/dev/null || true)
+if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+fi
+uvicorn app.main:app --reload --port 8080 >"$REPO_ROOT/backend.log" 2>&1 &
 BACKEND_PID=$!
 
-# Wait a bit for backend to start
 sleep 3
 
-# Check if backend started successfully
-if ! kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "❌ Failed to start backend. Check backend.log for details."
+if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo "Failed to start backend. Check backend.log for details."
     exit 1
 fi
 
-echo "✅ Backend started (PID: $BACKEND_PID)"
+echo "Backend started (PID: $BACKEND_PID)"
 echo ""
 
-# Start the Streamlit frontend
-echo "🎨 Starting Streamlit frontend on http://localhost:8501..."
-export API_BASE_URL=${API_BASE_URL:-"http://localhost:8080"}
-export IMAGES_DIR=ui/static/images
-streamlit run ui/streamlit_app.py --server.port 8501 --server.address localhost > frontend.log 2>&1 &
+if [ ! -f frontend/package.json ]; then
+    echo "frontend/package.json not found."
+    exit 1
+fi
+
+if [ ! -d frontend/node_modules ]; then
+    echo "Installing frontend dependencies (first run)..."
+    (cd frontend && npm install)
+fi
+
+echo "Starting React UI on http://localhost:8501..."
+pids=$(lsof -t -i:8501 2>/dev/null || true)
+if [ -n "$pids" ]; then
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+fi
+(cd frontend && npm run dev) >"$REPO_ROOT/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 
-# Wait a bit for frontend to start
 sleep 3
 
-# Check if frontend started successfully
-if ! kill -0 $FRONTEND_PID 2>/dev/null; then
-    echo "❌ Failed to start frontend. Check frontend.log for details."
-    kill $BACKEND_PID 2>/dev/null
+if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    echo "Failed to start frontend. Check frontend.log for details."
+    kill "$BACKEND_PID" 2>/dev/null || true
     exit 1
 fi
 
-echo "✅ Frontend started (PID: $FRONTEND_PID)"
+echo "Frontend started (PID: $FRONTEND_PID)"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🎬 Watcher is running!"
+echo "Watcher is running!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📱 Frontend UI:  http://localhost:8501"
-echo "🔧 Backend API:  http://localhost:8080"
-echo "📚 API Docs:     http://localhost:8080/docs"
+echo "React UI:     http://localhost:8501"
+echo "Backend API:  http://localhost:8080"
+echo "API Docs:     http://localhost:8080/docs"
 echo ""
-echo "📝 Logs:"
+echo "UI_BASE_URL=$UI_BASE_URL (set in .env to override)"
+echo ""
+echo "Logs:"
 echo "   Backend:  tail -f backend.log"
 echo "   Frontend: tail -f frontend.log"
 echo ""
 echo "Press Ctrl+C to stop both services..."
 echo ""
 
-# Wait for either process to exit
-wait $BACKEND_PID $FRONTEND_PID
-
+wait "$BACKEND_PID" "$FRONTEND_PID"

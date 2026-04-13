@@ -4,6 +4,8 @@ A single consolidated plan covering optimizations, TMDB sync, LangGraph agentic 
 
 **Phases are ordered in execution order — work through them top to bottom.**
 
+**Developer / operator reference (React UI ↔ API, optional route lock):** [DEVELOPMENT.md](DEVELOPMENT.md).
+
 ---
 
 ## Phase 0: Prevent tmdb_metadata Loss (URGENT)
@@ -123,7 +125,7 @@ Add Ruff for consistent formatting and import sorting. Add `pyproject.toml` or `
 |-------------|--------|-------------|
 | **Watched filter option** | Low | Add optional `exclude_watched: bool` to Similar Items UI/API. |
 
-### 2.4 Watch History UI (`ui/streamlit_app.py`)
+### 2.4 Watch History UI (React `frontend/src/pages/HistoryPage.tsx`)
 
 | Improvement | Effort | Description |
 |-------------|--------|-------------|
@@ -204,7 +206,7 @@ In `app/tmdb_sync.py`:
 - Return: `[{ id, title, media_type, role?, poster_path }]` — titles from watch history where actor appears.
 - UI: New tab or section "Actor Search" — input actor name, show grid of matching titles from history.
 
-**Files:** `app/api.py`, `app/dao/history.py` (or new `app/dao/actors.py`), `ui/streamlit_app.py`.
+**Files:** `app/api.py`, `app/dao/history.py` (or new `app/dao/actors.py`), `frontend/`.
 
 ---
 
@@ -239,7 +241,7 @@ User Query → Parse Intent → Route
 ### 5.4 Integration
 
 - New endpoint: `POST /recommend/agent` — accepts natural language, returns streaming or structured response.
-- Streamlit: "Chat with Watcher" tab — conversational UI.
+- React: optional "Chat with Watcher" view — conversational UI.
 - Learning value: Good way to learn LangGraph's `StateGraph`, conditional edges, and tool nodes.
 
 ---
@@ -289,7 +291,7 @@ User Query → Parse Intent → Route
 | Improvement | Effort | Description |
 |-------------|--------|-------------|
 | **Sort options** | Low | Add "Recently watched", "By year", "By title." |
-| **UI state handling** | Low | Streamlit session state, tab persistence, form state. |
+| **UI state handling** | Low | React Router + component state; optional URL params for deep links. |
 | **Language filter** | Low | Filter history/recommendations by `original_language`. |
 
 ### 6.6 Embeddings
@@ -353,18 +355,9 @@ Stay on MongoDB but add indexes and optimize; migrate only when size/cost become
 
 ## Phase 9: Full UI Overhaul
 
-Replace Streamlit with a proper frontend (e.g. React, Next.js, or Vue) for better UX, layout control, and mobile support.
+**Status:** The React SPA in `frontend/` is the supported UI.
 
-**Scope:**
-- New SPA or SSR app that consumes the existing FastAPI backend.
-- Recreate all current views: Home, Watch History, Visual Explorer, Recommendations, Will I Like, Similar Items, Admin, Actor Search.
-- Improve: responsive layout, state management, no full-page re-runs, richer interactions (e.g. Visual Explorer drill-down).
-- Auth: session/cookie handling for Trakt OAuth flow.
-
-**Considerations:**
-- Backend API stays unchanged; UI is a new client.
-- Deploy as separate Cloud Run service (like current Streamlit) or static + CDN.
-- Effort: medium–high. Do after core features (actor search, LangGraph, Turso) are stable.
+**Optional follow-ups:** Actor search and other new views; responsive polish; route-level code splitting; static deploy (see `DEPLOYMENT.md`).
 
 ---
 
@@ -402,12 +395,12 @@ Single user is fine for now. Defer until needed.
 |-------|------|
 | 0 | `tools/backup_to_gcs.sh`, `tools/restore_from_gcs.sh`, `DEPLOYMENT.md`, VM/cron config |
 | 1 | `app/db.py`, `app/api.py`, `pyproject.toml` (Ruff) |
-| 2 | `app/embeddings.py`, `app/process/recommendation.py`, `app/mcp_will_like.py`, `app/utils/llm_orchestrator.py`, `app/utils/knn_utils.py`, `ui/streamlit_app.py` |
+| 2 | `app/embeddings.py`, `app/process/recommendation.py`, `app/mcp_will_like.py`, `app/utils/llm_orchestrator.py`, `app/utils/knn_utils.py`, `frontend/` |
 | 3 | `app/tmdb_sync.py`, `sync_worker.py`, `Dockerfile`, `DEPLOYMENT.md`, `app/api.py` |
-| 4 | `app/api.py`, `app/dao/` (actors), `ui/streamlit_app.py` |
-| 5 | New: `app/agent/`, `app/api.py`, `ui/streamlit_app.py` |
-| 6 | `app/embeddings.py`, `app/process/recommendation.py`, `app/mcp_will_like.py`, `app/api.py`, `app/utils/llm_orchestrator.py`, `app/utils/knn_utils.py`, `ui/streamlit_app.py` |
+| 4 | `app/api.py`, `app/dao/` (actors), `frontend/` |
+| 5 | New: `app/agent/`, `app/api.py`, `frontend/` |
+| 6 | `app/embeddings.py`, `app/process/recommendation.py`, `app/mcp_will_like.py`, `app/api.py`, `app/utils/llm_orchestrator.py`, `app/utils/knn_utils.py`, `frontend/` |
 | 7 | Various — Trakt sync, ratings, etc. |
 | 8 | New: `app/db_turso.py`, migration script, `app/config/settings.py`, `DEPLOYMENT.md` |
 | 9 | New frontend app (e.g. `frontend/` or `ui-next/`), `Dockerfile`, `DEPLOYMENT.md` |
-| 10 | `app/auth/`, `app/dao/history.py`, `app/db.py`, `app/api.py`, `ui/streamlit_app.py` |
+| 10 | `app/auth/`, `app/dao/history.py`, `app/db.py`, `app/api.py`, `frontend/` |
