@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 def load_tool(tool_name: str) -> Dict[str, Any] | None:
     """Load tool schema from JSON file with name <tool_name>.json in tools/."""
     schema_path = os.path.join(
-        os.path.dirname(__file__), "..", "tools", tool_name + ".json"
+        os.path.dirname(__file__), "..", "..", "tools", tool_name + ".json"
     )
     try:
         with open(schema_path, "r") as f:
@@ -198,14 +198,14 @@ def call_model_with_mcp_function(
     msg = choice.message
 
     # check if model called a function
-    if msg.get("function_call"):
-        fn_call = msg["function_call"]
-        fn_name = fn_call.get("name")
-        args_text = fn_call.get("arguments")
+    fn_call = getattr(msg, "function_call", None)
+    if fn_call:
+        fn_name = getattr(fn_call, "name", None)
+        args_text = getattr(fn_call, "arguments", None)
         logger.info("Model requested function call: %s", fn_name)
 
         try:
-            args = json.loads(args_text)
+            args = json.loads(args_text or "{}")
         except Exception as e:
             logger.error(
                 "Failed to parse function arguments JSON: %s", repr(e), exc_info=True
@@ -236,11 +236,12 @@ def call_model_with_mcp_function(
             return {"final_content": None, "function_result": None, "raw": resp}
 
         # send function result back to the model so it can produce a final assistant reply
+        fn_call_dict = {"name": fn_name, "arguments": args_text}
         followup = client.chat.completions.create(
             model=model,
             messages=messages
             + [
-                {"role": "assistant", "content": "", "function_call": fn_call},
+                {"role": "assistant", "content": "", "function_call": fn_call_dict},
                 {"role": "function", "name": fn_name, "content": json.dumps(fn_result)},
             ],
             temperature=0.0,
@@ -249,10 +250,10 @@ def call_model_with_mcp_function(
 
         final_msg = followup.choices[0].message
         return {
-            "final_content": final_msg.get("content"),
+            "final_content": getattr(final_msg, "content", None),
             "function_result": fn_result,
             "raw": {"initial": resp, "followup": followup},
         }
 
     # no function call, return assistant content
-    return {"final_content": msg.get("content"), "function_result": None, "raw": resp}
+    return {"final_content": getattr(msg, "content", None), "function_result": None, "raw": resp}

@@ -8,7 +8,9 @@ def get_metadata(tmdb_id, media_type="movie"):
     if media_type not in ("movie", "tv"):
         raise ValueError("media_type must be 'movie' or 'tv'")
     url = f"{settings.TMDB_API_URL}/{media_type}/{tmdb_id}?api_key={settings.TMDB_API_KEY}&append_to_response=credits,keywords"
-    return requests.get(url).json()
+    resp = requests.get(url)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def search_by_title(title: str, media_type: str = "movie") -> dict:

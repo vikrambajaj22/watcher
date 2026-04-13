@@ -650,6 +650,9 @@ def _sync_from_export(
                         except Exception:
                             pass
 
+                stream_success = True
+                break
+
             except Exception as e:
                 logger.warning(
                     "Stream attempt %s/%s failed for %s: %s",
@@ -681,8 +684,9 @@ def _sync_from_export(
                         repr(e),
                     )
         if not stream_success:
-            # try next date
             continue
+
+        return summary
 
     logger.info(
         "No TMDB export found for %s in the past %s days", media_type, days_back_limit
@@ -782,9 +786,9 @@ def _process_details_batch(
 def _submit_embedding_tasks(to_embed: list) -> dict:
     """Process embeddings in batches and validate against FAISS instead of Mongo.
 
-    Returns a summary dict with keys: submitted, succeeded, failed.
+    Returns a summary dict with keys: submitted, succeeded, failed, timed_out.
     """
-    summary = {"submitted": 0, "succeeded": 0, "failed": 0}
+    summary = {"submitted": 0, "succeeded": 0, "failed": 0, "timed_out": 0}
     if not to_embed:
         return summary
 
@@ -806,9 +810,25 @@ def _submit_embedding_tasks(to_embed: list) -> dict:
                 _process_batch(batch)
 
                 # verify embeddings exist in FAISS
-                vecs = get_vectors_for_ids(batch_ids, [item.get("media_type") for item in batch])
+                batch_media_types = [item.get("media_type") for item in batch]
+                vecs = get_vectors_for_ids(batch_ids, batch_media_types)
                 succeeded = sum(1 for v in vecs if v is not None)
                 failed = submitted - succeeded
+
+                # mark successfully embedded docs in Mongo
+                succeeded_updates = [
+                    (bid, mt)
+                    for bid, mt, v in zip(batch_ids, batch_media_types, vecs)
+                    if v is not None
+                ]
+                for s_id, s_mt in succeeded_updates:
+                    try:
+                        tmdb_metadata_collection.update_one(
+                            {"id": s_id, "media_type": s_mt},
+                            {"$set": {"has_embedding": True}},
+                        )
+                    except Exception:
+                        pass
 
                 summary["submitted"] += submitted
                 summary["succeeded"] += succeeded
@@ -970,7 +990,7 @@ def sync_tmdb(
             if queued:
                 discover_to_embed.extend(queued)
             # update job progress periodically
-            _update_job_progress(job_id, total_processed, len(to_embed))
+            _update_job_progress(job_id, total_processed, len(discover_to_embed))
 
         logger.info("Full sync completed: processed %s items", total_processed)
 

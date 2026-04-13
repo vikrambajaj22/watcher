@@ -1,3 +1,4 @@
+import re
 from typing import Optional, Dict, Any
 
 import numpy as np
@@ -69,7 +70,7 @@ def compute_will_like(
     # resolve by title if not already found
     if not resolved_doc and title:
         try:
-            regex = {"$regex": title, "$options": "i"}
+            regex = {"$regex": re.escape(title), "$options": "i"}
             docs = list(
                 tmdb_metadata_collection.find(
                     {

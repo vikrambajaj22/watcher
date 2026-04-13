@@ -21,6 +21,12 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"  # w500 for good quality
 IMAGES_DIR = os.getenv("IMAGES_DIR", "ui/static/images")
 
+
+def _admin_api_headers() -> Dict[str, str]:
+    """Send X-API-Key when ADMIN_API_KEY is set (must match backend)."""
+    key = os.getenv("ADMIN_API_KEY", "").strip()
+    return {"X-API-Key": key} if key else {}
+
 # tab indices - update these if tab order changes
 TAB_HOME = 0
 TAB_HISTORY = 1
@@ -70,7 +76,7 @@ def is_authenticated() -> bool:
     """Check if user has a valid Trakt token using /auth/status."""
     try:
         url = f"{API_BASE_URL}/auth/status"
-        r = requests.get(url)
+        r = requests.get(url, headers=_admin_api_headers())
         if r.status_code == 200:
             js = r.json()
             return js.get("authenticated", False)
@@ -107,7 +113,7 @@ def cached_api_get(endpoint: str) -> Optional[Dict]:
     """
     url = f"{API_BASE_URL}{endpoint}"
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=_admin_api_headers())
         if response.status_code == 200:
             js = response.json()
             # validate responses for typed endpoints
@@ -135,7 +141,7 @@ def cached_api_get(endpoint: str) -> Optional[Dict]:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def cached_recommendations(media_type: str, recommend_count: int) -> Optional[Dict]:
-    """Cached recommendations - 10 minute TTL (600 seconds).
+    """Cached recommendations - 60 second TTL.
 
     Recommendations are expensive (LLM calls, embeddings, FAISS queries) but
     don't change frequently. Cache based on media_type and count to avoid
@@ -150,7 +156,11 @@ def cached_recommendations(media_type: str, recommend_count: int) -> Optional[Di
     """
     url = f"{API_BASE_URL}/recommend/{media_type}"
     try:
-        response = requests.post(url, json={"recommend_count": recommend_count})
+        response = requests.post(
+            url,
+            json={"recommend_count": recommend_count},
+            headers=_admin_api_headers(),
+        )
         if response.status_code == 200:
             return response.json()
         return None
@@ -163,7 +173,7 @@ def cached_sync_status() -> Optional[Dict]:
     """Cached fetch of sync status from backend."""
     try:
         url = f"{API_BASE_URL}/admin/sync/status"
-        r = requests.get(url)
+        r = requests.get(url, headers=_admin_api_headers())
         if r.status_code == 200:
             return r.json()
         return None
@@ -238,7 +248,7 @@ def poll_job_status(
         try:
             # include explicit job_type query param required by backend
             url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type={job_type}"
-            r = requests.get(url, timeout=5)
+            r = requests.get(url, timeout=5, headers=_admin_api_headers())
             if r.status_code == 200:
                 js = r.json()
                 status = js.get("status")
@@ -273,9 +283,9 @@ def api_request(
     url = f"{API_BASE_URL}{endpoint}"
     try:
         if method == "GET":
-            response = requests.get(url)
+            response = requests.get(url, headers=_admin_api_headers())
         elif method == "POST":
-            response = requests.post(url, json=data)
+            response = requests.post(url, json=data, headers=_admin_api_headers())
         else:
             st.error(f"Unsupported method: {method}")
             return None
@@ -297,7 +307,7 @@ def raw_api_post(endpoint: str, data: Dict) -> tuple[int, Any]:
     """
     url = f"{API_BASE_URL}{endpoint}"
     try:
-        r = requests.post(url, json=data)
+        r = requests.post(url, json=data, headers=_admin_api_headers())
         try:
             return r.status_code, r.json()
         except Exception:
@@ -404,7 +414,7 @@ def show_dashboard():
                 # call /auth/logout and clear session
                 try:
                     url = f"{API_BASE_URL}/auth/logout"
-                    requests.get(url)
+                    requests.get(url, headers=_admin_api_headers())
                     st.session_state.clear()
                 except Exception:
                     pass
@@ -585,7 +595,9 @@ def show_history_page():
                             url = (
                                 f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
                             )
-                            r = requests.get(url, timeout=5)
+                            r = requests.get(
+                                url, timeout=5, headers=_admin_api_headers()
+                            )
                             if r.status_code == 200:
                                 js = r.json()
                                 status = js.get("status")
@@ -735,7 +747,7 @@ def show_history_page():
         if job_id and polled:
             try:
                 url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
-                r = requests.get(url, timeout=3)
+                r = requests.get(url, timeout=3, headers=_admin_api_headers())
                 if r.status_code == 200:
                     js = r.json()
                     status = js.get("status")
@@ -769,7 +781,9 @@ def show_history_page():
                 while waited < max_wait:
                     try:
                         url = f"{API_BASE_URL}/admin/sync/job/{job_id}?job_type=trakt"
-                        r = requests.get(url, timeout=5)
+                        r = requests.get(
+                            url, timeout=5, headers=_admin_api_headers()
+                        )
                         if r.status_code == 200:
                             js = r.json()
                             status = js.get("status")
@@ -2012,7 +2026,11 @@ def show_admin_page():
         )
 
         try:
-            jobs_resp = requests.get(f"{API_BASE_URL}/admin/sync/jobs", timeout=5)
+            jobs_resp = requests.get(
+                f"{API_BASE_URL}/admin/sync/jobs",
+                timeout=5,
+                headers=_admin_api_headers(),
+            )
             jobs_list = (
                 jobs_resp.json().get("jobs", []) if jobs_resp.status_code == 200 else []
             )
@@ -2206,7 +2224,7 @@ def show_admin_page():
             # show lightweight live snapshot of the job (non-blocking)
             try:
                 url = f"{API_BASE_URL}/admin/sync/job/{tmdb_job_id}?job_type=tmdb"
-                r = requests.get(url, timeout=3)
+                r = requests.get(url, timeout=3, headers=_admin_api_headers())
                 if r.status_code == 200:
                     js = r.json()
                     st.write(f"Status: {js.get('status')}")

@@ -11,6 +11,11 @@ if [ ! -f .env ]; then
     echo "Please create a .env file with required configuration."
     exit 1
 fi
+# Export vars for child processes (Streamlit uses os.environ; matches backend when using ADMIN_API_KEY).
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
 
 # Function to cleanup background processes
 cleanup() {

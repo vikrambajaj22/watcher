@@ -200,7 +200,8 @@ def load_sidecars() -> None:
         # load vecs as 2D memmap
         _vecs = np.memmap(VECS_FILE, dtype=np.float32, mode="r", shape=(num_vectors, embedding_dim))
         # build map for fast lookup
-        _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
+        n_lab = int(_labels.shape[0])
+        _label_to_index = {int(_labels[i]): i for i in range(n_lab)}
         logger.info("Loaded sidecars: %s vectors, dim=%s", len(_labels), embedding_dim)
     except Exception as e:
         logger.error("Failed to load sidecars: %s", repr(e), exc_info=True)
@@ -248,6 +249,11 @@ def get_vectors_for_ids(
     mts = media_types or [None] * len(ids)
     if len(mts) == 1 and len(ids) > 1:
         mts = mts * len(ids)
+
+    # pre-load the FAISS index once for the fallback path
+    _fallback_index = None
+    _fallback_index_loaded = False
+
     for i, tmdb_id in enumerate(ids):
         mt = mts[i] if i < len(mts) else None
         label = _encode_label(tmdb_id, mt)
@@ -258,13 +264,13 @@ def get_vectors_for_ids(
                 continue
         # fallback: try index.reconstruct if sidecars aren't present
         try:
-            idx = _encode_label(tmdb_id, mt)
-            idx = int(idx)
-            # attempt to load index and reconstruct
-            index = load_faiss_index()
-            if index is not None and hasattr(index, "reconstruct"):
+            encoded_id = int(_encode_label(tmdb_id, mt))
+            if not _fallback_index_loaded:
+                _fallback_index = load_faiss_index()
+                _fallback_index_loaded = True
+            if _fallback_index is not None and hasattr(_fallback_index, "reconstruct"):
                 try:
-                    vec = index.reconstruct(idx)
+                    vec = _fallback_index.reconstruct(encoded_id)
                     results.append(np.asarray(vec, dtype=np.float32))
                     continue
                 except Exception:
@@ -448,7 +454,8 @@ def build_faiss_index(
     try:
         _labels = np.array(labels_mm)
         _vecs = np.array(vecs_mm)
-        _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
+        n_lab = int(_labels.shape[0])
+        _label_to_index = {int(_labels[i]): i for i in range(n_lab)}
     except Exception:
         load_sidecars()
 
@@ -695,7 +702,8 @@ def upsert_single_item(
 
         # ensure caches available
         if (not _label_to_index) and (_labels is not None):
-            _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
+            n_lab = int(_labels.shape[0])
+            _label_to_index = {int(_labels[i]): i for i in range(n_lab)}
 
         if label in _label_to_index:
             # replace existing vector in sidecars
@@ -780,7 +788,8 @@ def upsert_single_item(
                 # refresh cache
                 _labels = new_labels
                 _vecs = new_vecs
-                _label_to_index = {int(l): i for i, l in enumerate(_labels.tolist())}
+                n_lab = int(_labels.shape[0])
+                _label_to_index = {int(_labels[i]): i for i in range(n_lab)}
                 # update sidecar_meta
                 try:
                     meta = load_sidecar_meta() or {}

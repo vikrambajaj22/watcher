@@ -31,7 +31,7 @@ DEFAULT_WEIGHTS = {
 }
 
 _model: Optional[Any] = None
-_embed_lock = threading.Lock()
+_embed_lock = threading.RLock()
 
 
 def _select_device() -> str:
@@ -166,20 +166,21 @@ def embed_text(texts: List[str]) -> np.ndarray:
     if not texts:
         return np.array([])
     try:
-        model = _get_model()
-        vectors = model.encode(
-            texts,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
+        with _embed_lock:
+            model = _get_model()
+            vectors = model.encode(
+                texts,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+            )
         return np.array(vectors)
     except Exception as e:
         logger.error("Embedding error: %s", repr(e), exc_info=True)
         # return zeros of expected dim if we can determine model dim, else empty
         try:
-            # attempt a fallback dummy vec
-            dummy = _get_model().encode(["dummy"], convert_to_numpy=True)
+            with _embed_lock:
+                dummy = _get_model().encode(["dummy"], convert_to_numpy=True)
             return np.zeros((len(texts), dummy.shape[-1]))
         except Exception:
             return np.array([])

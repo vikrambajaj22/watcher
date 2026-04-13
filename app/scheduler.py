@@ -1,3 +1,6 @@
+import os
+import time
+
 import requests
 from dateutil import parser as _dateutil_parser
 
@@ -10,9 +13,29 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_last_recommend_trakt_check_monotonic: float = 0.0
+_RECOMMEND_TRAKT_CHECK_MIN_INTERVAL = float(
+    os.getenv("RECOMMEND_TRAKT_CHECK_MIN_INTERVAL_SEC", "300")
+)
 
-def check_trakt_last_activities_and_sync():
-    """Check user's last activity on trakt and sync changes if necessary."""
+
+def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
+    """Check user's last activity on trakt and sync changes if necessary.
+
+    When for_recommend=True (e.g. /recommend), skips work if called again within
+    RECOMMEND_TRAKT_CHECK_MIN_INTERVAL_SEC (default 300s) to limit Trakt API load.
+    """
+    global _last_recommend_trakt_check_monotonic
+    if for_recommend and _RECOMMEND_TRAKT_CHECK_MIN_INTERVAL > 0:
+        now = time.monotonic()
+        if (
+            now - _last_recommend_trakt_check_monotonic
+            < _RECOMMEND_TRAKT_CHECK_MIN_INTERVAL
+        ):
+            logger.debug("Skipping Trakt last_activities check (recommend cooldown)")
+            return
+        _last_recommend_trakt_check_monotonic = now
+
     logger.info("Checking Trakt last_activities and syncing changes...")
     try:
         resp = requests.get(

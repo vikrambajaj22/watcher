@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 def start_scheduler(trakt_interval_hours=6, tmdb_interval_hours=6):
     """Start the scheduler to periodically check Trakt last activity and sync history.
-    Runs every `trakt_interval_sec` seconds for Trakt (default 5 minutes) and every `tmdb_interval_hours` hours for TMDB.
+    Runs every `trakt_interval_hours` hours for Trakt (default 6) and every `tmdb_interval_hours` hours for TMDB (default 6).
     """
     logger.info("Initializing sync scheduler...")
     scheduler = BlockingScheduler()

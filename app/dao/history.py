@@ -3,6 +3,7 @@ from app.utils.logger import get_logger
 import time
 from cachetools import TTLCache
 import copy
+from pymongo import ReplaceOne
 
 logger = get_logger(__name__)
 
@@ -28,8 +29,25 @@ def store_watch_history(data):
                 len(deduplicated),
             )
 
-        watch_history_collection.delete_many({})
-        watch_history_collection.insert_many(deduplicated)
+        ops = [
+            ReplaceOne(
+                {"id": item.get("id"), "media_type": item.get("media_type")},
+                item,
+                upsert=True,
+            )
+            for item in deduplicated
+        ]
+        if ops:
+            watch_history_collection.bulk_write(ops, ordered=False)
+        incoming_keys = {(item.get("id"), item.get("media_type")) for item in deduplicated}
+        existing = watch_history_collection.find({}, {"_id": 0, "id": 1, "media_type": 1})
+        stale_filters = []
+        for doc in existing:
+            if (doc.get("id"), doc.get("media_type")) not in incoming_keys:
+                stale_filters.append({"id": doc["id"], "media_type": doc["media_type"]})
+        if stale_filters:
+            for sf in stale_filters:
+                watch_history_collection.delete_one(sf)
         # invalidate cache when history changes
         try:
             _HISTORY_CACHE.clear()

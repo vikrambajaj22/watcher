@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 CLIENT_ID = settings.TRAKT_CLIENT_ID
 CLIENT_SECRET = settings.TRAKT_CLIENT_SECRET
 REDIRECT_URI = settings.TRAKT_REDIRECT_URI
-TOKEN_FILE = ".env.trakt_token"
+TOKEN_FILE = settings.TRAKT_TOKEN_FILE
 
 AUTH_URL = "https://trakt.tv/oauth/authorize"
 TOKEN_URL = "https://api.trakt.tv/oauth/token"

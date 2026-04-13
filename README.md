@@ -48,6 +48,9 @@ MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=watcher
 OPENAI_API_KEY=your-openai-key
 FAISS_INDEX_DIR=./faiss_index
+
+# Optional: if set, required on admin/MCP/sync routes as header X-API-Key (see Streamlit / curl below)
+# ADMIN_API_KEY=your-long-random-secret
 ```
 
 Watcher stores an aggregated view of your Trakt activity by calling Trakt's `/sync/watched/movies` and `/sync/watched/shows` endpoints (for full watched lists) and uses `/sync/last_activities` only to detect when it needs to resync.
@@ -56,6 +59,8 @@ Install dependencies
 
 ```bash
 pip install -r requirements.txt
+# optional dev tooling (ruff, isort)
+pip install -r requirements-dev.txt
 ```
 
 ### Overview: Embeddings and FAISS
@@ -110,6 +115,8 @@ Core endpoints used by the UI and scripts:
 - `POST /admin/embed/item` — attempt an incremental upsert for a single item; if an in-place update is not possible, this endpoint schedules a background rebuild.
 - `POST /admin/faiss/upsert-item` — lower-level endpoint that attempts an in-place upsert and returns its status.
 
+If `ADMIN_API_KEY` is set in the environment, these routes (and other admin/MCP/sync/visualize endpoints) require the `X-API-Key` header.
+
 Use `localhost:8080/redoc` to explore the full API.
 
 UI: Streamlit admin pages let you:
@@ -154,6 +161,7 @@ Or trigger from the API/UI (admin panel) using the "Rebuild FAISS" controls.
 - Check FAISS status:
 
 ```bash
+# If ADMIN_API_KEY is set on the server, add: -H "X-API-Key: $ADMIN_API_KEY"
 curl -sS http://localhost:8080/admin/faiss/status | jq .
 ```
 
@@ -175,13 +183,15 @@ curl -X POST http://localhost:8080/admin/embed/item -H 'Content-Type: applicatio
 curl -X POST http://localhost:8080/admin/faiss/rebuild -H 'Content-Type: application/json' -d '{"dim": 384, "factory": "IDMap,IVF100,Flat"}'
 ```
 
+When `ADMIN_API_KEY` is configured, pass the same value in the `X-API-Key` header on every admin/MCP/visualize request. `./start.sh` and `./run_streamlit.sh` load `.env` so Streamlit picks up `ADMIN_API_KEY` automatically.
+
 #### Development Notes
 
 - During a very large initial ingest avoid computing embeddings inline to reduce load on embedding providers and TMDB. After metadata is stable, run embedding/indexing passes with throttling and batching.
 
 ## Deployment
 
-For a full, step-by-step guide to deploying Watcher (MongoDB VM + Cloud Run services + FAISS on GCP), see `DEPLOYMENT.md` in this repo.
+For a full, step-by-step guide to deploying Watcher (MongoDB VM + Cloud Run services + FAISS on GCP), see `DEPLOYMENT.md` in this repo. That guide assumes you keep secrets and `PROJECT_ID` in a repo-root **`.env.gcp`** (gitignored) and run **`source .env.gcp`** before build/deploy commands; put a single long-lived **`ADMIN_API_KEY`** there—do not regenerate it on every deploy unless you update both the backend and UI services.
 
 License
 

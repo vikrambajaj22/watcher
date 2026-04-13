@@ -7,7 +7,9 @@ e2-micro VM, pushing data from local to GCP, and deploying backend and UI contai
 
 ## Set Up GCP Project
 
-You can either export environment variables manually as shown below, or (recommended for local workflows) keep them in a `.env.gcp` file at the repo root and run `source .env.gcp` before executing these commands.
+You can either export environment variables manually as shown below, or (recommended) keep them in a **`.env.gcp`** file at the repo root (gitignored), then run **`source .env.gcp`** in every new shell before `gcloud` / build commands so `PROJECT_ID`, API keys, FAISS settings, and **`ADMIN_API_KEY`** are defined.
+
+**`ADMIN_API_KEY`:** Generate it **once** (e.g. `openssl rand -hex 32`), put the value in `.env.gcp` as `ADMIN_API_KEY=...`, and **reuse it** on every backend and UI deploy. If you generate a new random key each time without updating both Cloud Run services, the API and UI will disagree and you will see `403` on admin routes.
 
 ### Create a new GCP project:
 ```bash
@@ -207,8 +209,16 @@ sudo systemctl restart mongod
 
 ## Build and Push Backend Docker Image
 
+From the **repository root**, load deploy variables (including a **stable** `ADMIN_API_KEY` from `.env.gcp`):
+
+```bash
+cd /path/to/watcher
+source .env.gcp
+```
+
 ### Build image on GCP Cloud Build and push to Container Registry
-In the directory containing the backend Dockerfile, run:
+Still at the **repository root** (where the backend `Dockerfile` lives):
+
 ```bash
 export BACKEND_IMAGE="us-central1-docker.pkg.dev/$PROJECT_ID/watcher/api"
 export REGION=us-central1
@@ -217,7 +227,7 @@ gcloud builds submit . --tag $BACKEND_IMAGE
 ```
 
 ### Deploy Backend to Cloud Run
-Deploy with all required environment variables:
+Deploy with all required environment variables (after `source .env.gcp`):
 
 **Note:** The backend requires 8Gi memory to accommodate:
 - FAISS index loaded into memory
@@ -225,6 +235,7 @@ Deploy with all required environment variables:
 - Application overhead
 
 ```bash
+source .env.gcp
 gcloud run deploy watcher-backend \
 --image $BACKEND_IMAGE \
 --region $REGION \
@@ -251,14 +262,18 @@ TMDB_API_KEY=$TMDB_API_KEY,\
 TRAKT_CLIENT_ID=$TRAKT_CLIENT_ID,\
 TRAKT_CLIENT_SECRET=$TRAKT_CLIENT_SECRET,\
 TRAKT_REDIRECT_URI=$TRAKT_REDIRECT_URI,\
-UI_BASE_URL=$UI_BASE_URL
+UI_BASE_URL=$UI_BASE_URL,\
+ADMIN_API_KEY=$ADMIN_API_KEY
 ```
+
+**`ADMIN_API_KEY` (recommended for production):** If set to a non-empty secret, all admin, MCP, sync job, `/auth/logout`, and `/visualize/*` routes require the HTTP header `X-API-Key: <same value>`. If unset or empty, those routes accept requests without a key (convenient for local dev only). The Streamlit UI sends this header when the same variable is set on the UI service—see the UI deploy step below. Store the value in **`.env.gcp`** and keep it unchanged across deploys unless you intentionally rotate it (then update **both** Cloud Run services to the new value).
 
 The `?authSource=admin` parameter in the `MONGODB_URI` is necessary since we created the user in the `admin` database.
 Once the backend is deployed, we replace `TRAKT_REDIRECT_URI` with the actual deployed URI (https://watcher-backend-391638080074.us-central1.run.app/auth/trakt/callback):
 and the UI URL (https://watcher-ui-391638080074.us-central1.run.app) in `UI_BASE_URL` after deploying the UI (see steps below).
 
 ```bash
+source .env.gcp
 gcloud run services update watcher-backend \
 --region $REGION \
 --set-env-vars TRAKT_REDIRECT_URI=<ACTUAL_REDIRECT_URI>
@@ -267,18 +282,24 @@ gcloud run services update watcher-backend \
 For the FAISS setup, please refer to the FAISS section below. Use the required environment variables when deploying the backend. To avoid cold-start download latency, use **Option A (Mount GCS bucket)** in the FAISS section and add `--execution-environment gen2`, `--add-volume`, `--add-volume-mount`, and `FAISS_MOUNT_PATH=/mnt/faiss/v1` to the deploy command.
 
 ## Build and Push UI Docker Image
-In the `ui` directory which has the Dockerfile for the UI, run:
+The UI image must be built with **`ui/` as the build context** (that directory contains `Dockerfile` and `requirements-ui.txt`).
+
+**Before UI build/deploy:** From the repo root, run `source .env.gcp` again if this is a new shell. Set **`BACKEND_URL`** to your deployed backend URL (e.g. `export BACKEND_URL=$(gcloud run services describe watcher-backend --region=$REGION --format='value(status.url)')` or add it to `.env.gcp` after the first backend deploy).
 
 ### Build image on GCP Cloud Build and push to Container Registry
 ```bash
+source .env.gcp
 export UI_IMAGE="us-central1-docker.pkg.dev/$PROJECT_ID/watcher/ui"
+cd ui
 gcloud builds submit . --tag $UI_IMAGE
+cd ..
 ```
 
 ### Deploy UI to Cloud Run
-Deploy with all required environment variables:
+Deploy with all required environment variables (same `ADMIN_API_KEY` as the backend, from `.env.gcp`):
 
 ```bash
+source .env.gcp
 gcloud run deploy watcher-ui \
 --image $UI_IMAGE \
 --region us-central1 \
@@ -288,8 +309,11 @@ gcloud run deploy watcher-ui \
 --max-instances=1 \
 --set-env-vars \
 API_BASE_URL=$BACKEND_URL,\
-IMAGES_DIR="./static/images"
+IMAGES_DIR="./static/images",\
+ADMIN_API_KEY=$ADMIN_API_KEY
 ```
+
+Use the **same** `ADMIN_API_KEY` value as on the backend when you enable it; otherwise the UI cannot call admin endpoints, MCP, or logout. Omit `ADMIN_API_KEY` from both services if you are not using app-level admin auth.
 
 ## FAISS for TMDB
 FAISS is used for similarity search, candidate generation for recommendations, etc.

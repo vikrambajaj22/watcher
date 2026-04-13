@@ -1,0 +1,3 @@
+# Dev-only tooling (not installed in production Docker image by default)
+ruff==0.14.7
+isort==6.0.1

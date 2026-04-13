@@ -8,8 +8,9 @@ import time as _time
 import traceback as _traceback
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Request, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException, Query, Security
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import APIKeyHeader
 import numpy as np
 from pymongo import DESCENDING
 from sklearn.cluster import KMeans
@@ -55,6 +56,21 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "").strip()
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def require_admin_key(api_key: str = Security(_api_key_header)):
+    """Dependency that enforces an API key for admin routes.
+
+    If ADMIN_API_KEY env var is not set, all requests are allowed (backwards compatible).
+    """
+    if not _ADMIN_API_KEY:
+        return
+    if api_key != _ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
+
+
 router = APIRouter()
 
 
@@ -92,12 +108,12 @@ def recommend(media_type: str, payload: RecommendRequest):
     try:
         if media_type not in ("movie", "tv", "all"):
             raise HTTPException(
-                status_code=400, detail="media_type must be 'movie' or 'tv'"
+                status_code=400, detail="media_type must be 'movie', 'tv', or 'all'"
             )
 
         recommend_count = payload.recommend_count
 
-        check_trakt_last_activities_and_sync()
+        check_trakt_last_activities_and_sync(for_recommend=True)
         recommender = MediaRecommender()
         return recommender.generate_recommendations(
             media_type=media_type, recommend_count=recommend_count
@@ -106,7 +122,7 @@ def recommend(media_type: str, payload: RecommendRequest):
         raise
     except Exception as e:
         logger.error("recommend error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/history", response_model=List[HistoryItem])
@@ -124,11 +140,12 @@ def get_history(media_type: str = None, include_posters: bool = True):
         return history
     except Exception as e:
         logger.error("get_history error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post(
-    "/admin/sync/trakt", response_model=AdminJobAcceptedResponse, status_code=202
+    "/admin/sync/trakt", response_model=AdminJobAcceptedResponse, status_code=202,
+    dependencies=[Depends(require_admin_key)],
 )
 def admin_sync(background_tasks: BackgroundTasks):
     """Trigger Trakt history sync in background."""
@@ -181,10 +198,10 @@ def admin_sync(background_tasks: BackgroundTasks):
         return AdminJobAcceptedResponse(status="accepted", job_id=job_id)
     except Exception as e:
         logger.error("admin_sync error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/admin/sync/job/{job_id}", response_model=JobStatusModel)
+@router.get("/admin/sync/job/{job_id}", response_model=JobStatusModel, dependencies=[Depends(require_admin_key)])
 def admin_sync_job_status(
     job_id: str, job_type: str = Query(..., description="Job type: 'trakt' or 'tmdb'")
 ):
@@ -227,7 +244,7 @@ def admin_sync_job_status(
         raise
     except Exception as e:
         logger.error("admin_sync_job_status error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/auth/trakt/start")
@@ -274,10 +291,10 @@ def auth_status() -> Dict[str, bool]:
         return {"authenticated": False}
     except Exception as e:
         logger.error("auth_status error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/auth/logout")
+@router.get("/auth/logout", dependencies=[Depends(require_admin_key)])
 def auth_logout():
     """Log out the current user by deleting the stored token file."""
     try:
@@ -286,10 +303,10 @@ def auth_logout():
         return {"status": "logged_out"}
     except Exception as e:
         logger.error("auth_logout error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/admin/embed/item", response_model=AdminAckResponse, status_code=200)
+@router.post("/admin/embed/item", response_model=AdminAckResponse, status_code=200, dependencies=[Depends(require_admin_key)])
 def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemPayload):
     """Attempt a fast incremental upsert for a single TMDB item.
 
@@ -347,10 +364,10 @@ def admin_embed_item(background_tasks: BackgroundTasks, payload: AdminEmbedItemP
         raise
     except Exception as e:
         logger.exception("admin_embed_item error: %s", repr(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/admin/embed/full", response_model=AdminAckResponse, status_code=202)
+@router.post("/admin/embed/full", response_model=AdminAckResponse, status_code=202, dependencies=[Depends(require_admin_key)])
 def admin_embed_full(background_tasks: BackgroundTasks, payload: AdminEmbedFullPayload):
     """Trigger full embedding generation (background). Expects JSON: {"batch_size": <int>}"""
     try:
@@ -368,11 +385,12 @@ def admin_embed_full(background_tasks: BackgroundTasks, payload: AdminEmbedFullP
         return AdminAckResponse(status="accepted", message="faiss rebuild started")
     except Exception as e:
         logger.error("admin_embed_full error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post(
-    "/admin/faiss/rebuild", response_model=AdminFaissRebuildResponse, status_code=202
+    "/admin/faiss/rebuild", response_model=AdminFaissRebuildResponse, status_code=202,
+    dependencies=[Depends(require_admin_key)],
 )
 def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
     """Trigger FAISS rebuild in a detached process. Expects JSON: {"dim": <int>, "factory": "..."}"""
@@ -435,10 +453,10 @@ def admin_faiss_rebuild(payload: AdminFaissRebuildPayload):
         )
     except Exception as e:
         logger.error("admin_faiss_rebuild error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/admin/faiss/status")
+@router.get("/admin/faiss/status", dependencies=[Depends(require_admin_key)])
 def admin_faiss_status():
     """Return sidecar metadata (if any) and index presence info, plus whether the index is cached in this process."""
     try:
@@ -467,10 +485,10 @@ def admin_faiss_status():
         }
     except Exception as e:
         logger.error("admin_faiss_status error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/admin/faiss/clear-cache")
+@router.post("/admin/faiss/clear-cache", dependencies=[Depends(require_admin_key)])
 def admin_faiss_clear_cache():
     """Clear the in-process FAISS index cache."""
     try:
@@ -480,10 +498,10 @@ def admin_faiss_clear_cache():
         return {"status": "cleared"}
     except Exception as e:
         logger.error("admin_faiss_clear_cache error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/admin/faiss/upsert-item", response_model=AdminFaissUpsertResponse)
+@router.post("/admin/faiss/upsert-item", response_model=AdminFaissUpsertResponse, dependencies=[Depends(require_admin_key)])
 def admin_faiss_upsert(payload: AdminFaissUpsertPayload):
     """Attempt an incremental upsert of a single TMDB item into FAISS sidecars and index.
 
@@ -503,10 +521,10 @@ def admin_faiss_upsert(payload: AdminFaissUpsertPayload):
         )
     except Exception as e:
         logger.exception("admin_faiss_upsert error: %s", repr(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/admin/tmdb/{tmdb_id}", response_model=List[TMDBMetadata])
+@router.get("/admin/tmdb/{tmdb_id}", response_model=List[TMDBMetadata], dependencies=[Depends(require_admin_key)])
 def admin_get_tmdb_metadata(tmdb_id: int, media_type: str = None):
     """Debug endpoint: return stored TMDB metadata documents for the given tmdb_id.
 
@@ -522,13 +540,14 @@ def admin_get_tmdb_metadata(tmdb_id: int, media_type: str = None):
         return cursor
     except Exception as e:
         logger.error("admin_get_tmdb_metadata error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post(
     "/mcp/knn",
     response_model=KNNResponse,
     summary="Find top-k nearest neighbors",
+    dependencies=[Depends(require_admin_key)],
     description="""
 Return the top-k nearest TMDB items for a tmdb_id, free-text query, or an embedding vector.
 Provide exactly one of tmdb_id, text, or vector. The request separates the *input* media type (when providing a tmdb_id or doing a TMDB title lookup) and the *results* media type (a filter applied to returned neighbors).
@@ -547,10 +566,10 @@ def mcp_knn(payload: KNNRequest) -> KNNResponse:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error("mcp_knn error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/mcp/will-like", response_model=WillLikeResponse)
+@router.post("/mcp/will-like", response_model=WillLikeResponse, dependencies=[Depends(require_admin_key)])
 def mcp_will_like(payload: WillLikeRequest) -> WillLikeResponse:
     """Determine whether the current user is likely to like the given TMDB item.
 
@@ -561,22 +580,18 @@ def mcp_will_like(payload: WillLikeRequest) -> WillLikeResponse:
     Returns: {will_like: bool, score: float, explanation: str, item: {...}}
     """
     try:
-        try:
-            res = compute_will_like(payload.tmdb_id, payload.title, payload.media_type)
-            return WillLikeResponse.model_validate(res)
-        except WillLikeError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            logger.error("mcp_will_like error: %s", repr(e), exc_info=True)
-            raise HTTPException(status_code=500, detail=str(e))
+        res = compute_will_like(payload.tmdb_id, payload.title, payload.media_type)
+        return WillLikeResponse.model_validate(res)
+    except WillLikeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         logger.error("mcp_will_like error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/admin/clear-history-cache", response_model=AdminAckResponse)
+@router.post("/admin/clear-history-cache", response_model=AdminAckResponse, dependencies=[Depends(require_admin_key)])
 def admin_clear_history_cache():
     """Admin endpoint to clear in-memory history cache."""
     try:
@@ -587,10 +602,10 @@ def admin_clear_history_cache():
             raise HTTPException(status_code=500, detail="failed")
     except Exception as e:
         logger.error("admin_clear_history_cache error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/admin/sync/status", response_model=SyncStatusResponse)
+@router.get("/admin/sync/status", response_model=SyncStatusResponse, dependencies=[Depends(require_admin_key)])
 def admin_sync_status():
     """Return last sync timestamps for Trakt and TMDB (movie, tv).
 
@@ -644,11 +659,12 @@ def admin_sync_status():
         return SyncStatusResponse(**status)
     except Exception as e:
         logger.error("admin_sync_status error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post(
-    "/admin/sync/tmdb", response_model=AdminJobAcceptedResponse, status_code=202
+    "/admin/sync/tmdb", response_model=AdminJobAcceptedResponse, status_code=202,
+    dependencies=[Depends(require_admin_key)],
 )
 def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBRequest):
     """Trigger a TMDB sync job in background.
@@ -816,11 +832,12 @@ def admin_sync_tmdb(background_tasks: BackgroundTasks, payload: AdminSyncTMDBReq
         return AdminJobAcceptedResponse(status="accepted", job_id=job_id)
     except Exception as e:
         logger.error("admin_sync_tmdb error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post(
-    "/admin/sync/tmdb/cancel", response_model=AdminAckResponse, status_code=202
+    "/admin/sync/tmdb/cancel", response_model=AdminAckResponse, status_code=202,
+    dependencies=[Depends(require_admin_key)],
 )
 def admin_cancel_tmdb(payload: AdminCancelJobRequest):
     """Set cancel flag on running TMDB sync job. Expects JSON: {"job_id": "..."}"""
@@ -856,10 +873,10 @@ def admin_cancel_tmdb(payload: AdminCancelJobRequest):
         return AdminAckResponse(status="accepted", message="cancel requested")
     except Exception as e:
         logger.error("admin_cancel_tmdb error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/admin/sync/jobs")
+@router.get("/admin/sync/jobs", dependencies=[Depends(require_admin_key)])
 def admin_list_sync_jobs():
     """Return a list of sync job documents that are not completed.
 
@@ -911,10 +928,10 @@ def admin_list_sync_jobs():
         return {"jobs": results}
     except Exception as e:
         logger.error("admin_list_sync_jobs error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/visualize/clusters")
+@router.get("/visualize/clusters", dependencies=[Depends(require_admin_key)])
 def get_watch_history_clusters(
     media_type: str = None, n_clusters: int = Query(default=6, ge=3, le=15)
 ):
@@ -965,6 +982,26 @@ def get_watch_history_clusters(
 
         vecs = get_vectors_for_ids(ids_list, media_types=mts_list)
 
+        # batch-fetch metadata for all unique IDs in one query
+        all_unique_ids = list(set(p[0] for p in unique_pairs))
+        metadata_cursor = tmdb_metadata_collection.find(
+            {"id": {"$in": all_unique_ids}},
+            {
+                "_id": 0,
+                "id": 1,
+                "media_type": 1,
+                "genres": 1,
+                "overview": 1,
+                "title": 1,
+                "poster_path": 1,
+                "backdrop_path": 1,
+            },
+        )
+        metadata_map = {}
+        for doc in metadata_cursor:
+            mk = (int(doc.get("id")), str(doc.get("media_type", "")).lower())
+            metadata_map[mk] = doc
+
         # build lookup map keyed by (id, media_type)
         embeddings_map = {}
         for (tmdb_id, mt), v in zip(unique_pairs, vecs):
@@ -974,19 +1011,8 @@ def get_watch_history_clusters(
                 continue
             if v is None:
                 continue
-            # fetch metadata doc to pull genres and overview (non-embedding fields)
-            doc = tmdb_metadata_collection.find_one(
-                {"id": int(tmdb_id), "media_type": str(mt).lower()},
-                {
-                    "_id": 0,
-                    "genres": 1,
-                    "overview": 1,
-                    "title": 1,
-                    "poster_path": 1,
-                    "backdrop_path": 1,
-                },
-            )
             entry = {"embedding": list(v)}
+            doc = metadata_map.get(key)
             if doc:
                 entry.update(doc)
             embeddings_map[key] = entry
@@ -1131,4 +1157,4 @@ def get_watch_history_clusters(
 
     except Exception as e:
         logger.error("get_watch_history_clusters error: %s", repr(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
