@@ -54,7 +54,7 @@ export function ClusterChart({
 
   return (
     <div className="cluster-chart-wrap">
-      <ResponsiveContainer width="100%" height={420}>
+      <ResponsiveContainer width="100%" height="100%">
         <ScatterChart margin={{ top: 16, right: 16, bottom: 16, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2e38" />
           <XAxis type="number" dataKey="x" name="x" stroke="#9aa0a8" tick={{ fill: "#9aa0a8", fontSize: 11 }} />
