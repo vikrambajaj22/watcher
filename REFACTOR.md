@@ -258,8 +258,8 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 - `frontend/src/api/*`: update fetch paths `/mcp/knn` → `/similar`, `/mcp/will-like` → `/will-like`
 - Rename any `mcp`-flavored component/variable names
 
-#### Docs to re-point to the new names
-- `README.md` (Discovery Helpers section), `DEVELOPMENT.md` (route table), `frontend/README.md` — these currently document `/mcp/*` as the target state and must switch to `/similar` and `/will-like`.
+#### Docs
+- `README.md` and `DEVELOPMENT.md` already document the target names (`/similar`, `/will-like`) — the code rename above brings the implementation in line with them. Update any lingering `/mcp/*` mentions that surface during the rename.
 
 ---
 

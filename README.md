@@ -153,8 +153,8 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 ### Discovery Helpers
 
-- `POST /mcp/knn` — **Similar titles** — resolve a movie/show and return TMDB `/similar` results
-- `POST /mcp/will-like` — **Will I Like?** — LLM prediction (`{ will_like, score, explanation, item }`) based on your watch history
+- `POST /similar` — **Similar titles** — resolve a movie/show and return TMDB `/similar` results
+- `POST /will-like` — **Will I Like?** — LLM prediction (`{ will_like, score, explanation, item }`) based on your watch history
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
