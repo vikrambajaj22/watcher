@@ -45,8 +45,21 @@ export function MediaCard({
             {isTv ? "TV" : "Film"}
           </span>
         )}
-        <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] m-0">
-          {title}
+        <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] m-0 flex items-center gap-1.5">
+          <span className="line-clamp-2">{title}</span>
+          {id > 0 && (
+            <a
+              className="inline-flex items-center shrink-0 text-muted hover:text-text hover:no-underline transition-colors"
+              href={`https://www.themoviedb.org/${mt}/${id}`}
+              target="_blank"
+              rel="noreferrer"
+              title="Open in TMDB"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              </svg>
+            </a>
+          )}
         </h3>
         {subtitle && <AiBlurb>{subtitle}</AiBlurb>}
         {overview && String(overview).trim() && (

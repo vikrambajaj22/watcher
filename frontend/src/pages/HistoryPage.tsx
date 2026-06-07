@@ -344,6 +344,19 @@ export function HistoryPage() {
                     <span className="text-sm font-semibold leading-snug tracking-[-0.01em] truncate">
                       {title}
                     </span>
+                    {id > 0 && mt && (
+                      <a
+                        className="inline-flex items-center shrink-0 text-muted hover:text-text hover:no-underline transition-colors"
+                        href={`https://www.themoviedb.org/${mt === "tv" ? "tv" : "movie"}/${id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open in TMDB"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        </svg>
+                      </a>
+                    )}
                   </div>
                   <p className="text-xs text-muted m-0 pl-[calc(1.5rem+6px)]">
                     {isTv
