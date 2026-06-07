@@ -44,6 +44,7 @@ _DISCOVER_ALLOWED = frozenset(
         "certification_country",
         "certification",
         "watch_region",
+        "with_people",
     }
 )
 

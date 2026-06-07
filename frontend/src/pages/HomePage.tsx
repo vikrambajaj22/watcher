@@ -3,10 +3,14 @@ import { getApiBase } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
 
 const FEATURES = [
-  { label: "Watch History", desc: "Browse and filter your complete library" },
-  { label: "AI Recommendations", desc: "Personalized picks from your taste profile" },
-  { label: "Will I Like It?", desc: "Check any title against your history" },
-  { label: "Similar Titles", desc: "Discover via semantic similarity search" },
+  { label: "Watch History", desc: "Browse and filter your library by genre, year, and more" },
+  { label: "Recommendations", desc: "AI-personalized picks based on your taste profile" },
+  { label: "Discover", desc: "Find titles by describing what you want to watch" },
+  { label: "Will I Like It?", desc: "Check any title against your watch history" },
+  { label: "Similar Titles", desc: "Find movies and shows similar to anything you've seen" },
+  { label: "Actor Search", desc: "See everything you've watched featuring a specific actor" },
+  { label: "Chat", desc: "Ask Watcher anything in natural language" },
+  { label: "Taste Profile", desc: "An AI-generated summary of your viewing taste" },
 ] as const;
 
 export function HomePage() {
@@ -41,8 +45,8 @@ export function HomePage() {
       {/* Tagline */}
       <p className="text-lg md:text-xl text-muted max-w-[44ch] leading-relaxed mb-8">
         {authenticated
-          ? "AI recommendations, similarity search, and taste analysis — all from your Trakt history."
-          : "Your complete movie and TV companion. Sign in to unlock AI recommendations, similarity search, and taste analysis."}
+          ? "AI recommendations, natural language discovery, taste analysis, similarity search, actor lookups, and more — all from your Trakt history."
+          : "Your complete movie and TV companion. Sign in to unlock AI-powered discovery, recommendations, and more."}
       </p>
 
       {!authenticated && (

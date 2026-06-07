@@ -112,6 +112,94 @@ export type TasteProfile = {
   history_count: number;
 };
 
+export type DiscoverItem = {
+  id: number;
+  title?: string;
+  media_type?: string;
+  poster_path?: string | null;
+  overview?: string | null;
+  release_date?: string | null;
+  watched?: boolean;
+};
+
+export type DescribeFilters = {
+  media_type?: string;
+  genres?: string[];
+  cast?: string[];
+  keywords?: string[];
+  year_from?: number;
+  year_to?: number;
+};
+
+export type DescribeResponse = {
+  results: DiscoverItem[];
+  filters?: DescribeFilters | null;
+};
+
+export type PersonSummary = {
+  id: number;
+  name?: string;
+  profile_path?: string | null;
+  known_for_department?: string | null;
+};
+
+export type ActorHistoryItem = {
+  id: number;
+  title?: string;
+  media_type?: string;
+  poster_path?: string | null;
+  character?: string | null;
+  department?: string | null;
+  watched_at?: string | null;
+};
+
+export type ActorHistoryResponse = {
+  person: PersonSummary;
+  items: ActorHistoryItem[];
+};
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+export type ChatEventToken = { type: "message"; content: string };
+export type ChatEventToolStart = { type: "tool_start"; tool: string; label: string };
+export type ChatEventToolResult = { type: "tool_result"; tool: string; data: Record<string, unknown> };
+export type ChatEventError = { type: "error"; message: string };
+export type ChatEventDone = { type: "done" };
+export type ChatEvent =
+  | ChatEventToken
+  | ChatEventToolStart
+  | ChatEventToolResult
+  | ChatEventError
+  | ChatEventDone;
+
+export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<ChatEvent> {
+  const r = await apiFetch("/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+  if (!r.body) return;
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          yield JSON.parse(line.slice(6)) as ChatEvent;
+        } catch {
+          /* skip malformed */
+        }
+      }
+    }
+  }
+}
+
 export function getHistoryQuery(mediaType: string | null, includePosters: boolean) {
   const p = new URLSearchParams();
   if (mediaType) p.set("media_type", mediaType);

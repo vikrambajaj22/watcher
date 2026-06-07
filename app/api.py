@@ -6,24 +6,31 @@ import traceback as _traceback
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException, Query, Security
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
 from pymongo import DESCENDING
 
+from app.actor_history import get_actor_history
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
+from app.chat import stream_chat
 from app.config.settings import settings
 from app.dao.history import get_watch_history, clear_history_cache
 from app.db import sync_meta_collection
+from app.process.describe_discover import clear_describe_cache, discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
 from app.tmdb_client import get_metadata, search_by_title, search_multi
 from app.tmdb_discover import fetch_cross_type_similar, fetch_similar_and_recommendations
-from app.will_like import compute_will_like, WillLikeError
+from app.will_like import clear_will_like_cache, compute_will_like, WillLikeError
 from app.taste_profile import compute_taste_profile
 from app.scheduler import check_trakt_last_activities_and_sync
 from app.schemas.api import (
+    ActorHistoryResponse,
     AdminAckResponse,
     AdminCancelJobRequest,
     AdminJobAcceptedResponse,
+    ChatRequest,
+    DescribeRequest,
+    DescribeResponse,
     HistoryItem,
     JobStatusModel,
     SimilarRequest,
@@ -54,6 +61,13 @@ async def require_admin_key(api_key: str = Security(_api_key_header)):
 
 
 router = APIRouter()
+
+
+def _clear_account_state() -> None:
+    """Clear all in-memory caches on login so a new account doesn't see stale data."""
+    clear_history_cache()
+    clear_will_like_cache()
+    clear_describe_cache()
 
 
 @router.get("/health")
@@ -200,8 +214,7 @@ def similar_items(payload: SimilarRequest) -> SimilarResponse:
 def will_like(payload: WillLikeRequest) -> WillLikeResponse:
     """LLM prediction of whether the user will like a given title."""
     try:
-        res = compute_will_like(payload.tmdb_id, payload.title, payload.media_type)
-        return WillLikeResponse.model_validate(res)
+        return compute_will_like(payload.tmdb_id, payload.title, payload.media_type)
     except WillLikeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -321,18 +334,19 @@ def trakt_auth_start(request: Request, from_ui: bool = False):
 def trakt_auth_callback(request: Request):
     code = request.query_params.get("code")
     state = request.query_params.get("state", "api")
+    ui_base = settings.UI_BASE_URL or "http://localhost:8501"
     if not code:
-        return RedirectResponse("/auth/trakt/start")
+        return RedirectResponse(ui_base if state == "ui" else "/auth/trakt/start")
     try:
         token_data = exchange_code_for_token(code)
         save_token_data(token_data)
+        _clear_account_state()
         if state == "ui":
-            ui_base = getattr(settings, "UI_BASE_URL", "http://localhost:8501")
             return RedirectResponse(ui_base)
-        else:
-            return RedirectResponse("/docs")
-    except Exception:
-        return RedirectResponse("/auth/trakt/start")
+        return RedirectResponse("/docs")
+    except Exception as e:
+        logger.error("trakt_auth_callback error: %s", repr(e))
+        return RedirectResponse(ui_base if state == "ui" else "/auth/trakt/start")
 
 
 @router.get("/auth/status")
@@ -355,6 +369,45 @@ def auth_logout():
     except Exception as e:
         logger.error("auth_logout error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post(
+    "/discover/describe",
+    response_model=DescribeResponse,
+    dependencies=[Depends(require_admin_key)],
+)
+def discover_describe(payload: DescribeRequest) -> DescribeResponse:
+    """Find titles matching a natural language description using LLM + TMDB Discover."""
+    try:
+        return discover_by_description(payload.query, limit=payload.limit)
+    except Exception as e:
+        logger.error("discover_describe error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/history/actor", response_model=ActorHistoryResponse)
+def history_actor(name: str = Query(..., min_length=1)):
+    """Find watch history titles featuring a specific actor or director."""
+    try:
+        result = get_actor_history(name)
+        if not result.person:
+            raise HTTPException(status_code=404, detail=f"Person '{name}' not found on TMDB")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("history_actor error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/chat", dependencies=[Depends(require_admin_key)])
+def chat_stream(payload: ChatRequest):
+    """Streaming chat assistant with tool calling (SSE)."""
+    return StreamingResponse(
+        stream_chat(payload.messages),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(

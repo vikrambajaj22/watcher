@@ -8,12 +8,15 @@ Watcher is a personal media discovery application that generates tailored recomm
 
 ## Features
 
-- 🔐 **Trakt OAuth** — sign in with your Trakt account
-- 📺 **Watch history sync** — full Trakt history with runtime data for watch-time stats
-- ✨ **LLM-powered recommendations** — taste planner generates a thematic profile; three candidate sources (genre discover, TMDB similar/recommendations, keyword discover) merged via RRF; picker selects and reasons from the taste profile
-- 🧠 **Taste Profile** — LLM-generated snapshot of your viewing taste: signature, summary, top genres, recurring themes, and what you tend to avoid; cached 1h and shared across Will I Like and Recommendations
-- 🔍 **TMDB typeahead** — title search with poster previews on Similar and Will I Like pages
-- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or TV → movie) via LLM keyword search
+- 🔐 **Trakt OAuth** — sign in with your Trakt account; account switch clears all cached state automatically
+- 📺 **Watch history sync** — full Trakt history with runtime data, genres, and poster metadata
+- ✨ **LLM recommendations** — taste planner + three-source TMDB candidate fetch (genre discover, similar/recommendations, keyword discover) merged via RRF; picker reasons from your taste profile
+- 🧠 **Taste Profile** — LLM-generated snapshot: signature, summary, top genres, recurring themes, avoid list; cached 1h and shared across features
+- 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; copy TMDB links; genre tags shown inline
+- 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; excludes already-watched titles
+- 👤 **Actor Search** — find every title in your history featuring a specific actor or director, with character roles
+- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations, similar, will-like, description search, actor history, watch history; streams tool status + response via SSE
+- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search
 - 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
 - 🎬 **Interactive UI** — React SPA with responsive design, 404 page, and graceful poster fallbacks
 
@@ -61,9 +64,9 @@ Install dependencies:
 
 ```bash
 pip install -r requirements.txt
-# Optional: dev tools (ruff, isort)
-pip install -r requirements-dev.txt
 ```
+
+> `requirements.txt` includes `langgraph`, `langchain-openai`, and `langchain-core` for the Chat feature.
 
 ## Architecture
 
@@ -165,6 +168,9 @@ The `/recommend/tmdb/{media_type}` endpoint:
 - `POST /similar` — **Similar titles** — merges TMDB `/similar` + `/recommendations` via RRF (k=60), TTL-cached 6h. Set `cross_type: true` for opposite-type results (movie → TV or TV → movie): LLM extracts thematic keywords from the title's overview → resolved to TMDB keyword IDs → per-keyword `/discover` merged via RRF
 - `GET /taste-profile` — **Taste Profile** — LLM-generated viewer profile (signature, summary, genres, themes, avoid), TTL-cached 1h
 - `POST /will-like` — **Will I Like?** — LLM (`gpt-4.1-nano`) scores 0–100% likelihood using the shared taste profile, TTL-cached 1h
+- `POST /discover/describe` — **Discover by description** — natural language → LLM filter extraction → TMDB Discover; excludes watched titles, TTL-cached 1h
+- `GET /history/actor?name=` — **Actor search** — TMDB person lookup → combined credits cross-referenced with watch history
+- `POST /chat` — **Chat** — LangGraph SSE stream; accepts `{ messages: [{role, content}] }`; streams `tool_start`, `tool_result`, `message`, `done` events
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
@@ -193,46 +199,56 @@ Watcher can run on:
 
 ```
 app/
-  main.py                       — FastAPI app entry
-  api.py                        — API routes
-  db.py                         — MongoDB connection & queries
-  will_like.py                  — LLM-based Will I Like? logic
-  taste_profile.py              — shared taste profile (LLM, 1h cache)
-  
+  main.py                       — FastAPI app entry, CORS config
+  api.py                        — all API routes
+  db.py                         — MongoDB connection
+  will_like.py                  — LLM Will I Like? (Pydantic response, TTL cache)
+  taste_profile.py              — shared taste profile (LLM, 1h cache, Pydantic)
+  actor_history.py              — actor/director search against watch history
+  chat.py                       — LangGraph chat agent (StateGraph, ToolNode, SSE)
+  trakt_sync.py                 — Trakt → TMDB enrich → MongoDB sync
+
   auth/
-    trakt_auth.py              — Trakt OAuth handling
-  
+    trakt_auth.py              — Trakt OAuth flow
+
+  config/
+    settings.py                — pydantic-settings env config
+
   dao/
-    history.py                 — watch history queries
-  
+    history.py                 — watch history queries (5-min TTL cache)
+
   process/
-    tmdb_recommendation.py     — LLM + TMDB discover recommender
-  
+    tmdb_recommendation.py     — taste planner + candidate fetch + picker
+    describe_discover.py       — natural language → TMDB Discover (1h cache)
+
   prompts/
     recommend/
-      taste_planner_v1.jinja2  — LLM taste profile generation
-      tmdb_picker_v1.jinja2    — LLM recommendation ranking
-  
+      taste_planner_v1.jinja2
+      tmdb_picker_v1.jinja2
+
   schemas/
-    recommendations/           — Pydantic models for API responses
-  
+    api.py                     — all API Pydantic models
+    recommendations/           — recommendation-specific schemas
+
   utils/
-    openai_client.py           — OpenAI API wrapper
-    prompt_registry.py         — prompt loading
-    logger.py                  — logging setup
-  
-  tmdb_discover.py             — TMDB API integration (discover, similar)
-  tmdb_client.py               — low-level TMDB HTTP client
+    openai_client.py
+    prompt_registry.py
+    logger.py
+
+  tmdb_discover.py             — TMDB discover, similar, recommendations, RRF merge
+  tmdb_client.py               — low-level TMDB HTTP helpers
 
 frontend/
   public/
-    404.png                    — fallback image for missing posters and 404 page
+    404.png                    — poster fallback and 404 page image
   src/
-    pages/                     — React pages (history, recommendations, etc.)
-    components/                — reusable React components
-    api/                       — fetch wrappers for API calls
-    lib/poster.ts              — poster URL helpers; falls back to /404.png when path is missing
-    App.tsx                    — main app entry
+    pages/                     — History, Recommend, WillLike, Similar, Discover,
+                                  Actor, Chat, Taste, Admin, Home, NotFound
+    components/                — Layout, MediaCard, SearchTypeahead, AiBlurb, etc.
+    api/                       — typed fetch wrappers (watcher.ts, client.ts)
+    lib/poster.ts              — TMDB poster URL helper with /404.png fallback
+    contexts/AuthContext.tsx   — auth state provider
+    App.tsx                    — routes
 ```
 
 ### Configuration
@@ -248,7 +264,9 @@ Key environment variables:
 | `OPENAI_API_KEY` | OpenAI API key for LLM recommendations |
 | `MONGODB_URI` | MongoDB connection string |
 | `MONGODB_DB_NAME` | MongoDB database name |
-| `ADMIN_API_KEY` | Optional: require this header on admin routes |
+| `ADMIN_API_KEY` | Optional: require this header on admin/recommend/chat routes |
+| `WATCHER_CORS_ORIGINS` | Comma-separated allowed origins (default: localhost:8501) |
+| `WATCHER_CORS_ORIGIN_REGEX` | Optional regex for additional origins (e.g. LAN IP for mobile) |
 
 ### Running Tests
 

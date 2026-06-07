@@ -1,5 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+
+function CopyTmdbButton({ id, mt }: { id: number; mt: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy(e: React.MouseEvent) {
+    e.preventDefault();
+    const url = `https://www.themoviedb.org/${mt === "tv" ? "tv" : "movie"}/${id}`;
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={copied ? "Copied!" : "Copy TMDB URL"}
+      className={`inline-flex items-center shrink-0 text-muted hover:text-text transition-colors cursor-pointer bg-transparent border-0 p-0 ${copied ? "text-accent" : ""}`}
+    >
+      {copied ? (
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+        </svg>
+      )}
+    </button>
+  );
+}
 import { apiFetch } from "../api/client";
 import {
   apiJson,
@@ -15,11 +45,7 @@ import {
 import { placeholderPoster, posterUrl } from "../lib/poster";
 
 type MediaFilter = "all" | "movie" | "tv";
-type SortKey =
-  | "latest"
-  | "earliest"
-  | "title"
-  | "rewatch_engagement";
+type SortKey = "latest" | "earliest" | "title" | "year" | "rewatch_engagement";
 
 const AUTO_SYNC_MS = 300_000;
 
@@ -47,6 +73,8 @@ function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
     if (key === "title") return rowTitle(a).localeCompare(rowTitle(b));
     if (key === "rewatch_engagement")
       return (Number(b.rewatch_engagement) || 0) - (Number(a.rewatch_engagement) || 0);
+    if (key === "year")
+      return (Number(b.year) || 0) - (Number(a.year) || 0);
     if (key === "earliest") {
       const ea = String(a.earliest_watched_at ?? "");
       const eb = String(b.earliest_watched_at ?? "");
@@ -74,6 +102,8 @@ export function HistoryPage() {
   const [media, setMedia] = useState<MediaFilter>("all");
   const [sort, setSort] = useState<SortKey>("latest");
   const [search, setSearch] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
+  const [genreFilter, setGenreFilter] = useState("");
   const [rows, setRows] = useState<HistoryRow[] | null>(null);
   const [rowsOverall, setRowsOverall] = useState<HistoryRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -116,8 +146,42 @@ export function HistoryPage() {
     let r = sortRows(rows, sort);
     const q = search.trim().toLowerCase();
     if (q) r = r.filter((row) => rowTitle(row).toLowerCase().includes(q));
+    if (yearFilter) {
+      const y = parseInt(yearFilter);
+      r = r.filter((row) => {
+        const watchedYear = new Date(String(row.latest_watched_at ?? "")).getFullYear();
+        return watchedYear === y;
+      });
+    }
+    if (genreFilter) {
+      r = r.filter((row) => {
+        const genres = (row.genres as string[] | undefined) ?? [];
+        return genres.includes(genreFilter);
+      });
+    }
     return r;
-  }, [rows, sort, search]);
+  }, [rows, sort, search, yearFilter, genreFilter]);
+
+  const genreOptions = useMemo(() => {
+    if (!rows) return [];
+    const genres = new Set<string>();
+    for (const row of rows) {
+      for (const g of (row.genres as string[] | undefined) ?? []) {
+        if (g) genres.add(g);
+      }
+    }
+    return Array.from(genres).sort();
+  }, [rows]);
+
+  const watchYears = useMemo(() => {
+    if (!rows) return [];
+    const years = new Set<number>();
+    for (const row of rows) {
+      const y = new Date(String(row.latest_watched_at ?? "")).getFullYear();
+      if (!isNaN(y)) years.add(y);
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [rows]);
 
   const statsSource = useMemo(() => {
     if (!rows) return [];
@@ -258,6 +322,7 @@ export function HistoryPage() {
             >
               <option value="latest">Latest Watched</option>
               <option value="earliest">Earliest Watched</option>
+              <option value="year">Release Year</option>
               <option value="title">Title</option>
               <option value="rewatch_engagement">Engagement</option>
             </select>
@@ -272,6 +337,36 @@ export function HistoryPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Title…"
             />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              Genre
+            </span>
+            <select
+              className={inputCls}
+              value={genreFilter}
+              onChange={(e) => setGenreFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {genreOptions.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              Watch Year
+            </span>
+            <select
+              className={inputCls}
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {watchYears.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
           </label>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
@@ -345,23 +440,31 @@ export function HistoryPage() {
                       {title}
                     </span>
                     {id > 0 && mt && (
-                      <a
-                        className="inline-flex items-center shrink-0 text-muted hover:text-text hover:no-underline transition-colors"
-                        href={`https://www.themoviedb.org/${mt === "tv" ? "tv" : "movie"}/${id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Open in TMDB"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                        </svg>
-                      </a>
+                      <>
+                        <a
+                          className="inline-flex items-center shrink-0 text-muted hover:text-text hover:no-underline transition-colors"
+                          href={`https://www.themoviedb.org/${mt === "tv" ? "tv" : "movie"}/${id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open in TMDB"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                          </svg>
+                        </a>
+                        <CopyTmdbButton id={id} mt={mt} />
+                      </>
                     )}
                   </div>
                   <p className="text-xs text-muted m-0 pl-[calc(1.5rem+6px)]">
                     {isTv
                       ? `${String(row.watched_episodes ?? 0)} / ${String(row.total_episodes ?? "—")} episodes`
                       : row.year != null ? String(row.year) : "—"}
+                    {Array.isArray(row.genres) && (row.genres as string[]).length > 0 && (
+                      <span className="ml-2 text-muted/60">
+                        {(row.genres as string[]).slice(0, 2).join(" · ")}
+                      </span>
+                    )}
                   </p>
                 </div>
 

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from cachetools import TTLCache
 
 from app.dao.history import get_watch_history
+from app.schemas.api import TasteProfile
 from app.utils.openai_client import get_openai_client
 from app.utils.logger import get_logger
 
@@ -47,7 +48,7 @@ def _format_history(history: list) -> str:
     return "\n".join(lines) if lines else "(no history)"
 
 
-def compute_taste_profile() -> Dict[str, Any]:
+def compute_taste_profile() -> TasteProfile:
     cached = _CACHE.get("profile")
     if cached is not None:
         return cached
@@ -61,12 +62,13 @@ def compute_taste_profile() -> Dict[str, Any]:
 
     prompt = (
         "You are a film and TV critic analyzing someone's viewing taste. "
-        "Based on the watch history below, generate a concise taste profile.\n\n"
+        "The history includes both movies (tagged 'movie') and TV shows (tagged 'tv'). "
+        "Based on the watch history below, generate a concise taste profile that reflects both.\n\n"
         f"Watch history ({len(history)} titles):\n{history_text}\n\n"
         "Respond ONLY with valid JSON matching this exact shape:\n"
-        '{"signature": "a punchy 5-10 word phrase capturing their overall taste", '
-        '"summary": "2-3 sentence paragraph describing their taste, addressed to the user using \'you\'", '
-        '"genres": ["up to 5 genres they clearly favor"], '
+        '{"signature": "a punchy 5-10 word phrase capturing their overall taste across movies and TV", '
+        '"summary": "2-3 sentence paragraph describing their taste in movies and TV, addressed to the user using \'you\'", '
+        '"genres": ["up to 5 genres they clearly favor across movies and TV"], '
         '"avoid": ["up to 3 things they seem to avoid or rarely watch"]}\n'
         "Be specific and grounded in the actual titles — don't be generic."
     )
@@ -85,14 +87,14 @@ def compute_taste_profile() -> Dict[str, Any]:
     except Exception:
         raise ValueError("LLM returned invalid JSON")
 
-    out = {
-        "signature": str(result.get("signature", "")),
-        "summary": str(result.get("summary", "")),
-        "genres": [str(g) for g in result.get("genres", [])],
-        "themes": themes,
-        "avoid": [str(a) for a in result.get("avoid", [])],
-        "history_count": len(history),
-    }
+    out = TasteProfile(
+        signature=str(result.get("signature", "")),
+        summary=str(result.get("summary", "")),
+        genres=[str(g) for g in result.get("genres", [])],
+        themes=themes,
+        avoid=[str(a) for a in result.get("avoid", [])],
+        history_count=len(history),
+    )
     _CACHE["profile"] = out
     return out
 
@@ -106,11 +108,11 @@ def clear_taste_cache() -> None:
 
 def get_taste_text() -> str:
     profile = compute_taste_profile()
-    genres = ", ".join(profile["genres"]) if profile["genres"] else "varied"
-    themes = ", ".join(profile["themes"]) if profile["themes"] else "varied"
+    genres = ", ".join(profile.genres) if profile.genres else "varied"
+    themes = ", ".join(profile.themes) if profile.themes else "varied"
     return (
-        f"Taste signature: {profile['signature']}\n"
-        f"Summary: {profile['summary']}\n"
+        f"Taste signature: {profile.signature}\n"
+        f"Summary: {profile.summary}\n"
         f"Genres: {genres}\n"
         f"Recurring themes: {themes}"
     )

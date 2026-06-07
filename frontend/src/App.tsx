@@ -1,7 +1,10 @@
 import { Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { RequireAuth } from "./components/RequireAuth";
+import { ActorPage } from "./pages/ActorPage";
 import { AdminPage } from "./pages/AdminPage";
+import { ChatPage } from "./pages/ChatPage";
+import { DiscoverPage } from "./pages/DiscoverPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { HomePage } from "./pages/HomePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -20,6 +23,9 @@ export default function App() {
           <Route path="/recommend" element={<RecommendPage />} />
           <Route path="/will-like" element={<WillLikePage />} />
           <Route path="/similar" element={<SimilarPage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/actor" element={<ActorPage />} />
+          <Route path="/chat" element={<ChatPage />} />
           <Route path="/taste" element={<TasteProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Route>

@@ -85,6 +85,15 @@ export function Layout() {
                 <NavLink to="/similar" className={linkClass}>
                   Similar
                 </NavLink>
+                <NavLink to="/discover" className={linkClass}>
+                  Discover
+                </NavLink>
+                <NavLink to="/actor" className={linkClass}>
+                  Actor Search
+                </NavLink>
+                <NavLink to="/chat" className={linkClass}>
+                  Chat
+                </NavLink>
               </>
             )}
           </nav>
@@ -170,6 +179,9 @@ export function Layout() {
                     { to: "/recommend", label: "Recommendations" },
                     { to: "/will-like", label: "Will I Like" },
                     { to: "/similar", label: "Similar" },
+                    { to: "/discover", label: "Discover" },
+                    { to: "/actor", label: "Actor Search" },
+                    { to: "/chat", label: "Chat" },
                     { to: "/admin", label: "Maintenance" },
                   ]
                 : []),

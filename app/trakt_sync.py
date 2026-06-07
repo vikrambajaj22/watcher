@@ -207,6 +207,7 @@ def sync_trakt_history():
                     movie_data["runtime_minutes"] = int(tmdb_meta["runtime"])
                 kw_raw = (tmdb_meta.get("keywords") or {}).get("keywords") or []
                 movie_data["tmdb_keywords"] = [k["name"].lower() for k in kw_raw if k.get("name")]
+                movie_data["genres"] = [g["name"] for g in (tmdb_meta.get("genres") or []) if g.get("name")]
         except Exception as e:
             logger.warning("Could not fetch TMDB metadata for movie %s: %s", tmdb_id, repr(e))
         all_history.append(movie_data)
@@ -240,6 +241,7 @@ def sync_trakt_history():
                     show_data["episode_runtime_minutes"] = int(ep_runtimes[0])
                 kw_raw = (meta.get("keywords") or {}).get("results") or []
                 show_data["tmdb_keywords"] = [k["name"].lower() for k in kw_raw if k.get("name")]
+                show_data["genres"] = [g["name"] for g in (meta.get("genres") or []) if g.get("name")]
                 if meta.get("seasons"):
                     for season in meta["seasons"]:
                         if (

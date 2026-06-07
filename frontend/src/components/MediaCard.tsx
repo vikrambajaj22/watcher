@@ -12,6 +12,7 @@ type Props = {
   overview?: string | null;
   footer?: ReactNode;
   similarLink?: boolean;
+  watched?: boolean;
 };
 
 export function MediaCard({
@@ -23,6 +24,7 @@ export function MediaCard({
   overview,
   footer,
   similarLink,
+  watched,
 }: Props) {
   const src = posterUrl(posterPath ?? null, "w342") ?? placeholderPoster();
   const mt = (mediaType || "movie").toLowerCase();
@@ -34,16 +36,25 @@ export function MediaCard({
         <img className="w-full h-full object-contain block" src={src} alt="" loading="lazy" />
       </div>
       <div className="p-4 flex-1 flex flex-col gap-2">
-        {mediaType && (
-          <span
-            className={`self-start text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full ${
-              isTv
-                ? "bg-blue-400/10 text-blue-300"
-                : "bg-emerald-400/10 text-emerald-300"
-            }`}
-          >
-            {isTv ? "TV" : "Film"}
-          </span>
+        {(mediaType || watched) && (
+          <div className="flex flex-wrap gap-1">
+            {mediaType && (
+              <span
+                className={`text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full ${
+                  isTv
+                    ? "bg-blue-400/10 text-blue-300"
+                    : "bg-emerald-400/10 text-emerald-300"
+                }`}
+              >
+                {isTv ? "TV" : "Film"}
+              </span>
+            )}
+            {watched && (
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
+                Watched
+              </span>
+            )}
+          </div>
         )}
         <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] m-0 flex items-center gap-1.5">
           <span className="line-clamp-2">{title}</span>

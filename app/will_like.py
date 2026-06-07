@@ -1,10 +1,11 @@
 import json
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from cachetools import TTLCache
 
 from app.tmdb_client import get_metadata, search_by_title
 from app.dao.history import get_watch_history
+from app.schemas.api import ItemSummary, WillLikeResponse
 from app.taste_profile import get_taste_text
 from app.utils.openai_client import get_openai_client
 from app.utils.logger import get_logger
@@ -21,6 +22,13 @@ class WillLikeError(Exception):
     pass
 
 
+def clear_will_like_cache() -> None:
+    try:
+        _WILL_LIKE_CACHE.clear()
+    except Exception:
+        pass
+
+
 def _format_history(history: list) -> str:
     lines = []
     for item in history[:50]:
@@ -32,7 +40,7 @@ def _format_history(history: list) -> str:
 
 def compute_will_like(
     tmdb_id: Optional[int], title: Optional[str], media_type: str
-) -> Dict[str, Any]:
+) -> WillLikeResponse:
     if media_type not in {"movie", "tv"}:
         raise WillLikeError("media_type must be 'movie' or 'tv'")
 
@@ -62,19 +70,13 @@ def compute_will_like(
         int(h.get("id", 0)) == resolved_id and h.get("media_type") == media_type
         for h in history
     ):
-        return {
-            "will_like": False,
-            "score": 1.0,
-            "explanation": "You have already watched this item.",
-            "already_watched": True,
-            "item": {
-                "id": resolved_id,
-                "title": resolved_title,
-                "media_type": media_type,
-                "overview": resolved_overview,
-                "poster_path": resolved_poster,
-            },
-        }
+        return WillLikeResponse(
+            will_like=False,
+            score=1.0,
+            explanation="You have already watched this item.",
+            already_watched=True,
+            item=ItemSummary(id=resolved_id, title=resolved_title, media_type=media_type, overview=resolved_overview, poster_path=resolved_poster),
+        )
 
     if not history:
         raise WillLikeError("no watch history — sync your history first")
@@ -122,18 +124,12 @@ def compute_will_like(
     will_like = confidence >= 0.5
     reasoning = str(result.get("reasoning", ""))
 
-    result_out = {
-        "will_like": will_like,
-        "score": confidence,
-        "explanation": reasoning,
-        "already_watched": False,
-        "item": {
-            "id": resolved_id,
-            "title": resolved_title,
-            "media_type": media_type,
-            "overview": resolved_overview,
-            "poster_path": resolved_poster,
-        },
-    }
+    result_out = WillLikeResponse(
+        will_like=will_like,
+        score=confidence,
+        explanation=reasoning,
+        already_watched=False,
+        item=ItemSummary(id=resolved_id, title=resolved_title, media_type=media_type, overview=resolved_overview, poster_path=resolved_poster),
+    )
     _WILL_LIKE_CACHE[cache_key] = result_out
     return result_out

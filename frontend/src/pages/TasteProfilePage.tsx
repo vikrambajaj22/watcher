@@ -92,7 +92,7 @@ export function TasteProfilePage() {
               color="bg-accent/10 text-accent border-accent/20"
             />
             <Section
-              title="Rarely watches"
+              title="Rarely watched"
               items={state.data.avoid}
               color="bg-white/5 text-muted border-border"
             />

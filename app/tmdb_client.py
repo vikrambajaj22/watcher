@@ -6,6 +6,35 @@ import urllib.parse
 from app.config.settings import settings
 
 
+def search_person(name: str) -> Optional[Dict[str, Any]]:
+    """Return top TMDB person hit for name, or None."""
+    if not name or not name.strip():
+        return None
+    q = urllib.parse.quote_plus(name.strip())
+    url = f"{settings.TMDB_API_URL}/search/person?api_key={settings.TMDB_API_KEY}&query={q}&page=1"
+    resp = requests.get(url, timeout=15)
+    if resp.status_code != 200:
+        return None
+    results = resp.json().get("results") or []
+    if not results:
+        return None
+    top = results[0]
+    return {
+        "id": int(top["id"]),
+        "name": top.get("name"),
+        "profile_path": top.get("profile_path"),
+        "known_for_department": top.get("known_for_department"),
+    }
+
+
+def get_person_credits(person_id: int) -> Dict[str, Any]:
+    """Fetch combined movie+TV credits for a person."""
+    url = f"{settings.TMDB_API_URL}/person/{person_id}/combined_credits?api_key={settings.TMDB_API_KEY}"
+    resp = requests.get(url, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def get_metadata(tmdb_id, media_type="movie"):
     if media_type not in ("movie", "tv"):
         raise ValueError("media_type must be 'movie' or 'tv'")

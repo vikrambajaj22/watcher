@@ -296,11 +296,9 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 
 ---
 
-## Future Enhancements (Still Relevant)
+## Future Enhancements
 
-These features from the old roadmap are still worth considering post-refactor:
-
-1. **Find Titles by Description**
+1. **Find Titles by Description** ✅
 
    A natural-language search endpoint that lets the user describe what they want to watch and returns matching titles. Goes beyond keyword search by inferring structured filters from free text.
 
@@ -323,55 +321,53 @@ These features from the old roadmap are still worth considering post-refactor:
    - Cast/crew name → TMDB person ID lookup needed before Discover call
    - Free-text remainder (mood, style) maps to `with_keywords` or a secondary `/search/keyword` call
 
-2. **Watch History UI Improvements**
-   - Genre/year filters on `/history` endpoint and React UI
-   - Copy-to-clipboard for TMDB URLs on each card
-   - Sort options (recently watched, by year, by title)
+2. **Watch History UI Improvements** ✅
+   - Genre/year filters (year range inputs + genre text filter, client-side)
+   - Copy-to-clipboard button for TMDB URLs on each row
+   - Sort by release year added; genres stored during Trakt sync and shown inline
 
-2. **"Where Have I Seen This Actor?" Feature**
-   - New endpoint: search watch history by actor name
-   - Return titles where they appear with roles
-   - Frontend: "Actor Search" tab/section
-   - Note: Currently would require storing TMDB credits; alternative is to fetch on-demand
+3. **"Where Have I Seen This Actor?" Feature** ✅
+   - `GET /history/actor?name=...`: TMDB person lookup → credits cross-referenced with watch history
+   - `/actor` page: person profile header + watched titles grid with character roles
 
-3. **"Chat with Watcher" — Conversational Agent**
+4. **"Chat with Watcher" — Conversational Agent** ✅
 
-   A chat UI that lets the user talk to Watcher in natural language and have it call the existing features as tools. Built on the in-process **tool/function-calling** pattern already in `app/utils/llm_orchestrator.py` (`call_model_with_mcp_function`), generalized from a single tool to many — this is OpenAI function calling, **not** the MCP protocol (see also section 13 on dropping the misleading `mcp` naming).
+   SSE-streaming chat endpoint backed by a **LangGraph** `StateGraph` (agent node ↔ ToolNode, conditional edge loops until no tool calls remain).
 
-   **Backend**
-   - New endpoint: `POST /chat`, streaming via SSE (`text/event-stream`). Body: `{ messages: [...], media_type? }`.
-   - Tool registry — register each feature as a callable tool with a JSON schema:
-     - `recommend` → `tmdb_recommendation` (taste planner + discover)
-     - `similar` → TMDB `/similar` lookup (current `/mcp/knn` logic)
-     - `will_like` → LLM prediction (current `/mcp/will-like` logic)
-     - `get_history` → query watch history (filters: genre, year, media type)
-   - Orchestration loop: model → tool call(s) → execute locally → feed results back → model responds. Cap max tool iterations per turn to bound latency/cost.
-   - **Approach — LangGraph** (also a learning project): model the loop as a LangGraph graph (agent node ↔ tool node with a conditional edge back to the agent until no tool call remains). LangGraph gives a clean structure for the multi-step/refinement flow and built-in streaming + state/checkpointing for conversation history. Adds a `langgraph` dependency. (Alternative: a plain hand-rolled loop over the existing `call_model_with_mcp_function` pattern — fewer deps, less structure.)
-   - Reuse `gpt-4.1-nano`; system prompt describes the available tools and the user's context.
-   - Stream assistant tokens **and** tool-status events so the UI can show "Looking up similar titles…".
+   **Architecture** (`app/chat.py`)
+   - 6 LangChain `@tool` functions: `get_recommendations`, `find_similar`, `will_i_like`, `search_by_description`, `actor_in_history`, `get_history`
+   - `ChatOpenAI` (langchain-openai) bound with tools → `_agent_node`
+   - `ToolNode` (langgraph.prebuilt) for tool execution with `handle_tool_errors=True`
+   - Graph: `START → agent → (tools → agent)* → END`
+   - `_graph.stream(stream_mode="updates")` drives the SSE generator
+   - SSE event types: `tool_start`, `tool_result`, `message`, `error`, `done`
 
-   **Frontend**
-   - New `/chat` route + nav entry; transcript view with streaming assistant messages.
-   - Render tool results inline as `MediaCard`s (reuses the unified card from section 12), not just text.
-   - Refinement loop ("more like X, less like Y") via retained conversation state.
-   - Typing/loading indicator driven by the streamed tool-status events.
+   **Dependencies added**: `langgraph`, `langchain-openai`, `langchain-core`
 
-   **Considerations**
-   - Latency stacks: each turn can be several LLM round-trips on top of the 2–5s recommend/discover cost → streaming is essential, and surface per-step progress.
-   - Keep tool functions pure and reusable so the same registry can later back a real MCP server (below).
-   - Respect `ADMIN_API_KEY` on `/chat` if set (it can trigger sync/recommend tools).
+   **Frontend** (`/chat`)
+   - Transcript view; tool status indicators (spinner while running, checkmark when done)
+   - Tool results rendered inline as `MediaCard` grids
+   - Example prompts shown when history is empty
 
-   **Optional follow-on — real MCP server**
-   - Once the tool registry is clean (section 13), expose the *same* tool functions over an actual MCP server (the `mcp` SDK) so external clients (Claude Desktop, other agents) can use them.
-   - This is the only context where the "mcp" name is accurate — do it as a separate, additive step, not part of the chat MVP.
+5. **Actor Search Auto-populate Dropdown**
+   - The Actor Search page uses a plain text input. Add a typeahead dropdown backed by TMDB `/search/person` (similar to the title search typeahead) so users can confirm the exact person before submitting.
+   - Show profile photo + known-for titles in the suggestion row.
 
-4. **Code Quality**
+6. **Actor Search by Photo** *(stretch goal)*
+   - Allow the user to upload or paste a photo of an actor; identify the person via a vision-capable LLM or a reverse-image/face-recognition API, then run the existing actor history lookup.
+   - Possible approach: send the image to a vision LLM (e.g. `gpt-4o`) with the prompt "Who is the person in this image? Return their full name." → pass the name to the existing `GET /history/actor?name=` flow.
+
+7. **Light / Dark Mode Toggle**
+   - Currently dark-mode only. Add a light-mode palette and a manual toggle persisted to `localStorage`.
+   - Respect `prefers-color-scheme` as the default; CSS custom properties in `index.css` already use `[data-theme]` / `:root` conventions via Tailwind v4 — extend with a `light` theme variant.
+   - Persist the toggle to `localStorage` and expose it in the nav bar.
+
+6. **Code Quality**
    - Add Ruff for code formatting/linting
    - Add pre-commit hooks
-   - MongoDB indexes on `watch_history` (even though tmdb_metadata is gone)
+   - MongoDB indexes on `watch_history`
 
-5. **Performance**
-   - Ensure Trakt sync doesn't block recommendation requests (already noted in refactor)
-   - Cache watch history appropriately
+6. **Performance**
+   - Ensure Trakt sync doesn't block recommendation requests
    - Monitor LLM call latency
 

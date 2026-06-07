@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class SimilarRequest(BaseModel):
@@ -119,6 +119,87 @@ class JobStatusModel(BaseModel):
     cancel_requested_at: Optional[int] = None
 
 
+class DiscoverItem(BaseModel):
+    id: int
+    title: Optional[str] = None
+    media_type: Optional[str] = None
+    poster_path: Optional[str] = None
+    overview: Optional[str] = None
+    release_date: Optional[str] = None
+    watched: bool = False
+
+
+class DiscoverFilters(BaseModel):
+    media_type: str = "both"
+    genres: List[str] = []
+    cast: List[str] = []
+    keywords: List[str] = []
+    year_from: Optional[int] = None
+    year_to: Optional[int] = None
+    model_config = {"extra": "ignore"}
+
+    @field_validator("media_type", mode="before")
+    @classmethod
+    def _validate_media_type(cls, v: Any) -> str:
+        s = str(v or "both").lower()
+        return s if s in ("movie", "tv", "both") else "both"
+
+
+class DescribeRequest(BaseModel):
+    query: str
+    limit: int = 20
+
+    @model_validator(mode="after")
+    def _clamp_limit(self):
+        self.limit = max(1, min(self.limit, 40))
+        return self
+
+
+class DescribeResponse(BaseModel):
+    results: List[DiscoverItem]
+    filters: Optional[DiscoverFilters] = None
+
+
+class PersonSummary(BaseModel):
+    id: int
+    name: Optional[str] = None
+    profile_path: Optional[str] = None
+    known_for_department: Optional[str] = None
+
+
+class ActorHistoryItem(BaseModel):
+    id: int
+    title: Optional[str] = None
+    media_type: Optional[str] = None
+    poster_path: Optional[str] = None
+    character: Optional[str] = None
+    department: Optional[str] = None
+    watched_at: Optional[str] = None
+
+
+class ActorHistoryResponse(BaseModel):
+    person: Optional[PersonSummary] = None
+    items: List[ActorHistoryItem] = []
+
+
+class TasteProfile(BaseModel):
+    signature: str = ""
+    summary: str = ""
+    genres: List[str] = []
+    themes: List[str] = []
+    avoid: List[str] = []
+    history_count: int = 0
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+
+
 class HistoryItem(BaseModel):
     id: Optional[int] = None
     tmdb_id: Optional[int] = None
@@ -132,4 +213,6 @@ class HistoryItem(BaseModel):
     watch_count: Optional[int] = None
     completion_ratio: Optional[float] = None
     rewatch_engagement: Optional[float] = None
+    year: Optional[int] = None
+    genres: Optional[List[str]] = None
     model_config = {"extra": "allow"}

@@ -20,17 +20,21 @@ Further env detail: [README.md](README.md) (Environment, Quick Start) and [front
 
 ## React SPA routes → API (summary)
 
-| UI area | Typical methods | Paths |
-|--------|-----------------|--------|
-| Home | GET | `/health`, `/auth/status`, `/admin/sync/status` |
-| Watch history | GET | `/history` (query params as used in app) |
+| UI area | Method | Path |
+|--------|--------|------|
+| Home | GET | `/health`, `/auth/status` |
+| Auth | GET | `/auth/trakt/start`, `/auth/trakt/callback`, `/auth/logout` |
+| Watch history | GET | `/history` |
 | Watch history | POST | `/admin/sync/trakt`, `/admin/clear-history-cache` |
 | Recommendations | POST | `/recommend/tmdb/{all\|movie\|tv}` |
 | Taste Profile | GET | `/taste-profile` |
-| Will I like | POST | `/will-like` |
+| Will I Like? | POST | `/will-like` |
 | Similar titles | POST | `/similar` |
-| Similar titles (metadata label) | GET | `/admin/tmdb/{id}` |
-| Maintenance (admin UI) | GET/POST | `/admin/*` (sync jobs, cache clear) |
+| Discover by description | POST | `/discover/describe` |
+| Actor search | GET | `/history/actor?name=` |
+| Chat (SSE stream) | POST | `/chat` |
+| Title typeahead | GET | `/search?q=&limit=` |
+| Maintenance | GET/POST | `/admin/sync/status`, `/admin/sync/job/{id}`, `/admin/sync/jobs` |
 
 OpenAPI / interactive docs: `http://localhost:8080/docs` (or `/redoc`) when the API is running.
 
