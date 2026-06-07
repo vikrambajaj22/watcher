@@ -1,63 +1,36 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
-import { type WillLikeResponse } from "../api/watcher";
+import { type SearchHit, type WillLikeResponse } from "../api/watcher";
+import { SearchTypeahead } from "../components/SearchTypeahead";
 import { posterUrl, placeholderPoster } from "../lib/poster";
 
-type Mode = "title" | "id";
-
 export function WillLikePage() {
-  const [mode, setMode] = useState<Mode>("title");
-  const [title, setTitle] = useState("");
-  const [tmdbId, setTmdbId] = useState(550);
-  const [mediaType, setMediaType] = useState<"movie" | "tv">("movie");
+  const [selectedHit, setSelectedHit] = useState<SearchHit | null>(null);
   const [result, setResult] = useState<WillLikeResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [disambig, setDisambig] = useState(false);
 
-  async function submit(overrideMedia?: "movie" | "tv") {
+  async function submit() {
+    if (!selectedHit) return;
     setBusy(true);
     setErr(null);
-    setDisambig(false);
     setResult(null);
-    const mt = overrideMedia ?? mediaType;
-    const payload =
-      mode === "title"
-        ? { title: title.trim(), media_type: mt }
-        : { tmdb_id: tmdbId, media_type: mt };
-
     try {
-      const r = await apiFetch("/mcp/will-like", {
+      const r = await apiFetch("/will-like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ tmdb_id: selectedHit.id, media_type: selectedHit.media_type }),
       });
       const text = await r.text();
       let j: unknown;
-      try {
-        j = JSON.parse(text);
-      } catch {
-        j = { detail: text };
-      }
-      if (r.status === 400) {
-        const detail = JSON.stringify(j);
-        if (
-          detail.includes("input_media_type") ||
-          detail.toLowerCase().includes("ambiguous")
-        ) {
-          setDisambig(true);
-          return;
-        }
+      try { j = JSON.parse(text); } catch { j = { detail: text }; }
+      if (!r.ok) {
         setErr(
           typeof j === "object" && j && "detail" in j
             ? String((j as { detail: unknown }).detail)
             : text,
         );
-        return;
-      }
-      if (!r.ok) {
-        setErr(text);
         return;
       }
       setResult(j as WillLikeResponse);
@@ -68,8 +41,7 @@ export function WillLikePage() {
     }
   }
 
-  const displayTitle =
-    result?.item.title ?? result?.item.name ?? "—";
+  const displayTitle = result?.item.title ?? result?.item.name ?? "—";
   const itemId = result?.item.id;
   const itemMt = (result?.item.media_type ?? "movie").toLowerCase();
   const isTv = itemMt === "tv";
@@ -82,100 +54,27 @@ export function WillLikePage() {
         your watch history.
       </p>
 
-      <div className="tabs">
-        <button
-          type="button"
-          className={mode === "title" ? "tab active" : "tab"}
-          onClick={() => setMode("title")}
-        >
-          By Title
-        </button>
-        <button
-          type="button"
-          className={mode === "id" ? "tab active" : "tab"}
-          onClick={() => setMode("id")}
-        >
-          By TMDB ID
-        </button>
-      </div>
-
       <div className="card form-card will-form-card">
-        <div
-          className={
-            mode === "title"
-              ? "will-form-grid"
-              : "will-form-grid will-form-grid--id"
-          }
-        >
-          {mode === "title" ? (
-            <label className="field will-form-field-main">
-              <span className="field-label">Title</span>
-              <input
-                className="input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Movie Or Show Name"
-              />
-            </label>
-          ) : (
-            <label className="field will-form-field-main">
-              <span className="field-label">TMDB ID</span>
-              <input
-                className="input input-narrow"
-                type="number"
-                min={1}
-                value={tmdbId}
-                onChange={(e) => setTmdbId(Number(e.target.value))}
-              />
-            </label>
-          )}
-          <label className="field will-form-field-type">
-            <span className="field-label">Type</span>
-            <select
-              className="input"
-              value={mediaType}
-              onChange={(e) =>
-                setMediaType(e.target.value as "movie" | "tv")
-              }
-            >
-              <option value="movie">Movie</option>
-              <option value="tv">TV</option>
-            </select>
-          </label>
-        </div>
+        <label className="field field-block">
+          <span className="field-label">Title</span>
+          <SearchTypeahead
+            selected={selectedHit}
+            onSelect={(hit) => { setSelectedHit(hit); setResult(null); setErr(null); }}
+            onClear={() => setSelectedHit(null)}
+            placeholder="Search movie or show…"
+          />
+        </label>
         <div className="actions will-form-actions">
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || (mode === "title" && !title.trim())}
+            disabled={busy || !selectedHit}
             onClick={() => void submit()}
           >
             {busy ? "Checking…" : "Check"}
           </button>
         </div>
       </div>
-
-      {disambig && (
-        <div className="card card-warn">
-          <p>This ID or title may match both movie and TV. Pick a type and retry.</p>
-          <div className="actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => void submit("movie")}
-            >
-              Retry As Movie
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => void submit("tv")}
-            >
-              Retry As TV
-            </button>
-          </div>
-        </div>
-      )}
 
       {err && <div className="card card-error">{err}</div>}
 
@@ -190,10 +89,7 @@ export function WillLikePage() {
         <article className="history-card will-result-card">
           <div className="history-card-poster">
             <img
-              src={
-                posterUrl(result.item.poster_path, "w185") ??
-                placeholderPoster(displayTitle)
-              }
+              src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster(displayTitle)}
               alt=""
               loading="lazy"
             />
@@ -210,7 +106,7 @@ export function WillLikePage() {
             <p className="history-card-sub muted">
               {result.already_watched
                 ? "Already in your history."
-                : `Score: ${result.score.toFixed(3)}`}
+                : `Score: ${(result.score * 100).toFixed(0)}%`}
             </p>
             <p className="media-card-reasoning will-result-explanation">
               {result.explanation}
@@ -231,16 +127,14 @@ export function WillLikePage() {
             </li>
           </ul>
           <div className="history-card-actions similar-result-actions">
-            {itemId != null &&
-              itemId > 0 &&
-              result.item.media_type && (
-                <Link
-                  className="btn btn-secondary history-card-link"
-                  to={`/similar?id=${itemId}&type=${encodeURIComponent(itemMt)}`}
-                >
-                  Find Similar
-                </Link>
-              )}
+            {itemId != null && itemId > 0 && result.item.media_type && (
+              <Link
+                className="btn btn-secondary history-card-link"
+                to={`/similar?id=${itemId}&type=${encodeURIComponent(itemMt)}`}
+              >
+                Find Similar
+              </Link>
+            )}
           </div>
         </article>
       )}

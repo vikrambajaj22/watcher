@@ -5,7 +5,6 @@ import { useAuth } from "../contexts/AuthContext";
 
 const APP_SECTIONS = [
   { to: "/history", label: "Watch History" },
-  { to: "/visual", label: "Visual Explorer" },
   { to: "/recommend", label: "Recommendations" },
   { to: "/will-like", label: "Will I Like" },
   { to: "/similar", label: "Similar Titles" },

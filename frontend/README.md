@@ -2,7 +2,7 @@
 
 Single-user SPA — the supported Watcher UI. Dev server proxies API calls to FastAPI on port **8080**.
 
-Routes: `/` (home), `/history`, `/recommend`, `/will-like`, `/similar`, `/admin` (shown as **Maintenance** in the nav).
+Routes: `/` (home), `/history`, `/recommend`, `/will-like`, `/similar`, `/admin` (shown as **Maintenance** in the nav). `/similar` and `/will-like` use a typeahead search backed by `GET /search` — no manual TMDB ID input.
 
 ## Setup
 
@@ -47,4 +47,3 @@ Set backend **`UI_BASE_URL`** to this UI’s public URL (e.g. `http://localhost:
 ## Notes
 
 - When the API uses an optional access key (`ADMIN_API_KEY`), the frontend needs the matching `VITE_ADMIN_API_KEY` in dev/build if the browser should call those routes. See [DEVELOPMENT.md](../DEVELOPMENT.md) for the full endpoint list and troubleshooting.
-- Production bundle includes Recharts (~500kB JS); use code-splitting later if you need a smaller first load.

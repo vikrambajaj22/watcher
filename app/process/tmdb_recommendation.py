@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.dao.history import get_watch_history
 from app.schemas.recommendations.recommendations import (
@@ -14,6 +15,7 @@ from app.schemas.recommendations.recommendations import (
 from app.tmdb_discover import (
     discover,
     fetch_similar_and_recommendations,
+    fetch_taste_keyword_candidates,
     format_genre_cheat_sheet,
     merge_candidates,
 )
@@ -44,7 +46,8 @@ def _rank_history(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         wc = float(item.get("watch_count") or 0)
         latest = str(item.get("latest_watched_at") or "")
         recency = 1.0 if latest else 0.0
-        return eng * 2.0 + wc + recency
+        # log-normalise watch_count so high-episode-count procedurals don't swamp the ranking
+        return eng * 2.0 + math.log1p(wc) + recency
 
     return sorted(items, key=score, reverse=True)
 
@@ -119,6 +122,7 @@ def _fetch_candidates(
     seeds: List[Tuple[int, str]],
     watched_ids: Set[Tuple[int, str]],
     media_type: str,
+    taste_profile: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     sources: List[List[Dict[str, Any]]] = []
     meta: Dict[str, Any] = {"discover_calls": 0, "seed_calls": 0}
@@ -142,6 +146,9 @@ def _fetch_candidates(
         sources.append(fetch_similar_and_recommendations(tid, mt))
         meta["seed_calls"] += 1
 
+    if taste_profile:
+        sources.append(fetch_taste_keyword_candidates(taste_profile, media_type))
+
     merged = merge_candidates(*sources, watched_ids=watched_ids, cap=80)
     meta["candidate_count"] = len(merged)
     return merged, meta
@@ -160,24 +167,24 @@ def _format_candidates_for_picker(candidates: List[Dict[str, Any]]) -> List[str]
         if year:
             line += f" ({year})"
         line += f" [{mt}]"
+        overview = (c.get("overview") or "").strip()
+        if overview:
+            line += f" — {overview[:120]}{'…' if len(overview) > 120 else ''}"
         lines.append(line)
     return lines
 
 
 def _pick_recommendations(
-    watch_history: List[Dict[str, Any]],
+    taste_profile: str,
     candidates: List[Dict[str, Any]],
     recommend_count: int,
-    media_type: str,
 ) -> List[Dict[str, Any]]:
     registry = PromptRegistry("app/prompts/recommend")
     template = registry.load_prompt_template("tmdb_picker", 1)
 
-    history_lines = [_format_history_line(h) for h in _rank_history(watch_history)[:35]]
-
     prompt = template.render(
         recommend_count=recommend_count,
-        watch_history_formatted=history_lines,
+        taste_profile=taste_profile,
         candidates_formatted=_format_candidates_for_picker(candidates),
     )
     response = get_openai_chat_completion(
@@ -203,11 +210,17 @@ def _map_picks_to_response(
         cand = index_map.get(idx)
         if not cand:
             continue
+        pick_title = (p.get("title") or "").strip().lower()
+        cand_title = (cand.get("title") or "").strip().lower()
+        if pick_title and cand_title and pick_title != cand_title:
+            logger.warning("Picker title mismatch at index %d: got %r expected %r — skipping", idx, pick_title, cand_title)
+            continue
+        reasoning = p.get("reasoning") if isinstance(p.get("reasoning"), str) else ""
         valid.append(
             Recommendation(
                 id=str(cand["id"]),
                 title=cand.get("title") or "",
-                reasoning=p.get("reasoning") if isinstance(p.get("reasoning"), str) else "",
+                reasoning=reasoning,
                 media_type=cand.get("media_type"),
                 metadata={
                     "poster_path": cand.get("poster_path"),
@@ -251,8 +264,7 @@ class TmdbRecommender:
         t0 = time.time()
         debug: Dict[str, Any] = {"timings_ms": {}, "media_type": media_type}
 
-        history_mt = None if media_type == "all" else media_type
-        raw_history = get_watch_history(media_type=history_mt, include_posters=False)
+        raw_history = get_watch_history(media_type=None, include_posters=False)
         if not raw_history:
             return RecommendationsResponse(recommendations=[]), {
                 **debug,
@@ -290,9 +302,11 @@ class TmdbRecommender:
         if not plan.get("discover_queries"):
             plan["discover_queries"] = _default_discover_queries(media_type)
 
+        taste_profile = plan.get("taste_summary") or ""
+
         t_fetch = time.time()
         candidates, fetch_meta = _fetch_candidates(
-            plan, seeds, watched_ids, media_type
+            plan, seeds, watched_ids, media_type, taste_profile=taste_profile
         )
         debug["timings_ms"]["tmdb_fetch"] = int((time.time() - t_fetch) * 1000)
         debug.update(fetch_meta)
@@ -305,7 +319,7 @@ class TmdbRecommender:
 
         t_pick = time.time()
         try:
-            picks = _pick_recommendations(ranked, candidates, recommend_count, media_type)
+            picks = _pick_recommendations(taste_profile, candidates, recommend_count)
         except Exception as e:
             logger.error("tmdb picker failed: %s", repr(e), exc_info=True)
             picks = []

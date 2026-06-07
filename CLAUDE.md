@@ -3,6 +3,7 @@
 ## Coding Standards
 - Avoid reduncancy where possible, prefer modularity
 - Keep code clean, use comments only where required
+- All imports must be top-level unless a circular dependency requires otherwise
 
 ## Documentation
 - Always keep all markdown files up to date - but avoid making edits to this one

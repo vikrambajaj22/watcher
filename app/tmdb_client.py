@@ -1,3 +1,5 @@
+from typing import List, Dict, Any, Optional
+
 import requests
 import urllib.parse
 
@@ -11,6 +13,34 @@ def get_metadata(tmdb_id, media_type="movie"):
     resp = requests.get(url)
     resp.raise_for_status()
     return resp.json()
+
+
+def search_multi(query: str, limit: int = 6) -> List[Dict[str, Any]]:
+    """Search TMDB across movies and TV shows, returning top results."""
+    if not query or not query.strip():
+        return []
+    q = urllib.parse.quote_plus(query.strip())
+    url = f"{settings.TMDB_API_URL}/search/multi?api_key={settings.TMDB_API_KEY}&query={q}&page=1"
+    resp = requests.get(url, timeout=15)
+    if resp.status_code != 200:
+        return []
+    data = resp.json()
+    hits = [
+        r for r in (data.get("results") or [])
+        if r.get("media_type") in ("movie", "tv") and r.get("id")
+    ][:limit]
+    out = []
+    for r in hits:
+        title_str = r.get("title") or r.get("name") or ""
+        year_raw = r.get("release_date") or r.get("first_air_date") or ""
+        out.append({
+            "id": int(r["id"]),
+            "title": title_str,
+            "media_type": r["media_type"],
+            "year": year_raw[:4] if len(year_raw) >= 4 else None,
+            "poster_path": r.get("poster_path"),
+        })
+    return out
 
 
 def search_by_title(title: str, media_type: str = "movie") -> dict:

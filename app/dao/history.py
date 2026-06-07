@@ -1,4 +1,4 @@
-from app.db import watch_history_collection, tmdb_metadata_collection
+from app.db import watch_history_collection
 from app.utils.logger import get_logger
 import time
 from cachetools import TTLCache
@@ -7,13 +7,11 @@ from pymongo import ReplaceOne
 
 logger = get_logger(__name__)
 
-# Simple in-memory TTL cache for watch history: key = (media_type or 'all') + '|' + str(include_posters)
 _HISTORY_CACHE = TTLCache(maxsize=128, ttl=300)
 
 
 def store_watch_history(data):
     if isinstance(data, list):
-        # deduplicate based on (id, media_type) before storing
         seen_keys = {}
         deduplicated = []
         for item in data:
@@ -48,42 +46,30 @@ def store_watch_history(data):
         if stale_filters:
             for sf in stale_filters:
                 watch_history_collection.delete_one(sf)
-        # invalidate cache when history changes
         try:
             _HISTORY_CACHE.clear()
         except Exception:
             pass
-        logger.info(
-            "Watch history stored successfully: %d unique items.", len(deduplicated)
-        )
+        logger.info("Watch history stored successfully: %d unique items.", len(deduplicated))
     else:
         logger.error("Invalid data format for storing watch history. Expected a list.")
         raise ValueError("Data must be a list of watch history items.")
 
 
 def get_watch_history(media_type=None, include_posters: bool = True):
-    """Return watch history. If include_posters=True, batch-enrich poster_path from tmdb metadata.
-
-    Args:
-        media_type: optional filter ('movie' or 'tv')
-        include_posters: when False, skip the poster enrichment (faster)
-    """
+    """Return watch history from MongoDB. Posters are stored directly on each document during sync."""
     cache_key = f"{media_type or 'all'}|{include_posters}"
     try:
         cached = _HISTORY_CACHE.get(cache_key)
         if cached is not None:
-            # return a deep copy to prevent accidental mutation of cached data
             return copy.deepcopy(cached)
     except Exception:
         pass
 
     start = time.time()
     query = {"media_type": media_type} if media_type else {}
-    # fetch history in one query
     history = list(watch_history_collection.find(query, {"_id": 0}))
-    db_fetch_time = time.time() - start
 
-    # deduplicate based on (id, media_type) - database may have duplicates
     if history:
         seen_keys = {}
         deduplicated = []
@@ -94,105 +80,17 @@ def get_watch_history(media_type=None, include_posters: bool = True):
                 deduplicated.append(item)
         if len(history) != len(deduplicated):
             logger.warning(
-                "Removed %d duplicate entries from watch history (db has duplicates)",
+                "Removed %d duplicate entries from watch history",
                 len(history) - len(deduplicated),
             )
         history = deduplicated
 
-    if include_posters and history:
-        t0 = time.time()
-        # use (id, media_type) tuples since IDs are NOT unique across media types
-        id_media_pairs = set()
-        for item in history:
-            tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
-            media = item.get("media_type")
-            if tmdb_id and media:
-                try:
-                    id_media_pairs.add((int(tmdb_id), media.lower()))
-                except Exception:
-                    pass
-
-        # Extract unique IDs for the query (still need to fetch all with same ID but different media_type)
-        unique_ids = list(set(pair[0] for pair in id_media_pairs))
-
-        if unique_ids:
-            try:
-                # single query to fetch poster paths and media_type for all ids
-                # also fetch runtime fields so UI can compute minutes/days
-                cursor = tmdb_metadata_collection.find(
-                    {"id": {"$in": unique_ids}},
-                    {"_id": 0, "id": 1, "media_type": 1, "poster_path": 1, "runtime": 1, "episode_run_time": 1},
-                )
-                # build exact map keyed by (id, media_type) only
-                poster_map_exact = {}
-                runtime_map = {}
-                episode_runtime_map = {}
-                for d in cursor:
-                    try:
-                        _id = int(d.get("id"))
-                    except Exception:
-                        continue
-                    mtype = (d.get("media_type") or "").lower()
-                    ppath = d.get("poster_path")
-                    if ppath:
-                        poster_map_exact[(_id, mtype)] = ppath
-                    # movie runtime
-                    rt = d.get("runtime")
-                    if rt:
-                        try:
-                            runtime_map[(_id, mtype)] = int(rt)
-                        except Exception:
-                            pass
-                    # tv episode runtime - TMDB stores as list sometimes
-                    ert = d.get("episode_run_time") or d.get("episode_runtime")
-                    if ert:
-                        try:
-                            # if list, take first element; if int, use directly
-                            if isinstance(ert, list) and len(ert) > 0:
-                                episode_runtime_map[(_id, mtype)] = int(ert[0])
-                            else:
-                                episode_runtime_map[(_id, mtype)] = int(ert)
-                        except Exception:
-                            pass
-            except Exception:
-                poster_map_exact = {}
-                runtime_map = {}
-                episode_runtime_map = {}
-
-            # attach poster_path and runtime info to history items where available, require exact media_type match
-            for item in history:
-                tmdb_id = item.get("id") or (item.get("ids") or {}).get("tmdb")
-                if not tmdb_id:
-                    continue
-                try:
-                    key_id = int(tmdb_id)
-                except Exception:
-                    continue
-                media = (item.get("media_type") or "").lower()
-                p = poster_map_exact.get((key_id, media))
-                if p:
-                    item["poster_path"] = p
-                # attach runtime info
-                m_rt = runtime_map.get((key_id, media))
-                if m_rt is not None:
-                    item["runtime_minutes"] = m_rt
-                e_rt = episode_runtime_map.get((key_id, media))
-                if e_rt is not None:
-                    item["episode_runtime_minutes"] = e_rt
-        enrich_time = time.time() - t0
-    else:
-        enrich_time = 0.0
-
-    total_time = time.time() - start
     logger.info(
-        "Watch history retrieved successfully. items=%s db_time=%.3fs enrich_time=%.3fs total=%.3fs",
+        "Watch history retrieved: items=%s time=%.3fs",
         len(history),
-        db_fetch_time,
-        enrich_time,
-        total_time,
+        time.time() - start,
     )
 
-    # cache the result (deepcopy to keep cached copy immutable)
     try:
         _HISTORY_CACHE[cache_key] = copy.deepcopy(history)
     except Exception:
@@ -202,10 +100,9 @@ def get_watch_history(media_type=None, include_posters: bool = True):
 
 
 def clear_history_cache() -> bool:
-    """Clear the in-memory watch history cache. Returns True on success."""
     try:
         _HISTORY_CACHE.clear()
-        logger.info("Watch history cache cleared via clear_history_cache()")
+        logger.info("Watch history cache cleared")
         return True
     except Exception as e:
         logger.warning("Failed to clear history cache: %s", repr(e))

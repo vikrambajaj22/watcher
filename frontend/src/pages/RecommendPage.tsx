@@ -35,7 +35,7 @@ export function RecommendPage() {
     setBusy(true);
     setItems(null);
     try {
-      const r = await apiFetch(`/recommend/${media}`, {
+      const r = await apiFetch(`/recommend/tmdb/${media}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recommend_count: count }),

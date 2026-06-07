@@ -7,7 +7,6 @@ from dateutil import parser as _dateutil_parser
 from app.config.settings import settings
 from app.dao.history import get_watch_history
 from app.db import sync_meta_collection
-from app.tmdb_sync import sync_tmdb_changes
 from app.trakt_sync import sync_trakt_history
 from app.utils.logger import get_logger
 
@@ -81,7 +80,6 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
         t_trakt = _parse_iso(trakt_latest)
         t_db = _parse_iso(db_latest)
 
-        # check stored last-seen trakt timestamp to avoid unnecessary full fetches
         try:
             meta = sync_meta_collection.find_one({"_id": "trakt_last_activity"})
             stored_trakt = meta.get("last_activity") if meta else None
@@ -89,8 +87,6 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
         except Exception:
             t_stored = None
 
-        # if trakt reported time is <= stored remote time, nothing new since our last check
-        # only skip if we already have watch history in DB; if DB is empty, force initial sync
         if db_history and t_stored and t_trakt and t_trakt <= t_stored:
             logger.info("No new Trakt activity since last checked timestamp.")
             return
@@ -109,7 +105,6 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
                     pass
                 return
         else:
-            # fallback to string compare if parsing failed
             if db_latest and trakt_latest and trakt_latest <= db_latest:
                 logger.info("No new Trakt activity since last DB update (by string).")
                 try:
@@ -126,7 +121,6 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
         logger.info("New Trakt activity detected. Syncing history...")
         sync_trakt_history()
 
-        # after syncing (even if history unchanged), persist the trakt_latest timestamp so we don't re-fetch repeatedly
         try:
             if trakt_latest:
                 sync_meta_collection.update_one(
@@ -141,19 +135,3 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
         logger.error(
             "Error during Trakt last_activities check: %s", repr(e), exc_info=True
         )
-
-
-def run_tmdb_periodic_sync():
-    """Run TMDB sync for both movies and TV shows. Designed to be scheduled infrequently (e.g., every 6 hours)."""
-    try:
-        logger.info("Starting TMDB changes sync (movie)")
-        summary = sync_tmdb_changes(media_type="movie")
-        logger.info("TMDB movie sync finished: %s", summary)
-    except Exception as e:
-        logger.error("TMDB movie sync failed: %s", repr(e), exc_info=True)
-    try:
-        logger.info("Starting TMDB changes sync (tv)")
-        summary = sync_tmdb_changes(media_type="tv")
-        logger.info("TMDB tv sync finished: %s", summary)
-    except Exception as e:
-        logger.error("TMDB tv sync failed: %s", repr(e), exc_info=True)

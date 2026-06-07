@@ -69,16 +69,24 @@ export type TmdbRecommendResponse = {
   debug?: Record<string, unknown> | null;
 };
 
-export type KnnResult = {
+export type SearchHit = {
+  id: number;
+  title: string;
+  media_type: "movie" | "tv";
+  year?: string | null;
+  poster_path?: string | null;
+};
+
+export type SimilarResult = {
   id: number;
   title?: string;
   media_type?: string;
-  score?: number;
   poster_path?: string;
   overview?: string;
+  release_date?: string;
 };
 
-export type KnnResponse = { results: KnnResult[] };
+export type SimilarResponse = { source_title?: string | null; results: SimilarResult[] };
 
 export type WillLikeResponse = {
   will_like: boolean;
@@ -95,41 +103,6 @@ export type WillLikeResponse = {
   };
 };
 
-export type ClusterItem = {
-  id?: number;
-  title?: string;
-  media_type?: string;
-  poster_path?: string;
-  x: number;
-  y: number;
-  cluster: number;
-  watch_count?: number;
-  completion_ratio?: number;
-  overview?: string;
-  genres?: unknown[];
-};
-
-export type ClusterSummaries = Record<
-  string,
-  {
-    size?: number;
-    sample_titles?: string[];
-    movie_count?: number;
-    tv_count?: number;
-    name?: string;
-    top_genres?: string[];
-  }
->;
-
-export type ClustersResponse = {
-  items: ClusterItem[];
-  cluster_summaries: ClusterSummaries;
-  total_items?: number;
-  total_in_history?: number;
-  n_clusters?: number;
-  method?: string;
-};
-
 export function getHistoryQuery(mediaType: string | null, includePosters: boolean) {
   const p = new URLSearchParams();
   if (mediaType) p.set("media_type", mediaType);
@@ -139,7 +112,7 @@ export function getHistoryQuery(mediaType: string | null, includePosters: boolea
 
 export async function pollJobUntil(
   jobId: string,
-  jobType: "trakt" | "tmdb",
+  jobType: "trakt",
   opts: { maxWaitSec?: number; intervalSec?: number } = {},
 ): Promise<JobStatus | null> {
   const maxWait = opts.maxWaitSec ?? 120;

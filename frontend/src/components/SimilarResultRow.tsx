@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { apiFetch } from "../api/client";
-import type { KnnResult } from "../api/watcher";
+import type { SimilarResult } from "../api/watcher";
 import { placeholderPoster, posterUrl } from "../lib/poster";
 
 type WillState =
@@ -9,17 +9,11 @@ type WillState =
   | { status: "ok"; data: Record<string, unknown> }
   | { status: "err"; message: string };
 
-function knnScoreToProgress(score: number | undefined): number {
-  if (score == null || !Number.isFinite(score)) return 0;
-  const sigma = 1;
-  return Math.min(1, Math.exp(-score / (2 * sigma ** 2)));
-}
-
 export function SimilarResultRow({
   item,
   rank,
 }: {
-  item: KnnResult;
+  item: SimilarResult;
   rank: number;
 }) {
   const [will, setWill] = useState<WillState>({ status: "idle" });
@@ -32,17 +26,12 @@ export function SimilarResultRow({
     item.id && item.media_type
       ? `https://www.themoviedb.org/${mtRaw}/${item.id}`
       : null;
-  const progress = knnScoreToProgress(item.score);
-  const matchPct =
-    item.score != null && Number.isFinite(item.score)
-      ? Math.round(progress * 100)
-      : null;
 
   async function checkWillLike() {
     if (!item.id || !item.media_type) return;
     setWill({ status: "loading" });
     try {
-      const r = await apiFetch("/mcp/will-like", {
+      const r = await apiFetch("/will-like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -92,14 +81,6 @@ export function SimilarResultRow({
             {String(item.overview).length > 380 ? "…" : ""}
           </p>
         ) : null}
-        {matchPct != null && (
-          <div className="similar-match-meter" aria-hidden>
-            <div
-              className="similar-match-meter-fill"
-              style={{ width: `${matchPct}%` }}
-            />
-          </div>
-        )}
         {will.status === "ok" && (
           <div className="similar-will-snippet">
             {will.data.already_watched ? (
@@ -126,10 +107,10 @@ export function SimilarResultRow({
           <span className="stat-label">Rank</span>
           <span className="stat-value">{rank}</span>
         </li>
-        {matchPct != null && (
+        {item.release_date && (
           <li>
-            <span className="stat-label">Match</span>
-            <span className="stat-value">{matchPct}%</span>
+            <span className="stat-label">Year</span>
+            <span className="stat-value">{item.release_date.slice(0, 4)}</span>
           </li>
         )}
       </ul>

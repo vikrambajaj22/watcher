@@ -9,11 +9,11 @@ Watcher is a personal media discovery application that generates tailored recomm
 ## Features
 
 - 🔐 **Trakt OAuth** — sign in with your Trakt account
-- 📺 **Watch history sync** — pull your full Trakt history into the app
-- ✨ **LLM-powered recommendations** — taste planner + picker for personalized results
-- 🔍 **TMDB discovery** — real-time candidate fetching from TMDB discover API
-- 🎯 **Similar titles** — find related movies/shows via TMDB's `/similar` API
-- 🤔 **Will I Like?** — LLM predicts whether you'll enjoy a given title from your history
+- 📺 **Watch history sync** — full Trakt history with runtime data for watch-time stats
+- ✨ **LLM-powered recommendations** — taste planner generates a thematic profile; three candidate sources (genre discover, TMDB similar/recommendations, keyword discover) merged via RRF; picker selects and reasons from the taste profile
+- 🔍 **TMDB typeahead** — title search with poster previews on Similar and Will I Like pages
+- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or TV → movie) via LLM keyword search
+- 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your watch history
 - 🎬 **Interactive UI** — React SPA with responsive design
 
 ## Quick Start
@@ -96,12 +96,9 @@ pip install -r requirements-dev.txt
 ### Data Flow
 
 1. **User signs in** → Trakt OAuth → store access token
-2. **Sync watch history** → fetch from Trakt `/sync/watched/{movie|tv}` → store in MongoDB
-3. **Request recommendations** → 
-   - LLM **taste planner** analyzes watch history → generates taste profile (genres, themes, vibe)
-   - LLM **picker** evaluates TMDB discover candidates against the taste profile
-   - Return top recommendations to UI
-4. **User browses** → watch history is queried from MongoDB
+2. **Sync watch history** → fetch from Trakt `/sync/watched/{movie|tv}` → enrich with TMDB metadata (poster, overview, `runtime_minutes` / `episode_runtime_minutes`) → store in MongoDB
+3. **Request recommendations** → taste planner + three-source candidate fetch + picker → return top N with reasoning
+4. **User browses** → watch history queried from MongoDB (5-minute TTL cache)
 
 **Key design choices:**
 - Watch history is stored (needed for personalization, much smaller dataset)
@@ -113,22 +110,22 @@ pip install -r requirements-dev.txt
 
 The `/recommend/tmdb/{media_type}` endpoint:
 
-1. **Taste Planner** (`taste_planner_v1.jinja2` prompt):
-   - Input: top-ranked watch history items + media type
-   - Output: JSON taste profile — preferred genres, themes, vibes, moods
+1. **Taste Planner** (`taste_planner_v1.jinja2`):
+   - Input: ranked watch history + media type scope
+   - Output: `discover_queries` (structured TMDB params) + `taste_summary` (2–3 sentence thematic profile)
    - Model: `gpt-4.1-nano`
 
-2. **TMDB Discover**:
-   - Execute discover queries based on taste profile
-   - Fetch full metadata (title, overview, poster, etc.) for each candidate
-   - Merge and deduplicate candidates
+2. **Candidate Fetch** (three sources, all merged via RRF):
+   - **Genre discover** — planner's `discover_queries` hit TMDB `/discover/{movie|tv}` with genre IDs, date ranges, vote thresholds
+   - **Similar/recommendations** — TMDB `/similar` + `/recommendations` seeded from the top 3 ranked history items, merged via RRF
+   - **Keyword discover** — `taste_summary` → LLM extracts 6 thematic terms → each resolved to a TMDB keyword ID via `/search/keyword` → per-keyword `/discover` results merged via RRF
 
-3. **Picker** (`tmdb_picker_v1.jinja2` prompt):
-   - Input: taste profile + candidate list
-   - Output: ranked recommendations with brief reasoning
+3. **Picker** (`tmdb_picker_v1.jinja2`):
+   - Input: `taste_summary` + candidate list (with overviews)
+   - Output: picks with thematic reasoning (references taste profile themes, never specific watched titles)
    - Model: `gpt-4.1-nano`
 
-4. **Return**: Top N recommendations as JSON (id, title, overview, poster, reasoning)
+4. **Return**: Top N recommendations (id, title, overview, poster, reasoning)
 
 ## API Endpoints
 
@@ -153,8 +150,9 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 ### Discovery Helpers
 
-- `POST /similar` — **Similar titles** — resolve a movie/show and return TMDB `/similar` results
-- `POST /will-like` — **Will I Like?** — LLM prediction (`{ will_like, score, explanation, item }`) based on your watch history
+- `GET /search?q=&limit=` — **Title typeahead** — proxies TMDB `/search/multi`, returns movies and TV shows with poster thumbnails
+- `POST /similar` — **Similar titles** — merges TMDB `/similar` + `/recommendations` via RRF (k=60), TTL-cached 6h. Set `cross_type: true` for opposite-type results (movie → TV or TV → movie): LLM extracts thematic keywords from the title's overview → resolved to TMDB keyword IDs → per-keyword `/discover` merged via RRF
+- `POST /will-like` — **Will I Like?** — LLM (`gpt-4.1-nano`) scores 0–100% likelihood from watch history, TTL-cached 1h
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
@@ -186,6 +184,7 @@ app/
   main.py                       — FastAPI app entry
   api.py                        — API routes
   db.py                         — MongoDB connection & queries
+  will_like.py                  — LLM-based Will I Like? logic
   
   auth/
     trakt_auth.py              — Trakt OAuth handling
@@ -209,7 +208,7 @@ app/
     prompt_registry.py         — prompt loading
     logger.py                  — logging setup
   
-  tmdb_discover.py             — TMDB API integration (discover, details, similar)
+  tmdb_discover.py             — TMDB API integration (discover, similar)
   tmdb_client.py               — low-level TMDB HTTP client
 
 frontend/

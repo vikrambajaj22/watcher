@@ -265,18 +265,18 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 
 ## Implementation Order
 
-1. **Step 1** — Create feature branch
-2. **Step 2** — Update `/mcp/knn` to use TMDB similar API
-3. **Step 3** — Remove admin FAISS endpoints
-4. **Step 4** — Remove/update `/mcp/will-like` (decide keep/remove/reimplement)
-5. **Step 5** — Update frontend (maintenance page, similar component)
-6. **Step 6** — Remove old files (embeddings, FAISS, sync_worker, tmdb_sync)
-7. **Step 7** — Clean up imports, environment variables
-8. **Step 8** — Update requirements.txt, Dockerfile
-9. **Step 9** — Drop MongoDB collections
-10. **Step 10** — Route & naming cleanup (`/mcp/*` → `/similar`, `/will-like`) — see section 13
+1. ✅ **Step 1** — Create feature branch
+2. ✅ **Step 2** — `/similar` endpoint using TMDB similar/recommendations API (TTL-cached)
+3. ✅ **Step 3** — Removed all admin FAISS endpoints
+4. ✅ **Step 4** — `/will-like` reimplemented with LLM-only logic (TTL-cached), no embeddings
+5. ✅ **Step 5** — Frontend updated: removed visual/compare pages, updated admin, simplified similar page
+6. ✅ **Step 6** — Deleted: embeddings.py, faiss_index.py, faiss_rebuild_cli.py, mcp_will_like.py, process/recommendation.py, tmdb_sync.py, llm_orchestrator.py, knn_utils.py, vector_store.py, sync_worker.py, tools/mcp_knn.json
+7. ✅ **Step 7** — Cleaned imports; trakt_sync now stores poster_path/overview; history DAO no longer queries tmdb_metadata
+8. ✅ **Step 8** — requirements.txt stripped of faiss-cpu, sentence-transformers, scikit-learn, torch, etc.
+9. **Step 9** — Drop MongoDB collections (`tmdb_metadata`, `tmdb_failures`) — run manually after verifying backup
+10. ✅ **Step 10** — Route & naming cleanup: `/mcp/knn` → `/similar`, `/mcp/will-like` → `/will-like`
 11. **Step 11** — UI modernization pass (design tokens, shared components, responsive shell) — see section 12
-12. **Step 12** — Update all documentation
+12. ✅ **Step 12** — Documentation updated (README, DEVELOPMENT, this file)
 13. **Step 13** — Test locally, commit
 
 ---

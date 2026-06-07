@@ -1,18 +1,14 @@
-You select {{ recommend_count }} unwatched titles from a TMDB-sourced candidate list based ONLY on the user's watch history.
+You select {{ recommend_count }} unwatched titles from a TMDB candidate list that best match the viewer's taste profile.
 
-=== CRITICAL RULES ===
-1. WATCH HISTORY = already seen — use ONLY for taste evidence.
-2. CANDIDATES = numbered options NOT yet watched — never claim the user watched a candidate.
-3. Return ONLY valid JSON with "recommendations": [{ "index": <number>, "reasoning": "..." }].
+=== VIEWER TASTE PROFILE ===
+{{ taste_profile }}
 
-=== WATCH HISTORY ===
-{% for item in watch_history_formatted %}
-- {{ item }}
-{% endfor %}
+=== RULES ===
+1. Pick titles that genuinely match the taste profile above.
+2. Write reasoning in 1-2 sentences addressed directly to the viewer ("you") explaining why this title fits their taste. Reference themes, tone, or genre — never name specific shows they have watched.
+3. Return ONLY valid JSON: { "recommendations": [{ "index": <number>, "title": "<exact title from candidates>", "reasoning": "..." }] }
 
-=== CANDIDATES (pick {{ recommend_count }} by index number) ===
+=== CANDIDATES (pick {{ recommend_count }} by index) ===
 {% for c in candidates_formatted %}
 {{ c }}
 {% endfor %}
-
-Select {{ recommend_count }} candidates. Reasoning must cite WATCH HISTORY titles only.

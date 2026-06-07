@@ -195,6 +195,18 @@ def sync_trakt_history():
         movie_data["latest_watched_at"] = movie["latest"]
         # for movies, rewatch_engagement = watch_count (they're always 100% completion)
         movie_data["rewatch_engagement"] = float(movie["count"])
+        # enrich poster/overview from TMDB so history display doesn't need the metadata collection
+        try:
+            tmdb_meta = get_metadata(tmdb_id, media_type="movie")
+            if tmdb_meta:
+                if not movie_data.get("poster_path"):
+                    movie_data["poster_path"] = tmdb_meta.get("poster_path")
+                if not movie_data.get("overview"):
+                    movie_data["overview"] = tmdb_meta.get("overview", "")
+                if tmdb_meta.get("runtime"):
+                    movie_data["runtime_minutes"] = int(tmdb_meta["runtime"])
+        except Exception as e:
+            logger.warning("Could not fetch TMDB metadata for movie %s: %s", tmdb_id, repr(e))
         all_history.append(movie_data)
 
     for tmdb_id, show in seen_shows.items():
@@ -217,7 +229,13 @@ def sync_trakt_history():
             try:
                 meta = get_metadata(tmdb_show_id, media_type="tv")
                 total_episodes = meta.get("number_of_episodes")
-                # build season_episode_counts from TMDB metadata if available
+                if not show_data.get("poster_path"):
+                    show_data["poster_path"] = meta.get("poster_path")
+                if not show_data.get("overview"):
+                    show_data["overview"] = meta.get("overview", "")
+                ep_runtimes = meta.get("episode_run_time") or []
+                if ep_runtimes:
+                    show_data["episode_runtime_minutes"] = int(ep_runtimes[0])
                 if meta.get("seasons"):
                     for season in meta["seasons"]:
                         if (
@@ -314,6 +332,7 @@ def sync_trakt_history():
                     item.get("rewatch_engagement"),
                     item.get("earliest_watched_at"),
                     item.get("latest_watched_at"),
+                    item.get("runtime_minutes"),
                 )
             else:
                 # for shows, include season_completion_count as a sorted tuple for hash stability
@@ -335,6 +354,7 @@ def sync_trakt_history():
                     item.get("total_episodes"),
                     item.get("earliest_watched_at"),
                     item.get("latest_watched_at"),
+                    item.get("episode_runtime_minutes"),
                     season_completion_tuple,
                 )
 
@@ -345,8 +365,21 @@ def sync_trakt_history():
             ).encode()
         ).hexdigest()
 
-    if hash_history(all_history) != hash_history(current_history):
-        logger.info("Watch history changed, updating database.")
+    current_map = {(i.get("id"), i.get("media_type")): i for i in current_history}
+    runtime_gained = any(
+        (
+            (item.get("media_type") == "movie"
+             and item.get("runtime_minutes") is not None
+             and current_map.get((item.get("id"), "movie"), {}).get("runtime_minutes") is None)
+            or
+            (item.get("media_type") == "tv"
+             and item.get("episode_runtime_minutes") is not None
+             and current_map.get((item.get("id"), "tv"), {}).get("episode_runtime_minutes") is None)
+        )
+        for item in all_history
+    )
+    if runtime_gained or hash_history(all_history) != hash_history(current_history):
+        logger.info("Watch history changed or runtime fields added, updating database.")
         store_watch_history(all_history)
     else:
         logger.info("Watch history unchanged, not updating database.")
