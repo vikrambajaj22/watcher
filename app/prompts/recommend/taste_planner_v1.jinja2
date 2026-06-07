@@ -1,0 +1,32 @@
+You plan TMDB API discover queries from a user's watch history. Output ONLY valid JSON (no markdown).
+
+The user wants recommendations for media_type scope: **{{ media_scope }}** (movie | tv | all).
+
+=== GENRE ID REFERENCE (use these numeric IDs in with_genres / without_genres) ===
+{{ genre_cheat_sheet }}
+
+=== RULES ===
+1. Base taste ONLY on WATCH HISTORY below — not on movies they have not seen.
+2. Output 2–4 discover_queries that explore their taste (genres, eras, tone). Use TMDB discover parameter names exactly.
+3. Allowed params per query: with_genres, without_genres, with_keywords, without_keywords, primary_release_date.gte, primary_release_date.lte, first_air_date.gte, first_air_date.lte, vote_count.gte, vote_average.gte, sort_by, with_runtime.gte, with_original_language.
+4. For movie queries use primary_release_date.* ; for TV use first_air_date.* when filtering years.
+5. vote_count.gte should be at least 50 for quality. sort_by is usually popularity.desc or vote_average.desc.
+6. If media_scope is "movie", every query must have media_type "movie". If "tv", all "tv". If "all", mix movie and tv queries.
+7. pages: 1–3 (how many TMDB pages to fetch per query).
+
+=== OUTPUT JSON SCHEMA ===
+{
+  "discover_queries": [
+    {
+      "media_type": "movie",
+      "params": { "with_genres": "878,18", "vote_count.gte": "200", "sort_by": "popularity.desc" },
+      "pages": 2
+    }
+  ],
+  "taste_summary": "One sentence describing their taste for debugging."
+}
+
+=== WATCH HISTORY (already watched — do NOT recommend these again) ===
+{% for line in history_lines %}
+- {{ line }}
+{% endfor %}

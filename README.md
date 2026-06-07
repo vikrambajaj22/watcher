@@ -1,43 +1,32 @@
-# watcher
+# Watcher
 
-> Personal movie & TV recommendations built on Trakt, TMDB, FAISS, and LLMs
+> Personal movie & TV recommendations powered by Trakt watch history and LLMs
 
-Watcher is a personal media discovery and recommendation application that integrates Trakt watch history, TMDB metadata, and LLM-powered reasoning. It uses FAISS for vector similarity and stores embeddings in compact sidecar files and the FAISS index for fast nearest-neighbor search.
+Watcher is a personal media discovery application that generates tailored recommendations by analyzing your Trakt watch history with LLMs, then discovering candidates from the TMDB API.
+
+**No persistent TMDB metadata cache. No vector embeddings. No FAISS index.** Just watch history → LLM reasoning → fresh TMDB discover results.
 
 ## Features
-- 🔐 Trakt OAuth authentication
-- 📺 Browse and sync watch history
-- 📊 Visual Explorer — clustered, interactive visualization of history
-- ✨ AI-powered recommendations with human-readable reasoning
-- 🔍 Similar-item search by TMDB id or free-text
-- ❓Will I Like It? — personalized LLM predictions on specific titles
-- ⚙️ Maintenance tools for sync, embeddings, search index, and cache control
+
+- 🔐 **Trakt OAuth** — sign in with your Trakt account
+- 📺 **Watch history sync** — pull your full Trakt history into the app
+- ✨ **LLM-powered recommendations** — taste planner + picker for personalized results
+- 🔍 **TMDB discovery** — real-time candidate fetching from TMDB discover API
+- 🎬 **Interactive UI** — React SPA with responsive design
 
 ## Quick Start
 
-### Local dev (React UI)
+### Local Dev (React UI + FastAPI)
 
-**One command** from the repo root (loads `.env`, starts API on **8080** and Vite on **8501**):
+One command from repo root (loads `.env`, starts API on **8080** and Vite dev on **8501**):
 
 ```bash
 ./start.sh
 ```
 
-`start.sh` sets **`UI_BASE_URL=http://localhost:8501`** when unset (match this in your **Trakt app** redirect / allowed origins). Logs: `backend.log`, `frontend.log`.
+Open **http://localhost:8501**.
 
-Open **http://localhost:8501**. The SPA uses Vite’s **`/api-proxy`** → `http://127.0.0.1:8080` in dev (no `VITE_API_BASE_URL` needed).
-
-Keep **`TRAKT_REDIRECT_URI`** on the API callback (e.g. `http://127.0.0.1:8080/auth/trakt/callback`).
-
-If the API has **`ADMIN_API_KEY`** set, add **`frontend/.env`** (or `.env.local`):
-
-```env
-VITE_ADMIN_API_KEY=your-same-secret-as-backend
-```
-
-More detail: [frontend/README.md](frontend/README.md). How the SPA calls the API and optional `ADMIN_API_KEY` / `VITE_ADMIN_API_KEY`: [DEVELOPMENT.md](DEVELOPMENT.md).
-
-**Or two terminals** (same behavior without `start.sh`):
+**Or manually, in two terminals:**
 
 ```bash
 # Terminal 1
@@ -47,169 +36,224 @@ source .env && export UI_BASE_URL=http://localhost:8501 && uvicorn app.main:app 
 cd frontend && npm install && npm run dev
 ```
 
-Production builds of the React app use **`VITE_API_BASE_URL`** and **`WATCHER_CORS_ORIGINS`** on the API; local API defaults allow `http://localhost:8501`.
-
 ### Environment
 
-Create a `.env` in the repo root with the following values (examples):
+Create `.env` in repo root:
 
 ```env
-TRAKT_CLIENT_ID=your-client-id
-TRAKT_CLIENT_SECRET=your-client-secret
+TRAKT_CLIENT_ID=your-trakt-client-id
+TRAKT_CLIENT_SECRET=your-trakt-client-secret
 TRAKT_REDIRECT_URI=http://127.0.0.1:8080/auth/trakt/callback
-# Browser UI after Trakt login (Vite dev + Trakt app should match this host/port).
 UI_BASE_URL=http://localhost:8501
-TMDB_API_KEY=your-tmdb-key
+TMDB_API_KEY=your-tmdb-api-key
+OPENAI_API_KEY=your-openai-api-key
 MONGODB_URI=mongodb://localhost:27017
 MONGODB_DB_NAME=watcher
-OPENAI_API_KEY=your-openai-key
-FAISS_INDEX_DIR=./faiss_index
 
-# Optional: if set, required on admin/MCP/sync routes as header X-API-Key (see curl examples below)
+# Optional: protect admin routes with a secret key
 # ADMIN_API_KEY=your-long-random-secret
 ```
 
-Watcher stores an aggregated view of your Trakt activity by calling Trakt's `/sync/watched/movies` and `/sync/watched/shows` endpoints (for full watched lists) and uses `/sync/last_activities` only to detect when it needs to resync.
-
-Install dependencies
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
-# optional dev tooling (ruff, isort)
+# Optional: dev tools (ruff, isort)
 pip install -r requirements-dev.txt
 ```
 
-### Overview: Embeddings and FAISS
+## Architecture
 
-- Embeddings are computed from TMDB metadata and are used only for nearest-neighbor search and candidate generation for LLM reasoning. Embedding vectors are persisted to sidecar files in the FAISS index directory (`labels.npy` and `vecs.npy`) and are also stored as labels inside the FAISS index. Embedding vectors are not written into MongoDB documents.
+### Overview
 
-- FAISS index files (for example `tmdb.index`) and sidecar files form the canonical on-disk representation of computed vectors and labels. A JSON `sidecar_meta.json` lives alongside them and records the embedding model name, timestamp, dims, and number of vectors.
-
-- The system supports two embedding workflows:
-  1. Batched / full-index rebuilding: compute embeddings for metadata records and build a FAISS index. This produces the on-disk index file and sidecars. Use this for initial population or full reindex.
-  2. Incremental single-item upserts: attempt to compute and insert/update a single vector in the sidecars and (if supported) update the FAISS index in-place. If the local FAISS build does not support in-place updates, a full rebuild is scheduled instead.
-
-#### TMDB Sync Behavior (export-first, then incremental)
-
-The sync logic prioritizes high-coverage export files published by TMDB for the initial ingest and uses the changes endpoints for incremental updates.
-
-1. Initial ingest
-   - The sync attempts to fetch TMDB daily export files (gzipped newline-delimited JSON of IDs) and streams them for a complete ID list. This is the recommended method for an initial, full population because it avoids the discover-page limits and provides broad coverage.
-   - IDs are batched and the app fetches full metadata per ID (details, credits, keywords) and upserts them into MongoDB.
-   - Embedding computation during the initial ingest is optional and controlled by the `embed_updated` / `embed_updated` flag when calling the TMDB sync routines; it is recommended to skip embeddings during the initial large ingest (embed_updated=false) and run a separate embedding/index pass afterwards.
-
-2. Fallback / discover
-   - If no suitable export file is available within the configured lookback window, the sync falls back to the `/discover/{movie|tv}` route with a safe cap on pages.
-
-3. Incremental updates
-   - After initial population the sync uses `/movie/changes` and `/tv/changes` to fetch deltas and apply metadata updates.
-   - The sync exposes parameters to control whether embeddings are computed during the incremental pass (embed_updated). For typical usage, compute embeddings separately so metadata sync and embedding provider usage are rate-limited independently.
-
-#### Embedding Generation & Index Lifecycle (recommended workflows)
-
-- Full rebuild path (recommended for initial indexing):
-  - Compute embeddings for each metadata record.
-  - Build and persist a FAISS index file (CPU index) and save sidecars: `labels.npy`, `vecs.npy`, and `sidecar_meta.json`.
-  - Optionally transfer the index to GPU resources if configured.
-
-- Incremental upsert path (fast for single items):
-  - Compute an embedding for a single item and try to update sidecars and FAISS index in-place.
-  - If the local FAISS implementation doesn't support in-place add/remove, the operation returns a rebuild-required response and a full rebuild can be scheduled.
-
-- Cache & process behavior:
-  - Each backend process keeps an in-memory FAISS index cached after the first load to avoid repeated disk reads.
-  - The admin UI and API provide controls to clear the in-process cache when an out-of-process rebuild or external index write occurs.
-
-#### Admin and API notes
-
-Core endpoints used by the UI and scripts:
-
-- `GET /admin/faiss/status` — reports whether an index/sidecars are present and returns the `sidecar_meta` and a `cached` boolean indicating whether this process has the index loaded in memory.
-- `POST /admin/faiss/clear-cache` — clears the FAISS index cache in the current process.
-- `POST /admin/faiss/rebuild` — spawn a detached CLI process to rebuild the FAISS index (useful for large, long-running rebuilds).
-- `POST /admin/embed/full` — schedule a background full rebuild that computes embeddings and writes sidecars/index.
-- `POST /admin/embed/item` — attempt an incremental upsert for a single item; if an in-place update is not possible, this endpoint schedules a background rebuild.
-- `POST /admin/faiss/upsert-item` — lower-level endpoint that attempts an in-place upsert and returns its status.
-
-If `ADMIN_API_KEY` is set in the environment, these routes (and other admin/MCP/sync/visualize endpoints) require the `X-API-Key` header.
-
-Use `localhost:8080/redoc` to explore the full API.
-
-UI: The React app **Maintenance** section (and these HTTP endpoints) let you:
-- Trigger full rebuilds, per-item upserts, and detached rebuilds
-- Inspect `sidecar_meta` (model, dims, num_vectors)
-- See whether the current process has the index cached
-- Clear the FAISS cache for this backend process
-
-#### Practical Recommendations
-
-- Initial population: run TMDB sync with `embed_updated=false` (metadata-only) to avoid concurrently fetching TMDB metadata and computing embeddings:
-
-```bash
-python - <<'PY'
-from app.tmdb_sync import sync_tmdb
-# full export-based ingest (recommended), but skip embeddings in this large job
-sync_tmdb('movie', full_sync=True, embed_updated=False)
-PY
+```
+┌─────────────────────────────────────────────┐
+│         Watcher React SPA (8501)            │
+│  - Watch history page                       │
+│  - Recommendations page                     │
+│  - Settings / maintenance                   │
+└──────────────────┬──────────────────────────┘
+                   │ HTTPS
+                   ▼
+┌─────────────────────────────────────────────┐
+│      FastAPI Backend (8080)                 │
+│  - /auth/* — Trakt OAuth flow               │
+│  - /history — fetch watch history           │
+│  - /recommend/* — LLM recommendations       │
+│  - /admin/* — maintenance (sync, cache)     │
+└──────────────┬──────────────────────────────┘
+               │
+       ┌───────┴─────────┬──────────────────┐
+       ▼                 ▼                  ▼
+    Trakt API        TMDB API          MongoDB
+    (watch history)  (discover,        (watch history,
+                      details)         sync metadata)
 ```
 
-- Once metadata is populated, create embeddings and build the FAISS index:
+### Data Flow
 
-```bash
-# Full rebuild from metadata (computes embeddings and produces sidecars + FAISS index)
-python -m app.faiss_rebuild_cli --dim 384 --factory "IDMap,IVF100,Flat"
-```
+1. **User signs in** → Trakt OAuth → store access token
+2. **Sync watch history** → fetch from Trakt `/sync/watched/{movie|tv}` → store in MongoDB
+3. **Request recommendations** → 
+   - LLM **taste planner** analyzes watch history → generates taste profile (genres, themes, vibe)
+   - LLM **picker** evaluates TMDB discover candidates against the taste profile
+   - Return top recommendations to UI
+4. **User browses** → watch history is queried from MongoDB
 
-Or trigger from the API / React **Maintenance** page using the rebuild controls.
+**Key design choices:**
+- Watch history is stored (needed for personalization, much smaller dataset)
+- TMDB metadata is **not** stored — fetch fresh results on each discover call
+- No embeddings, no vector search, no FAISS index
+- Stateless recommendation logic — each request is independent
 
-- Small updates: use single-item upsert flows from the UI or `POST /admin/embed/item` to avoid full rebuilds when possible.
+### LLM Recommendation Flow
 
-#### Operational Notes
+The `/recommend/tmdb/{media_type}` endpoint:
 
-- Embedding vectors are not stored inside MongoDB documents. The canonical storage for embeddings is the FAISS index and the sidecar files. This keeps metadata fast and small while keeping vectors available for nearest-neighbor search and export.
+1. **Taste Planner** (`taste_planner_v1.jinja2` prompt):
+   - Input: top-ranked watch history items + media type
+   - Output: JSON taste profile — preferred genres, themes, vibes, moods
+   - Model: `gpt-4.1-nano`
 
-- Module-level (process) cache: the FAISS index is cached per Python process. If you run multiple workers, each worker caches its own copy. Clearing the cache via the API affects only the process that receives the request.
+2. **TMDB Discover**:
+   - Execute discover queries based on taste profile
+   - Fetch full metadata (title, overview, poster, etc.) for each candidate
+   - Merge and deduplicate candidates
 
-- If an external tool updates the on-disk index, clear the in-process cache (or restart the process) so the backend reloads the fresh index on next use.
+3. **Picker** (`tmdb_picker_v1.jinja2` prompt):
+   - Input: taste profile + candidate list
+   - Output: ranked recommendations with brief reasoning
+   - Model: `gpt-4.1-nano`
 
-#### Examples & Troubleshooting
+4. **Return**: Top N recommendations as JSON (id, title, overview, poster, reasoning)
 
-- Check FAISS status:
+## API Endpoints
 
-```bash
-# If ADMIN_API_KEY is set on the server, add: -H "X-API-Key: $ADMIN_API_KEY"
-curl -sS http://localhost:8080/admin/faiss/status | jq .
-```
+### Authentication
 
-- Clear the FAISS cache for the current process:
+- `GET /auth/status` — check if user is logged in
+- `GET /auth/login` — redirect to Trakt OAuth
+- `GET /auth/trakt/callback` — Trakt OAuth callback (automatic)
+- `POST /auth/logout` — clear session
 
-```bash
-curl -X POST http://localhost:8080/admin/faiss/clear-cache
-```
+### Watch History
 
-- Trigger an incremental upsert for single item (UI-friendly):
+- `GET /history` — fetch user's watch history (supports pagination, filtering)
+  - Query params: `limit`, `offset`, `media_type`, etc.
 
-```bash
-curl -X POST http://localhost:8080/admin/embed/item -H 'Content-Type: application/json' -d '{"id": 550, "media_type": "movie"}'
-```
+### Recommendations
 
-- Trigger a detached FAISS rebuild:
+- `POST /recommend/{media_type}` — **legacy endpoint** — uses old FAISS-based approach (deprecated)
+- `POST /recommend/tmdb/{media_type}` — **new endpoint** — LLM taste planner + TMDB discover
+  - Body: `{ "recommend_count": 10 }`
+  - Response: list of `Recommendation` objects with reasoning
 
-```bash
-curl -X POST http://localhost:8080/admin/faiss/rebuild -H 'Content-Type: application/json' -d '{"dim": 384, "factory": "IDMap,IVF100,Flat"}'
-```
+### Maintenance (requires `ADMIN_API_KEY` if set)
 
-When `ADMIN_API_KEY` is configured, pass the same value in the `X-API-Key` header on every admin/MCP/visualize request. `./start.sh` loads `.env` for the API; set `VITE_ADMIN_API_KEY` in `frontend/.env` when the browser must call those routes (see [DEVELOPMENT.md](DEVELOPMENT.md)).
+- `GET /admin/sync/status` — check last sync timestamps
+- `POST /admin/sync/trakt` — manually trigger Trakt history sync
+- `POST /admin/clear-history-cache` — clear in-process cache
 
-#### Development Notes
+### Health
 
-- During a very large initial ingest avoid computing embeddings inline to reduce load on embedding providers and TMDB. After metadata is stable, run embedding/indexing passes with throttling and batching.
+- `GET /health` — service health check
+
+Full API docs: `http://localhost:8080/docs` (Swagger) or `/redoc` (ReDoc)
 
 ## Deployment
 
-For a full, step-by-step guide to deploying Watcher (MongoDB VM + Cloud Run services + FAISS on GCP), see `DEPLOYMENT.md` in this repo. That guide assumes you keep secrets and `PROJECT_ID` in a repo-root **`.env.gcp`** (gitignored) and run **`source .env.gcp`** before build/deploy commands; put a single long-lived **`ADMIN_API_KEY`** there—do not regenerate it on every deploy unless you update both the backend and UI services.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for production setup.
 
-License
+Watcher can run on:
+- **GCP Cloud Run** (stateless backend) + static UI host
+- **Single VPS** (all-in-one: API + MongoDB on one box)
+- **Cloudflare Pages** (free static UI) + VPS backend
+
+## Development Notes
+
+### Project Structure
+
+```
+app/
+  main.py                       — FastAPI app entry
+  api.py                        — API routes
+  db.py                         — MongoDB connection & queries
+  
+  auth/
+    trakt_auth.py              — Trakt OAuth handling
+  
+  dao/
+    history.py                 — watch history queries
+  
+  process/
+    recommendation.py          — legacy FAISS-based recommender (deprecated)
+    tmdb_recommendation.py     — new LLM + TMDB discover approach
+  
+  prompts/
+    recommend/
+      taste_planner_v1.jinja2  — LLM taste profile generation
+      tmdb_picker_v1.jinja2    — LLM recommendation ranking
+  
+  schemas/
+    recommendations/           — Pydantic models for API responses
+  
+  utils/
+    openai_client.py           — OpenAI API wrapper
+    prompt_registry.py         — prompt loading
+    logger.py                  — logging setup
+  
+  tmdb_discover.py             — TMDB API integration (discover, details, similar)
+  tmdb_client.py               — low-level TMDB HTTP client
+
+frontend/
+  src/
+    pages/                     — React pages (history, recommendations, etc.)
+    components/                — reusable React components
+    api/                       — fetch wrappers for API calls
+    App.tsx                    — main app entry
+```
+
+### Configuration
+
+Key environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET` | Trakt OAuth credentials |
+| `TRAKT_REDIRECT_URI` | Where Trakt redirects after OAuth |
+| `UI_BASE_URL` | URL where the SPA is hosted (for Trakt redirects and CORS) |
+| `TMDB_API_KEY` | TMDB API key |
+| `OPENAI_API_KEY` | OpenAI API key for LLM recommendations |
+| `MONGODB_URI` | MongoDB connection string |
+| `MONGODB_DB_NAME` | MongoDB database name |
+| `ADMIN_API_KEY` | Optional: require this header on admin routes |
+
+### Running Tests
+
+```bash
+pytest
+```
+
+## Troubleshooting
+
+### OAuth redirect fails
+
+- Check `TRAKT_REDIRECT_URI` matches exactly in both `.env` and Trakt app settings
+- Check `UI_BASE_URL` matches the domain the browser sees
+- Verify `WATCHER_CORS_ORIGINS` on API includes the UI origin
+
+### Recommendations are slow
+
+- LLM calls (taste planner, picker) can take 2–5 seconds per request
+- TMDB discover queries add 1–2 seconds
+- Consider caching the taste profile for a user session if patterns emerge
+
+### MongoDB connection fails
+
+- Ensure MongoDB is running: `mongod --dbpath /path/to/data`
+- Check `MONGODB_URI` syntax (especially auth)
+- Verify database and collections exist
+
+## License
 
 MIT
-

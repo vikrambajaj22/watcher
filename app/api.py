@@ -47,6 +47,7 @@ from app.schemas.api import (
 from app.schemas.recommendations.recommendations import (
     RecommendationsResponse,
     RecommendRequest,
+    TmdbRecommendationsResponse,
 )
 from app.tmdb_sync import sync_tmdb
 from app.trakt_sync import sync_trakt_history
@@ -97,6 +98,35 @@ def root():
         </body>
     </html>
     """
+
+
+@router.post(
+    "/recommend/tmdb/{media_type}",
+    response_model=TmdbRecommendationsResponse,
+)
+def recommend_tmdb(media_type: str, payload: RecommendRequest):
+    """Experimental: LLM taste plan + TMDB discover/similar — no FAISS or metadata DB."""
+    try:
+        if media_type not in ("movie", "tv", "all"):
+            raise HTTPException(
+                status_code=400, detail="media_type must be 'movie', 'tv', or 'all'"
+            )
+        from app.process.tmdb_recommendation import TmdbRecommender
+
+        recommender = TmdbRecommender()
+        result, debug = recommender.generate(
+            media_type=media_type,
+            recommend_count=payload.recommend_count,
+        )
+        return TmdbRecommendationsResponse(
+            recommendations=result.recommendations,
+            debug=debug,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("recommend_tmdb error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/recommend/{media_type}", response_model=RecommendationsResponse)

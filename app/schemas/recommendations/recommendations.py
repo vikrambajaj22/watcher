@@ -27,3 +27,10 @@ class Recommendation(BaseModel):
 
 class RecommendationsResponse(BaseModel):
     recommendations: List[Recommendation]
+
+
+class TmdbRecommendationsResponse(BaseModel):
+    """Experimental LLM + TMDB discover path (no FAISS)."""
+
+    recommendations: List[Recommendation]
+    debug: Optional[dict] = None

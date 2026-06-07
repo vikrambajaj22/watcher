@@ -64,6 +64,11 @@ export type Recommendation = {
 
 export type RecommendResponse = { recommendations: Recommendation[] };
 
+export type TmdbRecommendResponse = {
+  recommendations: Recommendation[];
+  debug?: Record<string, unknown> | null;
+};
+
 export type KnnResult = {
   id: number;
   title?: string;

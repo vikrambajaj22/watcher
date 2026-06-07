@@ -4,6 +4,7 @@ import { RequireAuth } from "./components/RequireAuth";
 import { AdminPage } from "./pages/AdminPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { HomePage } from "./pages/HomePage";
+import { RecommendComparePage } from "./pages/RecommendComparePage";
 import { RecommendPage } from "./pages/RecommendPage";
 import { SimilarPage } from "./pages/SimilarPage";
 import { VisualPage } from "./pages/VisualPage";
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/visual" element={<VisualPage />} />
           <Route path="/recommend" element={<RecommendPage />} />
+          <Route path="/recommend-compare" element={<RecommendComparePage />} />
           <Route path="/will-like" element={<WillLikePage />} />
           <Route path="/similar" element={<SimilarPage />} />
           <Route path="/admin" element={<AdminPage />} />

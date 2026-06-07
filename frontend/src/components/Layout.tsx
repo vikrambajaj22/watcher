@@ -55,6 +55,7 @@ export function Layout() {
               <Link to="/history">Watch History</Link>
               <Link to="/visual">Visual Explorer</Link>
               <Link to="/recommend">Recommendations</Link>
+              <Link to="/recommend-compare">Compare Recs</Link>
               <Link to="/will-like">Will I Like</Link>
               <Link to="/similar">Similar Titles</Link>
               <Link to="/admin">Maintenance</Link>

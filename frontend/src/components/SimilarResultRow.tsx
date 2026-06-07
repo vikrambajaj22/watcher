@@ -102,13 +102,19 @@ export function SimilarResultRow({
         )}
         {will.status === "ok" && (
           <div className="similar-will-snippet">
-            <strong>
-              {(will.data.will_like ? "Likely Yes" : "Probably Not") +
-                (typeof will.data.score === "number"
-                  ? ` (${Number(will.data.score).toFixed(2)})`
-                  : "")}
-            </strong>
-            <p className="muted">{String(will.data.explanation ?? "")}</p>
+            {will.data.already_watched ? (
+              <strong>Already watched</strong>
+            ) : (
+              <>
+                <strong>
+                  {(will.data.will_like ? "Likely Yes" : "Probably Not") +
+                    (typeof will.data.score === "number"
+                      ? ` (${Number(will.data.score).toFixed(2)})`
+                      : "")}
+                </strong>
+                <p className="muted">{String(will.data.explanation ?? "")}</p>
+              </>
+            )}
           </div>
         )}
         {will.status === "err" && (
