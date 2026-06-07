@@ -20,53 +20,54 @@ type SyncJobRow = {
   last_update?: number;
 };
 
+const inputCls =
+  "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50 w-full";
+
 function RawJsonDetails({ label, data }: { label: string; data: unknown }) {
   if (data === null || data === undefined) return null;
   return (
-    <details className="admin-raw-details">
-      <summary>{label}</summary>
-      <pre className="json-pre admin-raw-pre">
+    <details className="mt-3">
+      <summary className="cursor-pointer text-sm text-accent select-none">{label}</summary>
+      <pre className="mt-2 font-mono text-[0.78rem] overflow-auto max-h-[200px] whitespace-pre-wrap break-words">
         {JSON.stringify(data, null, 2)}
       </pre>
     </details>
   );
 }
 
-function StatusTab({
-  health,
-  syncStatus,
-}: {
-  health: Health | null;
-  syncStatus: SyncStatus | null;
-}) {
+function StatusTab({ health, syncStatus }: { health: Health | null; syncStatus: SyncStatus | null }) {
   return (
-    <div className="grid-2 admin-status-grid">
-      <div className="card admin-status-card">
-        <h2>Server Health</h2>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="p-5 bg-surface border border-border rounded-xl">
+        <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
+          Server Health
+        </h2>
         {health ? (
-          <p className="admin-status-lead">
-            <span className="badge badge-ok">{health.status}</span>
-            {health.service && (
-              <span className="muted"> · {health.service}</span>
-            )}
+          <p className="m-0">
+            <span className="px-2 py-0.5 rounded text-sm font-semibold bg-emerald-400/15 text-emerald-300">
+              {health.status}
+            </span>
+            {health.service && <span className="text-muted"> · {health.service}</span>}
           </p>
         ) : (
-          <p className="muted">No health response yet.</p>
+          <p className="text-muted m-0">No health response yet.</p>
         )}
         <RawJsonDetails label="Raw JSON" data={health} />
       </div>
 
-      <div className="card admin-status-card">
-        <h2>Last Sync</h2>
+      <div className="p-5 bg-surface border border-border rounded-xl">
+        <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
+          Last Sync
+        </h2>
         {syncStatus ? (
-          <ul className="sync-list admin-sync-list">
+          <ul className="list-none m-0 p-0 flex flex-col gap-1.5 text-sm">
             <li>
-              <span className="muted">Trakt</span>{" "}
+              <span className="text-muted">Trakt </span>
               {formatDisplayTs(syncStatus.trakt_last_activity ?? null)}
             </li>
           </ul>
         ) : (
-          <p className="muted">Could not load sync status.</p>
+          <p className="text-muted m-0">Could not load sync status.</p>
         )}
         <RawJsonDetails label="Raw JSON" data={syncStatus} />
       </div>
@@ -81,7 +82,6 @@ export function AdminPage() {
 
   const [health, setHealth] = useState<Health | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-
   const [jobs, setJobs] = useState<SyncJobRow[]>([]);
   const [selectedJob, setSelectedJob] = useState("");
   const [jobProbe, setJobProbe] = useState<JobStatus | null>(null);
@@ -90,11 +90,8 @@ export function AdminPage() {
     setErr(null);
     try {
       const rh = await apiFetch("/health");
-      if (rh.ok) {
-        setHealth((await rh.json()) as Health);
-      } else {
-        setHealth(null);
-      }
+      if (rh.ok) setHealth((await rh.json()) as Health);
+      else setHealth(null);
     } catch {
       setHealth(null);
     }
@@ -103,7 +100,7 @@ export function AdminPage() {
     } catch {
       setSyncStatus(null);
       setErr(
-        "Couldn't reach maintenance endpoints. If the server restricts these actions, configure access using the repository developer docs.",
+        "Couldn't reach maintenance endpoints. Configure access using the developer docs.",
       );
     }
     try {
@@ -120,10 +117,7 @@ export function AdminPage() {
 
   function flash(m: string, isErr = false) {
     if (isErr) setErr(m);
-    else {
-      setErr(null);
-      setMsg(m);
-    }
+    else { setErr(null); setMsg(m); }
   }
 
   async function postJson(path: string, body: unknown) {
@@ -134,11 +128,7 @@ export function AdminPage() {
     });
     const text = await r.text();
     if (!r.ok) throw new Error(text);
-    try {
-      return JSON.parse(text);
-    } catch {
-      return { raw: text };
-    }
+    try { return JSON.parse(text); } catch { return { raw: text }; }
   }
 
   async function startTrakt() {
@@ -153,10 +143,7 @@ export function AdminPage() {
   }
 
   async function pollSelected() {
-    if (!selectedJob) {
-      flash("Select a job key first", true);
-      return;
-    }
+    if (!selectedJob) { flash("Select a job key first", true); return; }
     const raw = selectedJob.includes(":") ? selectedJob.split(":").pop() : selectedJob;
     if (!raw) return;
     const st = await pollJobUntil(raw, "trakt", { maxWaitSec: 0 });
@@ -166,113 +153,152 @@ export function AdminPage() {
   async function clearHistoryCache() {
     try {
       await postJson("/admin/clear-history-cache", {});
-      flash("History Cache Cleared");
+      flash("History cache cleared.");
     } catch (e) {
       flash(e instanceof Error ? e.message : "Failed", true);
     }
   }
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "status", label: "Status" },
+    { key: "sync", label: "Sync Jobs" },
+    { key: "cache", label: "Cache" },
+  ];
+
   return (
-    <div className="page page-wide">
-      <h1 className="page-title">Maintenance</h1>
-      <p className="lede">
+    <div className="w-full">
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Maintenance</h1>
+      <p className="text-muted max-w-[52ch] mb-6">
         Sync jobs and cache controls for people operating this instance.
       </p>
 
-      <div className="tabs">
-        {(
-          [
-            ["status", "Status"],
-            ["sync", "Sync Jobs"],
-            ["cache", "Cache"],
-          ] as const
-        ).map(([k, label]) => (
+      <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1">
+        {tabs.map(({ key, label }) => (
           <button
-            key={k}
+            key={key}
             type="button"
-            className={tab === k ? "tab active" : "tab"}
-            onClick={() => setTab(k)}
+            onClick={() => setTab(key)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-all shrink-0 ${
+              tab === key
+                ? "bg-accent/12 border-accent/40 text-text"
+                : "bg-surface border-border text-muted hover:text-text hover:border-muted"
+            }`}
           >
             {label}
           </button>
         ))}
       </div>
 
-      {msg && <div className="card admin-msg">{msg}</div>}
-      {err && <div className="card card-error">{err}</div>}
-
-      {tab === "status" && (
-        <StatusTab health={health} syncStatus={syncStatus} />
+      {msg && (
+        <div className="p-4 bg-surface border border-border rounded-xl mb-4 font-mono text-sm">
+          {msg}
+        </div>
+      )}
+      {err && (
+        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+          <strong className="text-danger">Error: </strong>
+          {err}
+        </div>
       )}
 
+      {tab === "status" && <StatusTab health={health} syncStatus={syncStatus} />}
+
       {tab === "sync" && (
-        <div className="card">
-          <h2>Trakt</h2>
-          <div className="actions">
-            <button type="button" className="btn btn-primary" onClick={() => void startTrakt()}>
+        <div className="p-5 bg-surface border border-border rounded-xl flex flex-col gap-5">
+          <div>
+            <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
+              Trakt
+            </h2>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 border-0"
+              onClick={() => void startTrakt()}
+            >
               Start Trakt Sync
             </button>
           </div>
 
-          <h2>Active / Recent Jobs</h2>
-          <button type="button" className="btn btn-ghost" onClick={() => void refreshMeta()}>
-            Refresh List
-          </button>
-          <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Key</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Processed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((j) => (
-                  <tr key={j.key}>
-                    <td className="mono">{j.key}</td>
-                    <td>{j.job_type}</td>
-                    <td>{j.status}</td>
-                    <td>{j.processed ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {jobs.length === 0 && <p className="muted">No Pending Jobs.</p>}
-          </div>
-
-          <h2>Poll Job</h2>
-          <label className="field field-block">
-            <span className="field-label">Job ID Or Full Key</span>
-            <input
-              className="input mono"
-              value={selectedJob}
-              onChange={(e) => setSelectedJob(e.target.value)}
-              placeholder="uuid or trakt_sync_job:…"
-            />
-          </label>
-          <div className="actions">
+          <div>
+            <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
+              Active / Recent Jobs
+            </h2>
             <button
               type="button"
-              className="btn btn-ghost"
+              className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-transparent text-muted border border-border font-semibold text-sm cursor-pointer transition-colors hover:text-text hover:border-muted mb-3"
+              onClick={() => void refreshMeta()}
+            >
+              Refresh List
+            </button>
+            <div className="overflow-x-auto border border-border rounded-xl">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    {["Key", "Type", "Status", "Processed"].map((h) => (
+                      <th
+                        key={h}
+                        className="text-left px-4 py-3 text-[0.72rem] uppercase tracking-[0.05em] text-muted font-semibold border-b border-border"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.map((j) => (
+                    <tr key={j.key} className="border-b border-border last:border-b-0 hover:bg-accent/5 transition-colors">
+                      <td className="px-4 py-3 font-mono text-[0.85em]">{j.key}</td>
+                      <td className="px-4 py-3">{j.job_type}</td>
+                      <td className="px-4 py-3">{j.status}</td>
+                      <td className="px-4 py-3">{j.processed ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {jobs.length === 0 && (
+                <p className="text-muted px-4 py-3 text-sm m-0">No pending jobs.</p>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
+              Poll Job
+            </h2>
+            <label className="flex flex-col gap-1.5 mb-3">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+                Job ID or Full Key
+              </span>
+              <input
+                className={`${inputCls} font-mono`}
+                value={selectedJob}
+                onChange={(e) => setSelectedJob(e.target.value)}
+                placeholder="uuid or trakt_sync_job:…"
+              />
+            </label>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-transparent text-muted border border-border font-semibold text-sm cursor-pointer transition-colors hover:text-text hover:border-muted"
               onClick={() => void pollSelected()}
             >
               Probe Job
             </button>
+            {jobProbe && (
+              <pre className="mt-3 font-mono text-[0.78rem] overflow-auto max-h-[320px] whitespace-pre-wrap break-words">
+                {JSON.stringify(jobProbe, null, 2)}
+              </pre>
+            )}
           </div>
-          {jobProbe && (
-            <pre className="json-pre">{JSON.stringify(jobProbe, null, 2)}</pre>
-          )}
         </div>
       )}
 
       {tab === "cache" && (
-        <div className="card">
-          <p>Clear server-side history cache after a manual sync.</p>
+        <div className="p-5 bg-surface border border-border rounded-xl">
+          <p className="text-sm text-muted mb-4">
+            Clear server-side history cache after a manual sync.
+          </p>
           <button
             type="button"
-            className="btn btn-primary"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 border-0"
             onClick={() => void clearHistoryCache()}
           >
             Clear History Cache

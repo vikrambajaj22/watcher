@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 
 // Dev: browser calls /api-proxy/* → FastAPI on8080 (no CORS hassle).
@@ -7,7 +8,7 @@ import react from "@vitejs/plugin-react";
 //   VITE_DEV_POLL=1 npm run dev
 // Prod: set VITE_API_BASE_URL at build time and configure WATCHER_CORS_ORIGINS on the API.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   server: {
     port: 8501,
     strictPort: true,

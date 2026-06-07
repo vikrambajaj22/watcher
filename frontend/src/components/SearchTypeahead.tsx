@@ -87,20 +87,25 @@ export function SearchTypeahead({
 
   if (selected) {
     return (
-      <div className="typeahead-selected">
+      <div className="flex items-center gap-3 px-3 py-2 bg-accent/8 border border-accent/25 rounded-lg min-h-[2.35rem]">
         <img
-          className="typeahead-selected-poster"
+          className="w-[26px] h-[39px] rounded object-cover bg-bg shrink-0"
           src={posterUrl(selected.poster_path, "w92") ?? placeholderPoster(selected.title)}
           alt=""
         />
-        <div className="typeahead-selected-info">
-          <div className="typeahead-selected-title">{selected.title}</div>
-          <div className="typeahead-option-meta">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate">{selected.title}</div>
+          <div className="text-xs text-muted mt-0.5">
             {selected.media_type === "tv" ? "TV" : "Movie"}
             {selected.year ? ` · ${selected.year}` : ""}
           </div>
         </div>
-        <button type="button" className="typeahead-clear" onClick={onClear} aria-label="Clear">
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear"
+          className="text-muted hover:text-text text-sm cursor-pointer bg-transparent border-0 px-1 shrink-0"
+        >
           ✕
         </button>
       </div>
@@ -108,10 +113,10 @@ export function SearchTypeahead({
   }
 
   return (
-    <div className="typeahead-wrap" ref={wrapRef}>
-      <div className="typeahead-input-wrap">
+    <div className="relative w-full" ref={wrapRef}>
+      <div className="relative flex items-center">
         <input
-          className="input typeahead-input"
+          className="w-full bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50 pr-8"
           value={query}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
@@ -119,26 +124,36 @@ export function SearchTypeahead({
           placeholder={placeholder}
           autoComplete="off"
         />
-        {loading && <span className="typeahead-spinner" aria-hidden />}
+        {loading && (
+          <span
+            className="absolute right-2.5 size-4 rounded-full border-2 border-border border-t-accent animate-spin [animation-duration:0.7s]"
+            aria-hidden
+          />
+        )}
       </div>
       {open && hits.length > 0 && (
-        <ul className="typeahead-dropdown" role="listbox">
+        <ul
+          className="absolute top-[calc(100%+4px)] left-0 right-0 bg-surface border border-border rounded-xl shadow-2xl shadow-black/40 z-[200] overflow-hidden list-none m-0 p-0"
+          role="listbox"
+        >
           {hits.map((hit, idx) => (
             <li
               key={`${hit.id}-${hit.media_type}`}
-              className={`typeahead-option${idx === focusedIdx ? " focused" : ""}`}
+              className={`flex items-center gap-3 px-3 py-2 cursor-pointer border-b border-border last:border-b-0 transition-colors ${
+                idx === focusedIdx ? "bg-accent/10" : "hover:bg-accent/8"
+              }`}
               role="option"
               aria-selected={idx === focusedIdx}
               onMouseDown={() => pick(hit)}
             >
               <img
-                className="typeahead-option-poster"
+                className="w-[30px] h-[45px] rounded object-cover bg-bg shrink-0"
                 src={posterUrl(hit.poster_path, "w92") ?? placeholderPoster(hit.title)}
                 alt=""
               />
-              <div className="typeahead-option-info">
-                <div className="typeahead-option-title">{hit.title}</div>
-                <div className="typeahead-option-meta">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold truncate">{hit.title}</div>
+                <div className="text-xs text-muted mt-0.5">
                   {hit.media_type === "tv" ? "TV" : "Movie"}
                   {hit.year ? ` · ${hit.year}` : ""}
                 </div>

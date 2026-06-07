@@ -25,11 +25,7 @@ type SortKey =
 const AUTO_SYNC_MS = 300_000;
 
 function rowTitle(row: HistoryRow): string {
-  return (
-    (row.title as string) ||
-    (row.name as string) ||
-    String(row.id ?? "—")
-  );
+  return (row.title as string) || (row.name as string) || String(row.id ?? "—");
 }
 
 function rowId(row: HistoryRow): number {
@@ -39,20 +35,13 @@ function rowId(row: HistoryRow): number {
 function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
   const copy = [...rows];
   copy.sort((a, b) => {
-    if (key === "title") {
-      return rowTitle(a).localeCompare(rowTitle(b));
-    }
-    if (key === "watch_count") {
+    if (key === "title") return rowTitle(a).localeCompare(rowTitle(b));
+    if (key === "watch_count")
+      return (Number(b.watch_count) || 0) - (Number(a.watch_count) || 0);
+    if (key === "rewatch_engagement")
       return (
-        (Number(b.watch_count) || 0) - (Number(a.watch_count) || 0)
+        (Number(b.rewatch_engagement) || 0) - (Number(a.rewatch_engagement) || 0)
       );
-    }
-    if (key === "rewatch_engagement") {
-      return (
-        (Number(b.rewatch_engagement) || 0) -
-        (Number(a.rewatch_engagement) || 0)
-      );
-    }
     if (key === "earliest") {
       const ea = String(a.earliest_watched_at ?? "");
       const eb = String(b.earliest_watched_at ?? "");
@@ -65,13 +54,15 @@ function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
   return copy;
 }
 
+const inputCls =
+  "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50";
+
 export function HistoryPage() {
   const [media, setMedia] = useState<MediaFilter>("all");
   const [sort, setSort] = useState<SortKey>("latest");
   const [search, setSearch] = useState("");
   const [posters, setPosters] = useState(true);
   const [rows, setRows] = useState<HistoryRow[] | null>(null);
-  /** Unfiltered history for stats when media filter is movie/tv (overall totals). */
   const [rowsOverall, setRowsOverall] = useState<HistoryRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -92,11 +83,8 @@ export function HistoryPage() {
 
       if (media !== "all") {
         const r2 = await apiFetch("/history?include_posters=false");
-        if (r2.ok) {
-          setRowsOverall((await r2.json()) as HistoryRow[]);
-        } else {
-          setRowsOverall(null);
-        }
+        if (r2.ok) setRowsOverall((await r2.json()) as HistoryRow[]);
+        else setRowsOverall(null);
       } else {
         setRowsOverall(null);
       }
@@ -115,9 +103,7 @@ export function HistoryPage() {
     if (!rows) return [];
     let r = sortRows(rows, sort);
     const q = search.trim().toLowerCase();
-    if (q) {
-      r = r.filter((row) => rowTitle(row).toLowerCase().includes(q));
-    }
+    if (q) r = r.filter((row) => rowTitle(row).toLowerCase().includes(q));
     return r;
   }, [rows, sort, search]);
 
@@ -128,11 +114,7 @@ export function HistoryPage() {
   }, [rows, rowsOverall, media]);
 
   const headlineCounts = useMemo(() => countMoviesShows(statsSource), [statsSource]);
-
-  const watchStats = useMemo(
-    () => computeWatchTimeMinutes(statsSource),
-    [statsSource],
-  );
+  const watchStats = useMemo(() => computeWatchTimeMinutes(statsSource), [statsSource]);
 
   async function syncNow(showNote = true) {
     setBusy(true);
@@ -189,7 +171,7 @@ export function HistoryPage() {
             body: JSON.stringify({}),
           });
           if (r.ok) {
-            setAutoSyncNote("Background Trakt sync triggered (every 5 min).");
+            setAutoSyncNote("Background Trakt sync triggered.");
             setTimeout(() => setAutoSyncNote(null), 4000);
             void load();
           }
@@ -206,48 +188,45 @@ export function HistoryPage() {
   const totalRows = rows?.length ?? 0;
 
   return (
-    <div className="page page-wide">
-      <h1 className="page-title">Watch History</h1>
-      <p className="lede">
-        Filter and search your library. With this page open, Trakt is refreshed
-        about every five minutes. Use <strong>Sync Trakt Now</strong> for an
-        immediate update.
+    <div className="w-full">
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Watch History</h1>
+      <p className="text-muted max-w-[52ch] mb-6">
+        Filter and search your library. With this page open, Trakt is refreshed about every five
+        minutes. Use <strong>Sync Trakt Now</strong> for an immediate update.
       </p>
 
+      {/* Stats strip */}
       {rows && rows.length > 0 && (
-        <div className="history-stats card">
-          <div className="history-stat-metric">
-            <h3>Movies Watched</h3>
-            <p className="history-stat-num">{headlineCounts.movies}</p>
-            <p className="muted small">
-              {fmtMinutes(watchStats.movie)} (incl. rewatches)
-            </p>
-          </div>
-          <div className="history-stat-metric">
-            <h3>Shows Watched</h3>
-            <p className="history-stat-num">{headlineCounts.tv}</p>
-            <p className="muted small">
-              {fmtMinutes(watchStats.show)} (incl. rewatches)
-            </p>
-          </div>
-          <div className="history-stat-metric">
-            <h3>Total Watch Time</h3>
-            <p className="history-stat-num">
-              {(watchStats.total / (60 * 24)).toFixed(1)} d
-            </p>
-            <p className="muted small">
-              {fmtMinutes(watchStats.total)} (incl. rewatches)
-            </p>
-          </div>
+        <div className="grid grid-cols-3 gap-4 p-5 bg-surface border border-border rounded-xl mb-4">
+          {[
+            { label: "Movies", count: headlineCounts.movies, time: fmtMinutes(watchStats.movie) },
+            { label: "Shows", count: headlineCounts.tv, time: fmtMinutes(watchStats.show) },
+            {
+              label: "Total Time",
+              count: `${(watchStats.total / (60 * 24)).toFixed(1)}d`,
+              time: fmtMinutes(watchStats.total),
+            },
+          ].map(({ label, count, time }) => (
+            <div key={label}>
+              <h3 className="text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-muted mb-1.5">
+                {label}
+              </h3>
+              <p className="text-[1.65rem] font-bold tracking-tight leading-tight m-0">{count}</p>
+              <p className="text-xs text-muted mt-0.5">{time} incl. rewatches</p>
+            </div>
+          ))}
         </div>
       )}
 
-      <div className="toolbar card">
-        <div className="toolbar-row">
-          <label className="field">
-            <span className="field-label">Media</span>
+      {/* Toolbar */}
+      <div className="p-4 bg-surface border border-border rounded-xl mb-4">
+        <div className="flex flex-wrap gap-3 items-end mb-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              Media
+            </span>
             <select
-              className="input"
+              className={inputCls}
               value={media}
               onChange={(e) => setMedia(e.target.value as MediaFilter)}
             >
@@ -256,10 +235,12 @@ export function HistoryPage() {
               <option value="tv">TV</option>
             </select>
           </label>
-          <label className="field">
-            <span className="field-label">Sort</span>
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              Sort
+            </span>
             <select
-              className="input"
+              className={inputCls}
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
             >
@@ -270,28 +251,30 @@ export function HistoryPage() {
               <option value="rewatch_engagement">Rewatch Engagement</option>
             </select>
           </label>
-          <label className="field field-grow">
-            <span className="field-label">Search</span>
+          <label className="flex flex-col gap-1 flex-1 min-w-[180px]">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              Search
+            </span>
             <input
-              className="input"
+              className={`${inputCls} w-full`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Title…"
             />
           </label>
-          <label className="field checkbox-field">
+          <label className="flex items-center gap-2 self-end pb-2">
             <input
               type="checkbox"
               checked={posters}
               onChange={(e) => setPosters(e.target.checked)}
             />
-            <span>Poster Cards</span>
+            <span className="text-sm">Poster Cards</span>
           </label>
         </div>
-        <div className="toolbar-row">
+        <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="btn btn-primary"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
             disabled={busy}
             onClick={() => void syncNow(true)}
           >
@@ -299,30 +282,34 @@ export function HistoryPage() {
           </button>
           <button
             type="button"
-            className="btn btn-ghost"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-transparent text-muted border border-border font-semibold text-sm cursor-pointer transition-colors hover:text-text hover:border-muted"
             onClick={() => void load()}
           >
             Reload
           </button>
-          <span className="muted toolbar-stats">
-                       Showing {listCount} of {totalRows} in view · Catalog: Movies{" "}
-            {headlineCounts.movies} · TV {headlineCounts.tv}
+          <span className="text-muted text-sm ml-auto">
+            {listCount} of {totalRows} · Movies {headlineCounts.movies} · TV {headlineCounts.tv}
           </span>
         </div>
-        {syncNote && <p className="hint">{syncNote}</p>}
-        {autoSyncNote && <p className="hint">{autoSyncNote}</p>}
+        {syncNote && <p className="text-sm text-muted mt-2 mb-0">{syncNote}</p>}
+        {autoSyncNote && <p className="text-sm text-muted mt-2 mb-0">{autoSyncNote}</p>}
       </div>
 
-      {err && <div className="card card-error">{err}</div>}
-
-      {rows === null && !err && <p className="muted">Loading…</p>}
-
-      {rows && rows.length === 0 && (
-        <p className="muted">No history yet. Sign in and sync Trakt.</p>
+      {err && (
+        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+          <strong className="text-danger">Error: </strong>
+          {err}
+        </div>
       )}
 
+      {rows === null && !err && <p className="text-muted">Loading…</p>}
+      {rows && rows.length === 0 && (
+        <p className="text-muted">No history yet. Sign in and sync Trakt.</p>
+      )}
+
+      {/* Poster card list */}
       {filtered.length > 0 && posters && (
-        <div className="history-card-list">
+        <div className="flex flex-col gap-3">
           {filtered.map((row, i) => {
             const title = rowTitle(row);
             const id = rowId(row);
@@ -334,62 +321,69 @@ export function HistoryPage() {
             const re = Number(row.rewatch_engagement) || 0;
             const isTv = mt === "tv";
             return (
-              <article key={`${id}-${mt}-${i}`} className="history-card">
-                <div className="history-card-poster">
-                  <img src={src} alt="" loading="lazy" />
+              <article
+                key={`${id}-${mt}-${i}`}
+                className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-150 hover:border-accent/20 hover:shadow-lg hover:shadow-black/25"
+              >
+                <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
+                  <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
                 </div>
-                <div className="history-card-main">
-                  <span className={`history-card-kind ${isTv ? "tv" : "movie"}`}>
+                <div className="flex-1 min-w-0">
+                  <span
+                    className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 ${
+                      isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
+                    }`}
+                  >
                     {isTv ? "TV" : "Film"}
                   </span>
-                  <h3 className="history-card-title">{title}</h3>
+                  <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-1 line-clamp-2">
+                    {title}
+                  </h3>
                   {isTv ? (
-                    <p className="history-card-sub muted">
+                    <p className="text-sm text-muted m-0">
                       {String(row.watched_episodes ?? 0)} /{" "}
                       {String(row.total_episodes ?? "—")} episodes
                     </p>
                   ) : (
-                    <p className="history-card-sub muted">
-                      {row.year != null ? String(row.year) : "Year —"}
+                    <p className="text-sm text-muted m-0">
+                      {row.year != null ? String(row.year) : "—"}
                     </p>
                   )}
                 </div>
-                <ul className="history-card-statline">
+                <ul className="hidden sm:flex flex-col gap-1.5 text-xs shrink-0 w-28 list-none m-0 p-0">
                   {isTv ? (
-                    <li>
-                      <span className="stat-label">Complete</span>
-                      <span className="stat-value">
+                    <li className="flex justify-between items-baseline gap-2">
+                      <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Complete</span>
+                      <span className="font-semibold">
                         {`${((Number(row.completion_ratio) || 0) * 100).toFixed(0)}%`}
                       </span>
                     </li>
                   ) : (
-                    <li>
-                      <span className="stat-label">Watches</span>
-                      <span className="stat-value">
-                        {String(row.watch_count ?? 0)}
-                      </span>
+                    <li className="flex justify-between items-baseline gap-2">
+                      <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Watches</span>
+                      <span className="font-semibold">{String(row.watch_count ?? 0)}</span>
                     </li>
                   )}
                   {re > 0 && (
-                    <li>
-                      <span className="stat-label">Rewatch</span>
-                      <span className="stat-value">×{re.toFixed(1)}</span>
+                    <li className="flex justify-between items-baseline gap-2">
+                      <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Rewatch</span>
+                      <span className="font-semibold">×{re.toFixed(1)}</span>
                     </li>
                   )}
-                  <li>
-                    <span className="stat-label">Last</span>
-                    <span className="stat-value mono">
+                  <li className="flex justify-between items-baseline gap-2">
+                    <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Last</span>
+                    <span className="font-semibold font-mono text-[0.78rem]">
                       {String(row.latest_watched_at ?? "—").slice(0, 10)}
                     </span>
                   </li>
                 </ul>
-                <div className="history-card-actions">
+                <div className="shrink-0 self-center">
                   {id > 0 && mt && (
                     <Link
-                      className="btn btn-secondary history-card-link"
+                      className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 hover:no-underline transition-all whitespace-nowrap"
                       to={`/similar?id=${id}&type=${mtEnc}`}
                     >
-                      Similar Titles
+                      Similar
                     </Link>
                   )}
                 </div>
@@ -399,16 +393,20 @@ export function HistoryPage() {
         </div>
       )}
 
+      {/* Table view */}
       {filtered.length > 0 && !posters && (
-        <div className="table-wrap">
-          <table className="data-table">
+        <div className="overflow-x-auto border border-border rounded-xl bg-surface">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Latest</th>
-                <th>Count</th>
-                <th />
+                {["Title", "Type", "Latest", "Count", ""].map((h) => (
+                  <th
+                    key={h}
+                    className="text-left px-4 py-3 text-[0.72rem] uppercase tracking-[0.05em] text-muted font-semibold border-b border-border"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -417,21 +415,19 @@ export function HistoryPage() {
                 const mt = String(row.media_type ?? "");
                 const mtEnc = encodeURIComponent(mt === "tv" ? "tv" : "movie");
                 return (
-                  <tr key={`${row.id}-${row.media_type}-${i}`}>
-                    <td>{rowTitle(row)}</td>
-                    <td>{mt || "—"}</td>
-                    <td className="mono">
+                  <tr
+                    key={`${row.id}-${row.media_type}-${i}`}
+                    className="border-b border-border last:border-b-0 hover:bg-accent/5 transition-colors"
+                  >
+                    <td className="px-4 py-3">{rowTitle(row)}</td>
+                    <td className="px-4 py-3">{mt || "—"}</td>
+                    <td className="px-4 py-3 font-mono text-[0.85em]">
                       {String(row.latest_watched_at ?? "—")}
                     </td>
-                    <td>{String(row.watch_count ?? "—")}</td>
-                    <td>
+                    <td className="px-4 py-3">{String(row.watch_count ?? "—")}</td>
+                    <td className="px-4 py-3">
                       {id > 0 && mt ? (
-                        <Link
-                          className="table-link"
-                          to={`/similar?id=${id}&type=${mtEnc}`}
-                        >
-                          Similar Titles
-                        </Link>
+                        <Link to={`/similar?id=${id}&type=${mtEnc}`}>Similar</Link>
                       ) : (
                         "—"
                       )}

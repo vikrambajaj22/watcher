@@ -273,9 +273,9 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 6. ✅ **Step 6** — Deleted: embeddings.py, faiss_index.py, faiss_rebuild_cli.py, mcp_will_like.py, process/recommendation.py, tmdb_sync.py, llm_orchestrator.py, knn_utils.py, vector_store.py, sync_worker.py, tools/mcp_knn.json
 7. ✅ **Step 7** — Cleaned imports; trakt_sync now stores poster_path/overview; history DAO no longer queries tmdb_metadata
 8. ✅ **Step 8** — requirements.txt stripped of faiss-cpu, sentence-transformers, scikit-learn, torch, etc.
-9. **Step 9** — Drop MongoDB collections (`tmdb_metadata`, `tmdb_failures`) — run manually after verifying backup
+9. ✅ **Step 9** — `tmdb_failures` dropped; `tmdb_metadata` kept for future use (not queried by app)
 10. ✅ **Step 10** — Route & naming cleanup: `/mcp/knn` → `/similar`, `/mcp/will-like` → `/will-like`
-11. **Step 11** — UI modernization pass (design tokens, shared components, responsive shell) — see section 12
+11. ✅ **Step 11** — UI modernization: Tailwind CSS v4, active nav, modern cards, dead CSS removed, recharts removed
 12. ✅ **Step 12** — Documentation updated (README, DEVELOPMENT, this file)
 13. **Step 13** — Test locally, commit
 
@@ -300,7 +300,30 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 
 These features from the old roadmap are still worth considering post-refactor:
 
-1. **Watch History UI Improvements**
+1. **Find Titles by Description**
+
+   A natural-language search endpoint that lets the user describe what they want to watch and returns matching titles. Goes beyond keyword search by inferring structured filters from free text.
+
+   **Backend**
+   - New endpoint: `POST /discover/describe` — body: `{ query: str, limit: int }`
+   - LLM extracts structured filters from the query: `media_type`, `genres`, `cast` (actor/director names), `keywords`, `year_range`
+   - Fan out to TMDB Discover API with extracted filters + keyword search
+   - Optionally cross-reference with watch history to surface unwatched titles
+   - Return ranked results with a short explanation of why each matches
+
+   **Frontend**
+   - New `/discover` route with a free-text input
+   - "What do you want to watch tonight?" prompt style
+   - Results as `MediaCard` grid with match reasoning
+   - Example queries: "90s sci-fi with practical effects", "feel-good comedies like The Grand Budapest Hotel", "anything with Cate Blanchett"
+
+   **Notes**
+   - Filter inference is the core value: `media_type`, `with_genres`, `with_cast`, `with_crew`, `primary_release_year`, `with_keywords`
+   - TMDB `/discover/movie` and `/discover/tv` support all of these natively
+   - Cast/crew name → TMDB person ID lookup needed before Discover call
+   - Free-text remainder (mood, style) maps to `with_keywords` or a secondary `/search/keyword` call
+
+2. **Watch History UI Improvements**
    - Genre/year filters on `/history` endpoint and React UI
    - Copy-to-clipboard for TMDB URLs on each card
    - Sort options (recently watched, by year, by title)

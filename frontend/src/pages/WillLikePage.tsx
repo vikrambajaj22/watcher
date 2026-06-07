@@ -47,16 +47,17 @@ export function WillLikePage() {
   const isTv = itemMt === "tv";
 
   return (
-    <div className="page page-wide">
-      <h1 className="page-title">Will I Like It?</h1>
-      <p className="lede">
-        A short model-assisted read on whether a title fits your taste, based on
-        your watch history.
+    <div className="w-full">
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Will I Like It?</h1>
+      <p className="text-muted max-w-[52ch] mb-6">
+        A short model-assisted read on whether a title fits your taste, based on your watch history.
       </p>
 
-      <div className="card form-card will-form-card">
-        <label className="field field-block">
-          <span className="field-label">Title</span>
+      <div className="p-5 bg-surface border border-border rounded-xl mb-4">
+        <label className="flex flex-col gap-1.5 mb-4">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            Title
+          </span>
           <SearchTypeahead
             selected={selectedHit}
             onSelect={(hit) => { setSelectedHit(hit); setResult(null); setErr(null); }}
@@ -64,72 +65,88 @@ export function WillLikePage() {
             placeholder="Search movie or show…"
           />
         </label>
-        <div className="actions will-form-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy || !selectedHit}
-            onClick={() => void submit()}
-          >
-            {busy ? "Checking…" : "Check"}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+          disabled={busy || !selectedHit}
+          onClick={() => void submit()}
+        >
+          {busy ? "Checking…" : "Check"}
+        </button>
       </div>
 
-      {err && <div className="card card-error">{err}</div>}
+      {err && (
+        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+          <strong className="text-danger">Error: </strong>
+          {err}
+        </div>
+      )}
 
       {busy && (
-        <div className="card loading-panel" role="status" aria-live="polite">
-          <div className="loading-spinner" aria-hidden />
-          <p className="loading-panel-text">Checking Your Taste Fit…</p>
+        <div className="flex items-center gap-4 p-5 bg-surface border border-border rounded-xl mb-4" role="status" aria-live="polite">
+          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
+          <p className="text-sm m-0">Checking Your Taste Fit…</p>
         </div>
       )}
 
       {!busy && result && (
-        <article className="history-card will-result-card">
-          <div className="history-card-poster">
+        <article className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl">
+          <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
             <img
               src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster(displayTitle)}
               alt=""
               loading="lazy"
+              className="w-full aspect-[2/3] object-cover block"
             />
           </div>
-          <div className="history-card-main">
+          <div className="flex-1 min-w-0">
             {result.already_watched ? (
-              <span className="history-card-kind movie">Watched</span>
+              <span className="inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 bg-emerald-400/10 text-emerald-300">
+                Watched
+              </span>
             ) : (
-              <span className={`history-card-kind ${isTv ? "tv" : "movie"}`}>
+              <span
+                className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 ${
+                  isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
+                }`}
+              >
                 {isTv ? "TV" : "Film"}
               </span>
             )}
-            <h2 className="history-card-title will-result-title">{displayTitle}</h2>
-            <p className="history-card-sub muted">
+            <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-1">
+              {displayTitle}
+            </h2>
+            <p className="text-sm text-muted mb-2">
               {result.already_watched
                 ? "Already in your history."
                 : `Score: ${(result.score * 100).toFixed(0)}%`}
             </p>
-            <p className="media-card-reasoning will-result-explanation">
-              {result.explanation}
-            </p>
+            <p className="text-sm italic text-muted leading-relaxed m-0">{result.explanation}</p>
           </div>
-          <ul className="history-card-statline">
-            <li>
-              <span className="stat-label">Verdict</span>
-              <span className="stat-value">
+          <div className="hidden sm:flex flex-col gap-1.5 text-xs shrink-0 w-28">
+            <div className="flex justify-between items-baseline gap-2">
+              <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Verdict</span>
+              <span className="font-semibold">
                 {result.already_watched ? (
-                  <span className="badge badge-ok">Seen</span>
+                  <span className="px-1.5 py-0.5 rounded text-[0.8rem] font-semibold bg-emerald-400/15 text-emerald-300">
+                    Seen
+                  </span>
                 ) : result.will_like ? (
-                  <span className="badge badge-ok">Likely Yes</span>
+                  <span className="px-1.5 py-0.5 rounded text-[0.8rem] font-semibold bg-emerald-400/15 text-emerald-300">
+                    Likely Yes
+                  </span>
                 ) : (
-                  <span className="badge badge-warn">Probably Not</span>
+                  <span className="px-1.5 py-0.5 rounded text-[0.8rem] font-semibold bg-yellow-400/12 text-yellow-300">
+                    Probably Not
+                  </span>
                 )}
               </span>
-            </li>
-          </ul>
-          <div className="history-card-actions similar-result-actions">
+            </div>
+          </div>
+          <div className="shrink-0 self-center">
             {itemId != null && itemId > 0 && result.item.media_type && (
               <Link
-                className="btn btn-secondary history-card-link"
+                className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 hover:no-underline transition-all whitespace-nowrap"
                 to={`/similar?id=${itemId}&type=${encodeURIComponent(itemMt)}`}
               >
                 Find Similar

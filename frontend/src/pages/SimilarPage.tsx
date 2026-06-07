@@ -5,6 +5,9 @@ import { type SearchHit, type SimilarResponse, type SimilarResult } from "../api
 import { SearchTypeahead } from "../components/SearchTypeahead";
 import { SimilarResultRow } from "../components/SimilarResultRow";
 
+const inputCls =
+  "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50";
+
 export function SimilarPage() {
   const [searchParams] = useSearchParams();
   const [selectedHit, setSelectedHit] = useState<SearchHit | null>(null);
@@ -67,13 +70,15 @@ export function SimilarPage() {
   }, [searchParams]);
 
   return (
-    <div className="page page-wide">
-      <h1 className="page-title">Similar Titles</h1>
-      <p className="lede">Find movies or shows similar to a title via TMDB.</p>
+    <div className="w-full">
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Similar Titles</h1>
+      <p className="text-muted max-w-[52ch] mb-6">Find movies or shows similar to a title via TMDB.</p>
 
-      <div className="card form-card">
-        <label className="field field-block">
-          <span className="field-label">Title</span>
+      <div className="p-5 bg-surface border border-border rounded-xl mb-4">
+        <label className="flex flex-col gap-1.5 mb-4">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            Title
+          </span>
           <SearchTypeahead
             selected={selectedHit}
             onSelect={(hit) => { setSelectedHit(hit); setResults(null); setErr(null); }}
@@ -81,11 +86,13 @@ export function SimilarPage() {
             placeholder="Search movie or show…"
           />
         </label>
-        <div className="toolbar-row">
-          <label className="field">
-            <span className="field-label">Results</span>
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              Results
+            </span>
             <input
-              className="input input-narrow"
+              className={`${inputCls} w-20`}
               type="number"
               min={1}
               max={40}
@@ -93,18 +100,18 @@ export function SimilarPage() {
               onChange={(e) => setK(Number(e.target.value))}
             />
           </label>
-          <label className="field checkbox-field">
+          <label className="flex items-center gap-2 self-end pb-2">
             <input
               type="checkbox"
               checked={crossType}
               onChange={(e) => setCrossType(e.target.checked)}
             />
-            <span>Cross-type</span>
+            <span className="text-sm">Cross-type</span>
           </label>
         </div>
         <button
           type="button"
-          className="btn btn-primary"
+          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
           disabled={busy || !selectedHit}
           onClick={() => void search()}
         >
@@ -112,24 +119,33 @@ export function SimilarPage() {
         </button>
       </div>
 
-      {err && <div className="card card-error">{err}</div>}
+      {err && (
+        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+          <strong className="text-danger">Error: </strong>
+          {err}
+        </div>
+      )}
 
       {busy && (
-        <div className="card loading-panel" role="status" aria-live="polite">
-          <div className="loading-spinner" aria-hidden />
-          <p className="loading-panel-text">Finding Similar Titles…</p>
+        <div className="flex items-center gap-4 p-5 bg-surface border border-border rounded-xl mb-4" role="status" aria-live="polite">
+          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
+          <p className="text-sm m-0">Finding Similar Titles…</p>
         </div>
       )}
 
       {!busy && results !== null && (
         <>
           {sourceLabel && (
-            <h2 className="section-title">Similar To: {sourceLabel}</h2>
+            <h2 className="text-lg font-semibold tracking-tight mb-3">
+              Similar to: <span className="text-accent">{sourceLabel}</span>
+            </h2>
           )}
           {results.length === 0 ? (
-            <p className="muted card empty-results-note">No similar titles found.</p>
+            <p className="text-muted p-5 bg-surface border border-border rounded-xl">
+              No similar titles found.
+            </p>
           ) : (
-            <div className="history-card-list">
+            <div className="flex flex-col gap-3">
               {results.map((item, index) => (
                 <SimilarResultRow
                   key={`${item.id}-${item.media_type}-${index}`}

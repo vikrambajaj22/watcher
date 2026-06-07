@@ -6,11 +6,7 @@ export function RequireAuth() {
   const location = useLocation();
 
   if (authenticated === null) {
-    return (
-      <div className="page">
-        <p className="muted">Checking Trakt Sign-In…</p>
-      </div>
-    );
+    return <p className="text-muted">Checking sign-in…</p>;
   }
 
   if (!authenticated) {

@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { apiFetch, getApiBase } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
+
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  isActive
+    ? "text-text text-sm font-semibold transition-colors"
+    : "text-muted text-sm hover:text-text transition-colors";
 
 export function Layout() {
   const docsHref = `${getApiBase()}/docs`;
@@ -23,57 +28,140 @@ export function Layout() {
     await refresh();
   }
 
-  return (
-    <div className="app-shell">
-      <header className="top-nav">
-        <Link to="/" className="brand">
-          <img
-            src="/watcher-logo.jpeg"
-            alt=""
-            className="brand-icon"
-            height={32}
-            decoding="async"
-          />
-          Watcher
-        </Link>
+  const navLinks = (
+    <>
+      <NavLink to="/" end className={linkClass}>
+        Home
+      </NavLink>
+      {showAppNav && (
+        <>
+          <NavLink to="/history" className={linkClass}>
+            History
+          </NavLink>
+          <NavLink to="/recommend" className={linkClass}>
+            Recommendations
+          </NavLink>
+          <NavLink to="/will-like" className={linkClass}>
+            Will I Like
+          </NavLink>
+          <NavLink to="/similar" className={linkClass}>
+            Similar
+          </NavLink>
+          <NavLink to="/admin" className={linkClass}>
+            Maintenance
+          </NavLink>
+        </>
+      )}
+      <a
+        href={docsHref}
+        target="_blank"
+        rel="noreferrer"
+        className="text-muted text-sm hover:text-text transition-colors"
+      >
+        API Docs
+      </a>
+      {showAppNav && (
         <button
           type="button"
-          className={`nav-menu-btn${navOpen ? " is-open" : ""}`}
-          aria-label={navOpen ? "Close menu" : "Open menu"}
-          aria-expanded={navOpen}
-          aria-controls="site-nav"
-          onClick={() => setNavOpen((o) => !o)}
-        />
-        <nav
-          className={`nav-links${navOpen ? " is-open" : ""}`}
-          id="site-nav"
-          aria-label="Main"
+          onClick={() => void logout()}
+          className="text-muted text-sm hover:text-text transition-colors cursor-pointer bg-transparent border-0 p-0 font-sans"
         >
-          <Link to="/">Home</Link>
-          {showAppNav && (
-            <>
-              <Link to="/history">Watch History</Link>
-              <Link to="/recommend">Recommendations</Link>
-              <Link to="/will-like">Will I Like</Link>
-              <Link to="/similar">Similar Titles</Link>
-              <Link to="/admin">Maintenance</Link>
-            </>
-          )}
-          <a href={docsHref} target="_blank" rel="noreferrer">
-            API Docs
-          </a>
-          {showAppNav && (
-            <button
-              type="button"
-              className="nav-action"
-              onClick={() => void logout()}
+          Log Out
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <header className="sticky top-0 z-10 border-b border-border bg-surface/85 backdrop-blur-md">
+        <div className="flex items-center gap-4 px-4 md:px-6 py-3 max-w-[1320px] mx-auto">
+          <NavLink
+            to="/"
+            className="flex items-center gap-2 font-bold text-[1.1rem] tracking-tight text-text hover:text-accent transition-colors no-underline! shrink-0"
+          >
+            <img
+              src="/watcher-logo.jpeg"
+              alt=""
+              height={28}
+              className="h-7 w-auto max-w-[7rem] object-contain object-left opacity-90"
+              decoding="async"
+            />
+            Watcher
+          </NavLink>
+
+          {/* Desktop nav */}
+          <nav className="hidden md:flex items-center gap-6 ml-auto" aria-label="Main">
+            {navLinks}
+          </nav>
+
+          {/* Mobile hamburger */}
+          <button
+            type="button"
+            className="md:hidden ml-auto inline-flex items-center justify-center size-9 rounded-lg border border-border bg-surface text-text cursor-pointer hover:border-muted transition-colors"
+            aria-label={navOpen ? "Close menu" : "Open menu"}
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen((o) => !o)}
+          >
+            {navOpen ? "✕" : "☰"}
+          </button>
+        </div>
+
+        {/* Mobile nav */}
+        {navOpen && (
+          <nav
+            className="md:hidden border-t border-border px-4 py-3 flex flex-col gap-1"
+            aria-label="Main"
+          >
+            {[
+              { to: "/", label: "Home", end: true },
+              ...(showAppNav
+                ? [
+                    { to: "/history", label: "History" },
+                    { to: "/recommend", label: "Recommendations" },
+                    { to: "/will-like", label: "Will I Like" },
+                    { to: "/similar", label: "Similar" },
+                    { to: "/admin", label: "Maintenance" },
+                  ]
+                : []),
+            ].map(({ to, label, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  `px-2 py-2.5 rounded-lg text-sm transition-colors ${
+                    isActive
+                      ? "text-text font-semibold bg-accent/8"
+                      : "text-muted hover:text-text hover:bg-accent/5"
+                  }`
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
+            <a
+              href={docsHref}
+              target="_blank"
+              rel="noreferrer"
+              className="px-2 py-2.5 rounded-lg text-sm text-muted hover:text-text hover:bg-accent/5 transition-colors"
             >
-              Log Out
-            </button>
-          )}
-        </nav>
+              API Docs
+            </a>
+            {showAppNav && (
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="text-left px-2 py-2.5 rounded-lg text-sm text-muted hover:text-text hover:bg-accent/5 transition-colors cursor-pointer bg-transparent border-0 font-sans w-full"
+              >
+                Log Out
+              </button>
+            )}
+          </nav>
+        )}
       </header>
-      <main className="main-content">
+
+      <main className="flex-1 px-4 md:px-6 py-7 max-w-[1320px] mx-auto w-full">
         <Outlet />
       </main>
     </div>
