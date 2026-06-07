@@ -187,6 +187,80 @@ EOF
 - Consider squashing commits related to old approach if not yet pushed
 - Tag current state before major changes
 
+### 12. UI Modernization
+
+With the visual explorer and compare pages gone, the surviving surface is small enough to refresh in one pass. Goal: a cohesive, responsive, accessible SPA — no half-migrated styling.
+
+#### Design System & Tokens
+- Centralize design tokens (colors, spacing, radii, typography, shadows) as CSS custom properties in one `theme.css` (or Tailwind config). No more per-component hardcoded hex/px.
+- Define **light + dark** palettes; respect `prefers-color-scheme` and add a manual toggle persisted to `localStorage`.
+- Pick one type scale and one spacing scale; apply consistently.
+
+#### Component Library
+- Standardize on a single approach. Options (pick one):
+  - **Tailwind CSS** + headless primitives (Radix UI / Headless UI) — utility-first, small runtime
+  - **shadcn/ui** — copy-in components on Radix + Tailwind, full control
+  - A styled component kit (e.g., Mantine / Chakra) — fastest, heavier bundle
+- Build/adopt shared primitives: `Button`, `Card`, `Input`, `Select`, `Spinner`, `Toast`, `Modal`, `Tabs`, `EmptyState`, `Skeleton`.
+- Replace ad-hoc loading text with **skeleton loaders** for history/recommendation/similar cards.
+
+#### Layout & Navigation
+- Responsive app shell: top bar + collapsible sidebar (or bottom tab bar on mobile).
+- Consistent page container, max-width, and section spacing across `/`, `/history`, `/recommend`, `/will-like`, `/similar`, `/admin`.
+- Persistent nav with active-route highlighting; mobile hamburger/drawer.
+
+#### Media Cards
+- Unified `MediaCard` used by recommendations, similar, and history (poster, title, year, rating, overview-on-hover/expand).
+- Lazy-load posters (`loading="lazy"`), graceful poster-missing fallback, consistent aspect ratio.
+- Copy-to-clipboard TMDB link action (ties into Future Enhancements).
+
+#### Feedback & States
+- Toast/snackbar system for sync results, errors, and admin actions (replace inline alerts).
+- First-class **empty states** (no history yet, no results) and **error states** (API down, not logged in) with clear CTAs.
+- Disabled/loading button states during in-flight requests.
+
+#### Accessibility
+- Keyboard-navigable nav, modals, and menus; visible focus rings.
+- Proper labels/`aria-*` on inputs and icon-only buttons; sufficient color contrast in both themes.
+- Honor `prefers-reduced-motion` for any transitions.
+
+#### Performance & Polish
+- Route-level code splitting (`React.lazy` + `Suspense`) so the heavy chart deps are no longer in the main bundle (Recharts is removed with the visual explorer — confirm it's dropped from `package.json`).
+- Subtle, consistent transitions (page/route, card hover) via a single motion convention.
+
+#### Files (indicative)
+- `frontend/src/theme.css` (or `tailwind.config.ts`) — tokens
+- `frontend/src/components/ui/` — shared primitives
+- `frontend/src/components/MediaCard.tsx` — unified card
+- `frontend/src/components/AppShell.tsx` — layout/nav
+- Refactor existing pages to consume the above; delete bespoke one-off styles
+
+#### Scope Guardrail
+This is a visual/UX refresh, **not** a feature change. Keep API calls and data flow identical; only the presentation layer changes.
+
+### 13. Route & Naming Cleanup (`/mcp/*` is not MCP)
+
+The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code uses OpenAI **function/tool calling**, not the Model Context Protocol. `mcp_knn` is doubly wrong — `knn` is a FAISS-era name (k-nearest-neighbors) even though the endpoint now just hits TMDB `/similar`. Rename for honesty before adding the chat feature (enhancement #3), which *could* later expose a real MCP server.
+
+#### API routes
+- `POST /mcp/knn` → `POST /similar`
+- `POST /mcp/will-like` → `POST /will-like`
+- Single-user app, so a clean cut-over is fine; optionally keep thin deprecated aliases (308 redirect) for one release.
+
+#### Backend internals
+- `app/mcp_will_like.py` → `app/will_like.py` (`compute_will_like` is already well-named — keep it)
+- `app/utils/llm_orchestrator.py`: `call_mcp_knn` → `call_similar`; `call_model_with_mcp_function` → `call_model_with_tool`; `mcp_function_schema` → `tool_schema`; update the `match` cases (`"mcp_knn"` → `"similar"`)
+- `app/api.py`: update imports, route decorators, and handler names (`mcp_knn` → `similar`, `mcp_will_like` → `will_like`)
+- `app/schemas/api.py`: update docstrings that reference `/mcp/*`
+- Any tool-schema JSON: rename the tool `mcp_knn` → `similar`
+
+#### Frontend
+- `frontend/src/api/*`: update fetch paths `/mcp/knn` → `/similar`, `/mcp/will-like` → `/will-like`
+- Rename any `mcp`-flavored component/variable names
+
+#### Docs to re-point to the new names
+- `README.md` (Discovery Helpers section), `DEVELOPMENT.md` (route table), `frontend/README.md` — these currently document `/mcp/*` as the target state and must switch to `/similar` and `/will-like`.
+
 ---
 
 ## Implementation Order
@@ -200,8 +274,10 @@ EOF
 7. **Step 7** — Clean up imports, environment variables
 8. **Step 8** — Update requirements.txt, Dockerfile
 9. **Step 9** — Drop MongoDB collections
-10. **Step 10** — Update all documentation
-11. **Step 11** — Test locally, commit
+10. **Step 10** — Route & naming cleanup (`/mcp/*` → `/similar`, `/will-like`) — see section 13
+11. **Step 11** — UI modernization pass (design tokens, shared components, responsive shell) — see section 12
+12. **Step 12** — Update all documentation
+13. **Step 13** — Test locally, commit
 
 ---
 
@@ -235,12 +311,36 @@ These features from the old roadmap are still worth considering post-refactor:
    - Frontend: "Actor Search" tab/section
    - Note: Currently would require storing TMDB credits; alternative is to fetch on-demand
 
-3. **LangGraph Agentic Recommendations** (learning project)
-   - Conversational UI: "Chat with Watcher"
-   - Parse natural language intent (recommend, similar, will-like)
-   - Route to appropriate tools
-   - Support refinement loop ("more like X, less like Y")
-   - New endpoint: `POST /recommend/agent`
+3. **"Chat with Watcher" — Conversational Agent**
+
+   A chat UI that lets the user talk to Watcher in natural language and have it call the existing features as tools. Built on the in-process **tool/function-calling** pattern already in `app/utils/llm_orchestrator.py` (`call_model_with_mcp_function`), generalized from a single tool to many — this is OpenAI function calling, **not** the MCP protocol (see also section 13 on dropping the misleading `mcp` naming).
+
+   **Backend**
+   - New endpoint: `POST /chat`, streaming via SSE (`text/event-stream`). Body: `{ messages: [...], media_type? }`.
+   - Tool registry — register each feature as a callable tool with a JSON schema:
+     - `recommend` → `tmdb_recommendation` (taste planner + discover)
+     - `similar` → TMDB `/similar` lookup (current `/mcp/knn` logic)
+     - `will_like` → LLM prediction (current `/mcp/will-like` logic)
+     - `get_history` → query watch history (filters: genre, year, media type)
+   - Orchestration loop: model → tool call(s) → execute locally → feed results back → model responds. Cap max tool iterations per turn to bound latency/cost.
+   - **Approach — LangGraph** (also a learning project): model the loop as a LangGraph graph (agent node ↔ tool node with a conditional edge back to the agent until no tool call remains). LangGraph gives a clean structure for the multi-step/refinement flow and built-in streaming + state/checkpointing for conversation history. Adds a `langgraph` dependency. (Alternative: a plain hand-rolled loop over the existing `call_model_with_mcp_function` pattern — fewer deps, less structure.)
+   - Reuse `gpt-4.1-nano`; system prompt describes the available tools and the user's context.
+   - Stream assistant tokens **and** tool-status events so the UI can show "Looking up similar titles…".
+
+   **Frontend**
+   - New `/chat` route + nav entry; transcript view with streaming assistant messages.
+   - Render tool results inline as `MediaCard`s (reuses the unified card from section 12), not just text.
+   - Refinement loop ("more like X, less like Y") via retained conversation state.
+   - Typing/loading indicator driven by the streamed tool-status events.
+
+   **Considerations**
+   - Latency stacks: each turn can be several LLM round-trips on top of the 2–5s recommend/discover cost → streaming is essential, and surface per-step progress.
+   - Keep tool functions pure and reusable so the same registry can later back a real MCP server (below).
+   - Respect `ADMIN_API_KEY` on `/chat` if set (it can trigger sync/recommend tools).
+
+   **Optional follow-on — real MCP server**
+   - Once the tool registry is clean (section 13), expose the *same* tool functions over an actual MCP server (the `mcp` SDK) so external clients (Claude Desktop, other agents) can use them.
+   - This is the only context where the "mcp" name is accurate — do it as a separate, additive step, not part of the chat MVP.
 
 4. **Code Quality**
    - Add Ruff for code formatting/linting
