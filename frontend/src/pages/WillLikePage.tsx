@@ -48,7 +48,7 @@ export function WillLikePage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Will I Like It?</h1>
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Will I Like It?</h1>
       <p className="text-muted max-w-[52ch] mb-6">
         A short model-assisted read on whether a title fits your taste, based on your watch history.
       </p>
@@ -67,7 +67,7 @@ export function WillLikePage() {
         </label>
         <button
           type="button"
-          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
           disabled={busy || !selectedHit}
           onClick={() => void submit()}
         >
@@ -101,12 +101,12 @@ export function WillLikePage() {
           </div>
           <div className="flex-1 min-w-0">
             {result.already_watched ? (
-              <span className="inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 bg-emerald-400/10 text-emerald-300">
+              <span className="inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 bg-emerald-400/10 text-emerald-300">
                 Watched
               </span>
             ) : (
               <span
-                className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 ${
+                className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 ${
                   isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
                 }`}
               >

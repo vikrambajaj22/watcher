@@ -189,7 +189,7 @@ export function HistoryPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Watch History</h1>
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watch History</h1>
       <p className="text-muted max-w-[52ch] mb-6">
         Filter and search your library. With this page open, Trakt is refreshed about every five
         minutes. Use <strong>Sync Trakt Now</strong> for an immediate update.
@@ -211,7 +211,7 @@ export function HistoryPage() {
               <h3 className="text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-muted mb-1.5">
                 {label}
               </h3>
-              <p className="text-[1.65rem] font-bold tracking-tight leading-tight m-0">{count}</p>
+              <p className="text-[1.65rem] font-bold tracking-tight leading-tight m-0 bg-gradient-to-b from-white to-text/65 bg-clip-text text-transparent">{count}</p>
               <p className="text-xs text-muted mt-0.5">{time} incl. rewatches</p>
             </div>
           ))}
@@ -274,7 +274,7 @@ export function HistoryPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
             disabled={busy}
             onClick={() => void syncNow(true)}
           >
@@ -323,14 +323,14 @@ export function HistoryPage() {
             return (
               <article
                 key={`${id}-${mt}-${i}`}
-                className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-150 hover:border-accent/20 hover:shadow-lg hover:shadow-black/25"
+                className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-200 hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/20"
               >
                 <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
                   <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <span
-                    className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 ${
+                    className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 ${
                       isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
                     }`}
                   >

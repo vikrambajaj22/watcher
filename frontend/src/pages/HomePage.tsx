@@ -26,12 +26,12 @@ export function HomePage() {
   if (!authenticated) {
     return (
       <div className="max-w-md">
-        <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-2">Watcher</h1>
+        <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-2 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watcher</h1>
         <p className="text-muted mb-6">
           Sign in with Trakt to open your watch history, recommendations, and similarity search.
         </p>
         <a
-          className="inline-flex items-center justify-center px-5 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm hover:brightness-110 hover:no-underline transition-all"
+          className="inline-flex items-center justify-center px-5 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/50 hover:no-underline transition-all"
           href={loginHref}
         >
           Log In With Trakt
@@ -42,17 +42,18 @@ export function HomePage() {
 
   return (
     <div>
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Watcher</h1>
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watcher</h1>
       <p className="text-muted mb-8">What do you want to explore?</p>
       <nav className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl" aria-label="App sections">
         {APP_SECTIONS.map(({ to, label, desc }) => (
           <Link
             key={to}
             to={to}
-            className="flex flex-col gap-1 p-4 bg-surface border border-border rounded-xl hover:border-accent/30 hover:shadow-lg hover:shadow-black/20 hover:no-underline transition-all group"
+            className="flex flex-col gap-1.5 p-5 bg-surface border border-border rounded-xl hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/20 hover:no-underline transition-all duration-200 group"
           >
-            <span className="font-semibold text-text group-hover:text-accent transition-colors">
+            <span className="font-semibold text-text group-hover:text-accent transition-colors flex items-center justify-between">
               {label}
+              <span className="text-muted group-hover:text-accent translate-x-0 group-hover:translate-x-0.5 transition-all duration-200">→</span>
             </span>
             <span className="text-sm text-muted">{desc}</span>
           </Link>

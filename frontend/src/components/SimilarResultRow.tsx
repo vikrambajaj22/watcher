@@ -65,14 +65,14 @@ export function SimilarResultRow({
   const overview = item.overview && String(item.overview).trim();
 
   return (
-    <article className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-150 hover:border-accent/20 hover:shadow-lg hover:shadow-black/25">
+    <article className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-200 hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/20">
       <div className="w-16 sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
         <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
       </div>
 
       <div className="flex-1 min-w-0">
         <span
-          className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded mb-1.5 ${
+          className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 ${
             isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
           }`}
         >

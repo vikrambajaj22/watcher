@@ -28,14 +28,14 @@ export function MediaCard({
   const isTv = mt === "tv";
 
   return (
-    <article className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col h-full transition-all duration-150 hover:border-accent/25 hover:shadow-xl hover:shadow-black/30">
+    <article className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col h-full transition-all duration-200 hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/25">
       <div className="aspect-[2/3] bg-bg">
         <img className="w-full h-full object-cover block" src={src} alt="" loading="lazy" />
       </div>
       <div className="p-4 flex-1 flex flex-col gap-2">
         {mediaType && (
           <span
-            className={`self-start text-[0.65rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded ${
+            className={`self-start text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full ${
               isTv
                 ? "bg-blue-400/10 text-blue-300"
                 : "bg-emerald-400/10 text-emerald-300"

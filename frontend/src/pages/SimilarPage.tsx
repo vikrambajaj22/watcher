@@ -71,7 +71,7 @@ export function SimilarPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Similar Titles</h1>
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Similar Titles</h1>
       <p className="text-muted max-w-[52ch] mb-6">Find movies or shows similar to a title via TMDB.</p>
 
       <div className="p-5 bg-surface border border-border rounded-xl mb-4">
@@ -111,7 +111,7 @@ export function SimilarPage() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
           disabled={busy || !selectedHit}
           onClick={() => void search()}
         >

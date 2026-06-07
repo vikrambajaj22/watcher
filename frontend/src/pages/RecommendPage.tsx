@@ -55,7 +55,7 @@ export function RecommendPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Recommendations</h1>
+      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Recommendations</h1>
       <p className="text-muted max-w-[52ch] mb-6">
         Personalized picks from your history. The same settings within about a minute reuse the
         previous result.
@@ -95,7 +95,7 @@ export function RecommendPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
             disabled={busy}
             onClick={() => void run()}
           >
