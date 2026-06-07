@@ -29,7 +29,7 @@ export function MediaCard({
   const isTv = mt === "tv";
 
   return (
-    <article className="bg-surface border border-border rounded-xl overflow-hidden flex flex-col h-full transition-all duration-200 hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/25">
+    <article className="glass glass-hover rounded-2xl overflow-hidden flex flex-col h-full">
       <div className="aspect-[2/3] bg-bg">
         <img className="w-full h-full object-cover block" src={src} alt="" loading="lazy" />
       </div>

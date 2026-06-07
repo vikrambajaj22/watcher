@@ -20,8 +20,7 @@ type SyncJobRow = {
   last_update?: number;
 };
 
-const inputCls =
-  "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50 w-full";
+const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-sm w-full";
 
 function RawJsonDetails({ label, data }: { label: string; data: unknown }) {
   if (data === null || data === undefined) return null;
@@ -38,7 +37,7 @@ function RawJsonDetails({ label, data }: { label: string; data: unknown }) {
 function StatusTab({ health, syncStatus }: { health: Health | null; syncStatus: SyncStatus | null }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div className="p-5 bg-surface border border-border rounded-xl">
+      <div className="p-5 glass rounded-2xl">
         <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
           Server Health
         </h2>
@@ -55,7 +54,7 @@ function StatusTab({ health, syncStatus }: { health: Health | null; syncStatus: 
         <RawJsonDetails label="Raw JSON" data={health} />
       </div>
 
-      <div className="p-5 bg-surface border border-border rounded-xl">
+      <div className="p-5 glass rounded-2xl">
         <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
           Last Sync
         </h2>
@@ -181,7 +180,7 @@ export function AdminPage() {
             className={`px-3 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-all shrink-0 ${
               tab === key
                 ? "bg-accent/12 border-accent/40 text-text"
-                : "bg-surface border-border text-muted hover:text-text hover:border-muted"
+                : "bg-white/5 border-white/10 text-muted hover:text-text hover:border-white/20"
             }`}
           >
             {label}
@@ -190,12 +189,12 @@ export function AdminPage() {
       </div>
 
       {msg && (
-        <div className="p-4 bg-surface border border-border rounded-xl mb-4 font-mono text-sm">
+        <div className="p-4 glass rounded-2xl mb-4 font-mono text-sm">
           {msg}
         </div>
       )}
       {err && (
-        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
           <strong className="text-danger">Error: </strong>
           {err}
         </div>
@@ -204,14 +203,14 @@ export function AdminPage() {
       {tab === "status" && <StatusTab health={health} syncStatus={syncStatus} />}
 
       {tab === "sync" && (
-        <div className="p-5 bg-surface border border-border rounded-xl flex flex-col gap-5">
+        <div className="p-5 glass-dark rounded-2xl flex flex-col gap-5">
           <div>
             <h2 className="text-[0.85rem] font-semibold uppercase tracking-[0.06em] text-muted mb-3">
               Trakt
             </h2>
             <button
               type="button"
-              className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 border-0"
+              className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] border-0"
               onClick={() => void startTrakt()}
             >
               Start Trakt Sync
@@ -292,13 +291,13 @@ export function AdminPage() {
       )}
 
       {tab === "cache" && (
-        <div className="p-5 bg-surface border border-border rounded-xl">
+        <div className="p-5 glass-dark rounded-2xl">
           <p className="text-sm text-muted mb-4">
             Clear server-side history cache after a manual sync.
           </p>
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 border-0"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] border-0"
             onClick={() => void clearHistoryCache()}
           >
             Clear History Cache

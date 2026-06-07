@@ -7,8 +7,7 @@ type Media = "movie" | "tv" | "all";
 
 const REC_CACHE_TTL_MS = 60_000;
 
-const inputCls =
-  "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50";
+const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-sm";
 
 export function RecommendPage() {
   const [media, setMedia] = useState<Media>("all");
@@ -61,7 +60,7 @@ export function RecommendPage() {
         previous result.
       </p>
 
-      <div className="p-4 bg-surface border border-border rounded-xl mb-4">
+      <div className="p-4 glass-dark rounded-2xl mb-4">
         <div className="flex flex-wrap gap-3 items-end mb-3">
           <label className="flex flex-col gap-1">
             <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
@@ -95,7 +94,7 @@ export function RecommendPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
             disabled={busy}
             onClick={() => void run()}
           >
@@ -116,21 +115,21 @@ export function RecommendPage() {
       )}
 
       {err && (
-        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
           <strong className="text-danger">Error: </strong>
           {err}
         </div>
       )}
 
       {busy && (
-        <div className="flex items-center gap-4 p-5 bg-surface border border-border rounded-xl mb-4" role="status" aria-live="polite">
+        <div className="flex items-center gap-4 p-5 glass rounded-2xl mb-4" role="status" aria-live="polite">
           <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
           <p className="text-sm m-0">Generating Recommendations…</p>
         </div>
       )}
 
       {!busy && items && items.length === 0 && (
-        <p className="text-muted p-5 bg-surface border border-border rounded-xl">
+        <p className="text-muted p-5 glass rounded-2xl">
           No recommendations returned. Try a different mix or check that your watch history is synced.
         </p>
       )}

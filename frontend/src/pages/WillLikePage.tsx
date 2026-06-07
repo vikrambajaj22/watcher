@@ -55,7 +55,7 @@ export function WillLikePage() {
         A short model-assisted read on whether a title fits your taste, based on your watch history.
       </p>
 
-      <div className="p-5 bg-surface border border-border rounded-xl mb-4">
+      <div className="p-5 glass-dark rounded-2xl mb-4">
         <label className="flex flex-col gap-1.5 mb-4">
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
             Title
@@ -69,7 +69,7 @@ export function WillLikePage() {
         </label>
         <button
           type="button"
-          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
           disabled={busy || !selectedHit}
           onClick={() => void submit()}
         >
@@ -85,14 +85,14 @@ export function WillLikePage() {
       )}
 
       {busy && (
-        <div className="flex items-center gap-4 p-5 bg-surface border border-border rounded-xl mb-4" role="status" aria-live="polite">
+        <div className="flex items-center gap-4 p-5 glass rounded-2xl mb-4" role="status" aria-live="polite">
           <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
           <p className="text-sm m-0">Checking Your Taste Fit…</p>
         </div>
       )}
 
       {!busy && result && (
-        <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl">
+        <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 glass rounded-2xl">
           <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
             <img
               src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster(displayTitle)}

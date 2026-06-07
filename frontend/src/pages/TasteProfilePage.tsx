@@ -51,7 +51,7 @@ export function TasteProfilePage() {
       </p>
 
       {state.status === "loading" && (
-        <div className="flex items-center gap-4 p-5 bg-surface border border-border rounded-xl" role="status" aria-live="polite">
+        <div className="flex items-center gap-4 p-5 glass rounded-2xl" role="status" aria-live="polite">
           <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
           <p className="text-sm m-0">Analyzing your history…</p>
         </div>
@@ -66,7 +66,7 @@ export function TasteProfilePage() {
       {state.status === "ok" && (
         <div className="flex flex-col gap-4">
           {/* Signature */}
-          <div className="p-5 bg-surface border border-border rounded-xl">
+          <div className="p-5 glass rounded-2xl">
             <p className="text-[0.7rem] font-bold uppercase tracking-[0.08em] text-muted mb-2">Your taste in a nutshell</p>
             <p className="text-lg font-semibold tracking-[-0.02em] text-text m-0">
               {state.data.signature}
@@ -74,13 +74,13 @@ export function TasteProfilePage() {
           </div>
 
           {/* Summary */}
-          <div className="p-5 bg-surface border border-border rounded-xl">
+          <div className="p-5 glass rounded-2xl">
             <p className="text-[0.7rem] font-bold uppercase tracking-[0.08em] text-muted mb-2">Overview</p>
             <p className="text-sm leading-relaxed text-text/85 m-0">{state.data.summary}</p>
           </div>
 
           {/* Genres + Themes + Avoid */}
-          <div className="p-5 bg-surface border border-border rounded-xl flex flex-col gap-5">
+          <div className="p-5 glass rounded-2xl flex flex-col gap-5">
             <Section
               title="Genres you gravitate toward"
               items={state.data.genres}
@@ -89,7 +89,7 @@ export function TasteProfilePage() {
             <Section
               title="Recurring themes"
               items={state.data.themes}
-              color="bg-purple-400/10 text-purple-300 border-purple-400/20"
+              color="bg-accent/10 text-accent border-accent/20"
             />
             <Section
               title="Rarely watches"

@@ -87,7 +87,7 @@ export function SearchTypeahead({
 
   if (selected) {
     return (
-      <div className="flex items-center gap-3 px-3 py-2 bg-accent/8 border border-accent/25 rounded-lg min-h-[2.35rem]">
+      <div className="flex items-center gap-3 px-3 py-2 glass rounded-lg min-h-[2.35rem]">
         <img
           className="w-[26px] h-[39px] rounded object-cover bg-bg shrink-0"
           src={posterUrl(selected.poster_path, "w92") ?? placeholderPoster(selected.title)}
@@ -116,7 +116,7 @@ export function SearchTypeahead({
     <div className="relative w-full" ref={wrapRef}>
       <div className="relative flex items-center">
         <input
-          className="w-full bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50 pr-8"
+          className="w-full glass-input rounded-lg text-text px-2.5 py-2 text-sm pr-8"
           value={query}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
@@ -133,14 +133,14 @@ export function SearchTypeahead({
       </div>
       {open && hits.length > 0 && (
         <ul
-          className="absolute top-[calc(100%+4px)] left-0 right-0 bg-surface border border-border rounded-xl shadow-2xl shadow-black/40 z-[200] overflow-hidden list-none m-0 p-0"
+          className="absolute top-[calc(100%+4px)] left-0 right-0 glass rounded-2xl shadow-2xl shadow-black/50 z-[200] overflow-hidden list-none m-0 p-0"
           role="listbox"
         >
           {hits.map((hit, idx) => (
             <li
               key={`${hit.id}-${hit.media_type}`}
               className={`flex items-center gap-3 px-3 py-2 cursor-pointer border-b border-border last:border-b-0 transition-colors ${
-                idx === focusedIdx ? "bg-accent/10" : "hover:bg-accent/8"
+                idx === focusedIdx ? "bg-white/10" : "hover:bg-white/7"
               }`}
               role="option"
               aria-selected={idx === focusedIdx}

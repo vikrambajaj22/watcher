@@ -68,8 +68,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-const inputCls =
-  "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50";
+const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-sm";
 
 export function HistoryPage() {
   const [media, setMedia] = useState<MediaFilter>("all");
@@ -210,7 +209,7 @@ export function HistoryPage() {
 
       {/* Stats strip */}
       {rows && rows.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 p-5 bg-surface border border-border rounded-xl mb-4">
+        <div className="grid grid-cols-3 gap-4 p-5 glass-dark rounded-2xl mb-4">
           {[
             { label: "Movies", count: headlineCounts.movies, time: fmtMinutes(watchStats.movie) },
             { label: "Shows", count: headlineCounts.tv, time: fmtMinutes(watchStats.show) },
@@ -232,7 +231,7 @@ export function HistoryPage() {
       )}
 
       {/* Toolbar */}
-      <div className="p-4 bg-surface border border-border rounded-xl mb-4">
+      <div className="p-4 glass-dark rounded-2xl mb-4">
         <div className="flex flex-wrap gap-3 items-end mb-3">
           <label className="flex flex-col gap-1">
             <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
@@ -278,7 +277,7 @@ export function HistoryPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/40 disabled:opacity-50 disabled:cursor-not-allowed border-0"
+            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
             disabled={busy}
             onClick={() => void syncNow(true)}
           >
@@ -300,7 +299,7 @@ export function HistoryPage() {
       </div>
 
       {err && (
-        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
+        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
           <strong className="text-danger">Error: </strong>
           {err}
         </div>
@@ -326,7 +325,7 @@ export function HistoryPage() {
             return (
               <article
                 key={`${id}-${mt}-${i}`}
-                className="flex items-center gap-3 px-3 py-2.5 bg-surface border border-border rounded-xl transition-all duration-200 hover:border-accent/30 hover:shadow-[0_4px_20px_-6px] hover:shadow-accent/20"
+                className="flex items-center gap-3 px-3 py-2.5 glass glass-hover rounded-xl"
               >
                 <div className="w-10 shrink-0 rounded-md overflow-hidden bg-bg shadow">
                   <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />

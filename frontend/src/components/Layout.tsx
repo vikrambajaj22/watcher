@@ -46,7 +46,7 @@ export function Layout() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <header className="sticky top-0 z-10 border-b border-border/60 bg-bg/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-10 glass-nav">
         <div className="flex items-center px-4 md:px-6 py-3 max-w-[1320px] mx-auto">
           {/* Logo */}
           <NavLink
@@ -105,7 +105,7 @@ export function Layout() {
                   Admin
                 </button>
                 {adminOpen && (
-                  <div className="absolute right-0 top-[calc(100%+6px)] bg-surface border border-border rounded-xl shadow-2xl shadow-black/50 overflow-hidden min-w-[160px] z-50">
+                  <div className="absolute right-0 top-[calc(100%+6px)] glass rounded-2xl shadow-2xl shadow-black/50 overflow-hidden min-w-[160px] z-50">
                     <NavLink
                       to="/admin"
                       className={({ isActive }) =>

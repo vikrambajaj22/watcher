@@ -61,7 +61,7 @@ export function SimilarResultRow({ item }: { item: SimilarResult }) {
   const overview = item.overview && String(item.overview).trim();
 
   return (
-    <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-200 hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/20">
+    <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 glass glass-hover rounded-2xl">
       <div className="w-16 sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
         <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
       </div>
