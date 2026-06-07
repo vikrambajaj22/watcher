@@ -19,7 +19,6 @@ type SortKey =
   | "latest"
   | "earliest"
   | "title"
-  | "watch_count"
   | "rewatch_engagement";
 
 const AUTO_SYNC_MS = 300_000;
@@ -46,16 +45,12 @@ function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
   const copy = [...rows];
   copy.sort((a, b) => {
     if (key === "title") return rowTitle(a).localeCompare(rowTitle(b));
-    if (key === "watch_count")
-      return (Number(b.watch_count) || 0) - (Number(a.watch_count) || 0);
     if (key === "rewatch_engagement")
-      return (
-        (Number(b.rewatch_engagement) || 0) - (Number(a.rewatch_engagement) || 0)
-      );
+      return (Number(b.rewatch_engagement) || 0) - (Number(a.rewatch_engagement) || 0);
     if (key === "earliest") {
       const ea = String(a.earliest_watched_at ?? "");
       const eb = String(b.earliest_watched_at ?? "");
-      return eb.localeCompare(ea);
+      return ea.localeCompare(eb);
     }
     const la = String(a.latest_watched_at ?? "");
     const lb = String(b.latest_watched_at ?? "");
@@ -265,8 +260,7 @@ export function HistoryPage() {
               <option value="latest">Latest Watched</option>
               <option value="earliest">Earliest Watched</option>
               <option value="title">Title</option>
-              <option value="watch_count">Watch Count</option>
-              <option value="rewatch_engagement">Rewatch Engagement</option>
+              <option value="rewatch_engagement">Engagement</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 flex-1 min-w-[180px]">

@@ -18,6 +18,7 @@ from app.process.tmdb_recommendation import TmdbRecommender
 from app.tmdb_client import get_metadata, search_by_title, search_multi
 from app.tmdb_discover import fetch_cross_type_similar, fetch_similar_and_recommendations
 from app.will_like import compute_will_like, WillLikeError
+from app.taste_profile import compute_taste_profile
 from app.scheduler import check_trakt_last_activities_and_sync
 from app.schemas.api import (
     AdminAckResponse,
@@ -207,6 +208,21 @@ def will_like(payload: WillLikeRequest) -> WillLikeResponse:
         raise
     except Exception as e:
         logger.error("will_like error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/taste-profile",
+    dependencies=[Depends(require_admin_key)],
+)
+def taste_profile():
+    """LLM-generated taste profile from watch history."""
+    try:
+        return compute_taste_profile()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("taste_profile error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

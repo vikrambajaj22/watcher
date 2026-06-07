@@ -205,6 +205,8 @@ def sync_trakt_history():
                     movie_data["overview"] = tmdb_meta.get("overview", "")
                 if tmdb_meta.get("runtime"):
                     movie_data["runtime_minutes"] = int(tmdb_meta["runtime"])
+                kw_raw = (tmdb_meta.get("keywords") or {}).get("keywords") or []
+                movie_data["tmdb_keywords"] = [k["name"].lower() for k in kw_raw if k.get("name")]
         except Exception as e:
             logger.warning("Could not fetch TMDB metadata for movie %s: %s", tmdb_id, repr(e))
         all_history.append(movie_data)
@@ -236,6 +238,8 @@ def sync_trakt_history():
                 ep_runtimes = meta.get("episode_run_time") or []
                 if ep_runtimes:
                     show_data["episode_runtime_minutes"] = int(ep_runtimes[0])
+                kw_raw = (meta.get("keywords") or {}).get("results") or []
+                show_data["tmdb_keywords"] = [k["name"].lower() for k in kw_raw if k.get("name")]
                 if meta.get("seasons"):
                     for season in meta["seasons"]:
                         if (
@@ -378,8 +382,13 @@ def sync_trakt_history():
         )
         for item in all_history
     )
-    if runtime_gained or hash_history(all_history) != hash_history(current_history):
-        logger.info("Watch history changed or runtime fields added, updating database.")
+    keywords_gained = any(
+        item.get("tmdb_keywords") is not None
+        and current_map.get((item.get("id"), item.get("media_type")), {}).get("tmdb_keywords") is None
+        for item in all_history
+    )
+    if runtime_gained or keywords_gained or hash_history(all_history) != hash_history(current_history):
+        logger.info("Watch history changed or new enrichment fields added, updating database.")
         store_watch_history(all_history)
     else:
         logger.info("Watch history unchanged, not updating database.")

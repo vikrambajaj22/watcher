@@ -1,5 +1,12 @@
 from app.db import watch_history_collection
 from app.utils.logger import get_logger
+
+def _clear_taste_cache_safe():
+    try:
+        from app.taste_profile import clear_taste_cache
+        clear_taste_cache()
+    except Exception:
+        pass
 import time
 from cachetools import TTLCache
 import copy
@@ -50,6 +57,7 @@ def store_watch_history(data):
             _HISTORY_CACHE.clear()
         except Exception:
             pass
+        _clear_taste_cache_safe()
         logger.info("Watch history stored successfully: %d unique items.", len(deduplicated))
     else:
         logger.error("Invalid data format for storing watch history. Expected a list.")
@@ -102,6 +110,7 @@ def get_watch_history(media_type=None, include_posters: bool = True):
 def clear_history_cache() -> bool:
     try:
         _HISTORY_CACHE.clear()
+        _clear_taste_cache_safe()
         logger.info("Watch history cache cleared")
         return True
     except Exception as e:

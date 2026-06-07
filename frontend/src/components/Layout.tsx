@@ -73,6 +73,9 @@ export function Layout() {
                 <NavLink to="/history" className={linkClass}>
                   History
                 </NavLink>
+                <NavLink to="/taste" className={linkClass}>
+                  Taste Profile
+                </NavLink>
                 <NavLink to="/recommend" className={linkClass}>
                   Recommendations
                 </NavLink>
@@ -163,6 +166,7 @@ export function Layout() {
               ...(showAppNav
                 ? [
                     { to: "/history", label: "History" },
+                    { to: "/taste", label: "Taste Profile" },
                     { to: "/recommend", label: "Recommendations" },
                     { to: "/will-like", label: "Will I Like" },
                     { to: "/similar", label: "Similar" },

@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.dao.history import get_watch_history
+from app.taste_profile import get_taste_text
 from app.schemas.recommendations.recommendations import (
     Recommendation,
     RecommendationsResponse,
@@ -302,7 +303,10 @@ class TmdbRecommender:
         if not plan.get("discover_queries"):
             plan["discover_queries"] = _default_discover_queries(media_type)
 
-        taste_profile = plan.get("taste_summary") or ""
+        try:
+            taste_profile = get_taste_text()
+        except Exception:
+            taste_profile = plan.get("taste_summary") or ""
 
         t_fetch = time.time()
         candidates, fetch_meta = _fetch_candidates(

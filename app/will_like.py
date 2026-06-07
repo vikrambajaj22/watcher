@@ -5,6 +5,7 @@ from cachetools import TTLCache
 
 from app.tmdb_client import get_metadata, search_by_title
 from app.dao.history import get_watch_history
+from app.taste_profile import get_taste_text
 from app.utils.openai_client import get_openai_client
 from app.utils.logger import get_logger
 
@@ -83,20 +84,24 @@ def compute_will_like(
     if cached is not None:
         return cached
 
-    history_text = _format_history(history)
+    try:
+        taste_text = get_taste_text()
+    except Exception:
+        taste_text = _format_history(history)
+
     item_label = "movie" if media_type == "movie" else "TV show"
     genre_str = ", ".join(genres) if genres else "unknown"
 
     prompt = (
-        f"You are a movie/TV taste expert. Based on your watch history below, "
-        f"predict how likely you are to enjoy the following {item_label}.\n\n"
-        f"Your watch history:\n{history_text}\n\n"
+        f"You are a movie/TV taste expert. Based on the viewer's taste profile below, "
+        f"predict how likely they are to enjoy the following {item_label}.\n\n"
+        f"Viewer taste profile:\n{taste_text}\n\n"
         f"Item: {resolved_title}\n"
         f"Genres: {genre_str}\n"
         f"Overview: {resolved_overview}\n\n"
         "Respond ONLY with valid JSON: "
         '{"score": 0.0-1.0, "reasoning": "one sentence addressed directly to the user using \'you\'"}\n'
-        "score = probability you will enjoy it (0.0 = definitely won't like, 1.0 = definitely will like)."
+        "score = probability they will enjoy it (0.0 = definitely won't like, 1.0 = definitely will like)."
     )
 
     client = get_openai_client()

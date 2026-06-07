@@ -103,6 +103,15 @@ export type WillLikeResponse = {
   };
 };
 
+export type TasteProfile = {
+  signature: string;
+  summary: string;
+  genres: string[];
+  themes: string[];
+  avoid: string[];
+  history_count: number;
+};
+
 export function getHistoryQuery(mediaType: string | null, includePosters: boolean) {
   const p = new URLSearchParams();
   if (mediaType) p.set("media_type", mediaType);

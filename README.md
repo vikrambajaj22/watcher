@@ -11,9 +11,10 @@ Watcher is a personal media discovery application that generates tailored recomm
 - 🔐 **Trakt OAuth** — sign in with your Trakt account
 - 📺 **Watch history sync** — full Trakt history with runtime data for watch-time stats
 - ✨ **LLM-powered recommendations** — taste planner generates a thematic profile; three candidate sources (genre discover, TMDB similar/recommendations, keyword discover) merged via RRF; picker selects and reasons from the taste profile
+- 🧠 **Taste Profile** — LLM-generated snapshot of your viewing taste: signature, summary, top genres, recurring themes, and what you tend to avoid; cached 1h and shared across Will I Like and Recommendations
 - 🔍 **TMDB typeahead** — title search with poster previews on Similar and Will I Like pages
 - 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or TV → movie) via LLM keyword search
-- 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your watch history
+- 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
 - 🎬 **Interactive UI** — React SPA with responsive design
 
 ## Quick Start
@@ -106,23 +107,33 @@ pip install -r requirements-dev.txt
 - No embeddings, no vector search, no FAISS index
 - Stateless recommendation logic — each request is independent
 
+### Taste Profile
+
+`GET /taste-profile` (and `app/taste_profile.py`) generates a structured viewer profile from watch history using one LLM call, cached for 1 hour:
+
+- **Signature** — punchy 5–10 word label
+- **Summary** — 2–3 sentence taste description
+- **Genres / Themes / Avoid** — up to 5 items each
+
+This profile is shared: Will I Like? uses it as context instead of raw history, and the Recommendations picker uses it to select and reason about candidates. The Taste Profile page in the UI displays it directly.
+
 ### LLM Recommendation Flow
 
 The `/recommend/tmdb/{media_type}` endpoint:
 
 1. **Taste Planner** (`taste_planner_v1.jinja2`):
    - Input: ranked watch history + media type scope
-   - Output: `discover_queries` (structured TMDB params) + `taste_summary` (2–3 sentence thematic profile)
+   - Output: `discover_queries` (structured TMDB params)
    - Model: `gpt-4.1-nano`
 
 2. **Candidate Fetch** (three sources, all merged via RRF):
    - **Genre discover** — planner's `discover_queries` hit TMDB `/discover/{movie|tv}` with genre IDs, date ranges, vote thresholds
    - **Similar/recommendations** — TMDB `/similar` + `/recommendations` seeded from the top 3 ranked history items, merged via RRF
-   - **Keyword discover** — `taste_summary` → LLM extracts 6 thematic terms → each resolved to a TMDB keyword ID via `/search/keyword` → per-keyword `/discover` results merged via RRF
+   - **Keyword discover** — taste profile text → LLM extracts 6 thematic terms → each resolved to a TMDB keyword ID via `/search/keyword` → per-keyword `/discover` results merged via RRF
 
 3. **Picker** (`tmdb_picker_v1.jinja2`):
-   - Input: `taste_summary` + candidate list (with overviews)
-   - Output: picks with thematic reasoning (references taste profile themes, never specific watched titles)
+   - Input: shared taste profile text + candidate list (with overviews)
+   - Output: picks with thematic reasoning
    - Model: `gpt-4.1-nano`
 
 4. **Return**: Top N recommendations (id, title, overview, poster, reasoning)
@@ -152,7 +163,8 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 - `GET /search?q=&limit=` — **Title typeahead** — proxies TMDB `/search/multi`, returns movies and TV shows with poster thumbnails
 - `POST /similar` — **Similar titles** — merges TMDB `/similar` + `/recommendations` via RRF (k=60), TTL-cached 6h. Set `cross_type: true` for opposite-type results (movie → TV or TV → movie): LLM extracts thematic keywords from the title's overview → resolved to TMDB keyword IDs → per-keyword `/discover` merged via RRF
-- `POST /will-like` — **Will I Like?** — LLM (`gpt-4.1-nano`) scores 0–100% likelihood from watch history, TTL-cached 1h
+- `GET /taste-profile` — **Taste Profile** — LLM-generated viewer profile (signature, summary, genres, themes, avoid), TTL-cached 1h
+- `POST /will-like` — **Will I Like?** — LLM (`gpt-4.1-nano`) scores 0–100% likelihood using the shared taste profile, TTL-cached 1h
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
@@ -185,6 +197,7 @@ app/
   api.py                        — API routes
   db.py                         — MongoDB connection & queries
   will_like.py                  — LLM-based Will I Like? logic
+  taste_profile.py              — shared taste profile (LLM, 1h cache)
   
   auth/
     trakt_auth.py              — Trakt OAuth handling
@@ -252,7 +265,7 @@ pytest
 
 - LLM calls (taste planner, picker) can take 2–5 seconds per request
 - TMDB discover queries add 1–2 seconds
-- Consider caching the taste profile for a user session if patterns emerge
+- The taste profile is cached for 1 hour — the first Will I Like or Recommendations request after startup pays the cost; subsequent ones reuse it
 
 ### MongoDB connection fails
 

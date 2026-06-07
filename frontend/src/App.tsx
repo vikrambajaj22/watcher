@@ -6,6 +6,7 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { HomePage } from "./pages/HomePage";
 import { RecommendPage } from "./pages/RecommendPage";
 import { SimilarPage } from "./pages/SimilarPage";
+import { TasteProfilePage } from "./pages/TasteProfilePage";
 import { WillLikePage } from "./pages/WillLikePage";
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/recommend" element={<RecommendPage />} />
           <Route path="/will-like" element={<WillLikePage />} />
           <Route path="/similar" element={<SimilarPage />} />
+          <Route path="/taste" element={<TasteProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Route>
       </Route>

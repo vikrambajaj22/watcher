@@ -26,6 +26,7 @@ Further env detail: [README.md](README.md) (Environment, Quick Start) and [front
 | Watch history | GET | `/history` (query params as used in app) |
 | Watch history | POST | `/admin/sync/trakt`, `/admin/clear-history-cache` |
 | Recommendations | POST | `/recommend/tmdb/{all\|movie\|tv}` |
+| Taste Profile | GET | `/taste-profile` |
 | Will I like | POST | `/will-like` |
 | Similar titles | POST | `/similar` |
 | Similar titles (metadata label) | GET | `/admin/tmdb/{id}` |
