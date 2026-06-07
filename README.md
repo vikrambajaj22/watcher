@@ -12,6 +12,8 @@ Watcher is a personal media discovery application that generates tailored recomm
 - 📺 **Watch history sync** — pull your full Trakt history into the app
 - ✨ **LLM-powered recommendations** — taste planner + picker for personalized results
 - 🔍 **TMDB discovery** — real-time candidate fetching from TMDB discover API
+- 🎯 **Similar titles** — find related movies/shows via TMDB's `/similar` API
+- 🤔 **Will I Like?** — LLM predicts whether you'll enjoy a given title from your history
 - 🎬 **Interactive UI** — React SPA with responsive design
 
 ## Quick Start
@@ -86,8 +88,9 @@ pip install -r requirements-dev.txt
        ┌───────┴─────────┬──────────────────┐
        ▼                 ▼                  ▼
     Trakt API        TMDB API          MongoDB
-    (watch history)  (discover,        (watch history,
-                      details)         sync metadata)
+    (watch history)  (discover,        (watch history
+                      details,          only)
+                      similar)
 ```
 
 ### Data Flow
@@ -143,10 +146,15 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 ### Recommendations
 
-- `POST /recommend/{media_type}` — **legacy endpoint** — uses old FAISS-based approach (deprecated)
-- `POST /recommend/tmdb/{media_type}` — **new endpoint** — LLM taste planner + TMDB discover
+- `POST /recommend/tmdb/{media_type}` — LLM taste planner + TMDB discover
+  - `media_type`: `all`, `movie`, or `tv`
   - Body: `{ "recommend_count": 10 }`
   - Response: list of `Recommendation` objects with reasoning
+
+### Discovery Helpers
+
+- `POST /mcp/knn` — **Similar titles** — resolve a movie/show and return TMDB `/similar` results
+- `POST /mcp/will-like` — **Will I Like?** — LLM prediction (`{ will_like, score, explanation, item }`) based on your watch history
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
@@ -186,8 +194,7 @@ app/
     history.py                 — watch history queries
   
   process/
-    recommendation.py          — legacy FAISS-based recommender (deprecated)
-    tmdb_recommendation.py     — new LLM + TMDB discover approach
+    tmdb_recommendation.py     — LLM + TMDB discover recommender
   
   prompts/
     recommend/

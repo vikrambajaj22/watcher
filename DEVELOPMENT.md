@@ -4,7 +4,7 @@ Notes for people running or hacking on Watcher: how the React UI talks to the AP
 
 ## Optional API lock (`ADMIN_API_KEY`)
 
-If the API process has `ADMIN_API_KEY` set in its environment, routes that change data, run sync jobs, touch the vector index, or expose MCP-style helpers expect an **`X-API-Key`** HTTP header with the **same** secret.
+If the API process has `ADMIN_API_KEY` set in its environment, routes that change data, run sync jobs, or expose MCP-style helpers expect an **`X-API-Key`** HTTP header with the **same** secret.
 
 - **`./start.sh`** loads the repo-root `.env` for the API process.
 - **React (Vite)** does not read the API’s `.env`. For local dev, create **`frontend/.env`** or **`frontend/.env.local`** with:
@@ -25,12 +25,11 @@ Further env detail: [README.md](README.md) (Environment, Quick Start) and [front
 | Home | GET | `/health`, `/auth/status`, `/admin/sync/status` |
 | Watch history | GET | `/history` (query params as used in app) |
 | Watch history | POST | `/admin/sync/trakt`, `/admin/clear-history-cache` |
-| Recommendations | POST | `/recommend/{all\|movie\|tv}` |
+| Recommendations | POST | `/recommend/tmdb/{all\|movie\|tv}` |
 | Will I like | POST | `/mcp/will-like` |
 | Similar titles | POST | `/mcp/knn` |
 | Similar titles (metadata label) | GET | `/admin/tmdb/{id}` |
-| Visual explorer | GET | `/visualize/clusters` |
-| Maintenance (admin UI) | GET/POST | `/admin/*` (sync jobs, FAISS, embed, cache clear) |
+| Maintenance (admin UI) | GET/POST | `/admin/*` (sync jobs, cache clear) |
 
 OpenAPI / interactive docs: `http://localhost:8080/docs` (or `/redoc`) when the API is running.
 
@@ -38,10 +37,11 @@ OpenAPI / interactive docs: `http://localhost:8080/docs` (or `/redoc`) when the 
 
 ## Maintenance UI
 
-The React **Maintenance** screen exposes the same sync / index / cache actions as the FastAPI routes below.
+The React **Maintenance** screen exposes the same sync / cache actions as the FastAPI routes below.
 
 ## Related docs
 
-- [README.md](README.md) — features, env vars, embedding/FAISS overview, curl examples  
+- [README.md](README.md) — features, env vars, architecture, curl examples  
 - [DEPLOYMENT.md](DEPLOYMENT.md) — production layout, secrets, GCP  
-- [PLAN.md](PLAN.md) — roadmap and technical debt
+- [REFACTOR.md](REFACTOR.md) — the LLM + TMDB discover refactor plan / checklist  
+- [LEGACY.md](LEGACY.md) — the old FAISS + TMDB metadata cache architecture

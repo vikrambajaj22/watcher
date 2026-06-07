@@ -2,7 +2,7 @@
 
 Single-user SPA — the supported Watcher UI. Dev server proxies API calls to FastAPI on port **8080**.
 
-Routes: `/` (home), `/history`, `/visual`, `/recommend`, `/will-like`, `/similar`, `/admin` (shown as **Maintenance** in the nav).
+Routes: `/` (home), `/history`, `/recommend`, `/will-like`, `/similar`, `/admin` (shown as **Maintenance** in the nav).
 
 ## Setup
 

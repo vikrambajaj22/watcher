@@ -323,7 +323,7 @@ The old code is preserved in git history; cherry-pick or rebase as needed.
 | Recommendation logic | KNN in vector space → LLM rank | Taste planner → TMDB discover → LLM picker |
 | Similar Items search | KNN by TMDB ID or text | TMDB `/similar` API by TMDB ID |
 | Discover data | FAISS index (static) | TMDB discover API (dynamic) |
-| Will I Like? | Embedding similarity + explanation | LLM prediction (removed) |
+| Will I Like? | Embedding similarity + explanation | LLM prediction (no embeddings) |
 | Visual Explorer | t-SNE clusters of embeddings | (removed) |
 | Admin UI features | FAISS rebuild, embed management | Sync status, cache clear only |
 | MongoDB size | ~2 GB (metadata + history) | < 100 MB (history only) |

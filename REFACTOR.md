@@ -14,6 +14,8 @@ Remove FAISS + embeddings entirely. Use TMDB's native `/similar` and `/recommend
 - `sync_worker.py` — periodic sync not needed
 - `tools/mongo_local_dump_export.py` — TMDB metadata export (not used)
 - `frontend/src/pages/RecommendComparePage.tsx` — compare recommendations UI (not needed)
+- `frontend/src/pages/VisualPage.tsx` — t-SNE visual explorer (depends on embeddings)
+- `frontend/src/components/ClusterChart.tsx` — cluster chart for the visual explorer
 
 ### 2. Update API Endpoints
 
@@ -37,6 +39,10 @@ def similar_items(payload: SimilarRequest):
 **Current**: Uses FAISS KNN + LLM  
 **Status**: **REMOVE** — keep only `/recommend/tmdb/{media_type}` (new LLM approach)  
 **Note**: This endpoint is what the compare page used. Removing it also removes compare functionality.
+
+#### `/visualize/clusters` (Visual Explorer)
+**Current**: t-SNE + K-means over watch-history embeddings  
+**Status**: **REMOVE** — the t-SNE visual explorer depends on embeddings, which are gone. Remove the endpoint along with the `VisualPage` and `ClusterChart` frontend.
 
 #### `/mcp/will-like` (Will I Like?)
 **Current**: Embedding similarity threshold (0.65)  
@@ -65,9 +71,9 @@ def similar_items(payload: SimilarRequest):
 ### 4. Update Frontend
 
 #### App.tsx
-- Remove import: `RecommendComparePage`
-- Remove route: `<Route path="/recommend-compare" element={<RecommendComparePage />} />`
-- Remove any navigation links to `/recommend-compare`
+- Remove imports: `RecommendComparePage`, `VisualPage`
+- Remove routes: `<Route path="/recommend-compare" element={<RecommendComparePage />} />` and `<Route path="/visual" element={<VisualPage />} />`
+- Remove any navigation links to `/recommend-compare` and `/visual`
 
 #### Maintenance Page (`frontend/src/pages/MaintenancePage.tsx` or equivalent)
 - Remove "Embeddings & Index" tab
