@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { type SearchHit, type WillLikeResponse } from "../api/watcher";
+import { AiBlurb } from "../components/AiBlurb";
 import { SearchTypeahead } from "../components/SearchTypeahead";
+import { VerdictBadge } from "../components/VerdictBadge";
 import { posterUrl, placeholderPoster } from "../lib/poster";
 
 export function WillLikePage() {
@@ -49,7 +51,7 @@ export function WillLikePage() {
   return (
     <div className="w-full">
       <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Will I Like It?</h1>
-      <p className="text-muted max-w-[52ch] mb-6">
+      <p className="text-muted mb-6">
         A short model-assisted read on whether a title fits your taste, based on your watch history.
       </p>
 
@@ -90,7 +92,7 @@ export function WillLikePage() {
       )}
 
       {!busy && result && (
-        <article className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl">
+        <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl">
           <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
             <img
               src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster(displayTitle)}
@@ -100,53 +102,38 @@ export function WillLikePage() {
             />
           </div>
           <div className="flex-1 min-w-0">
-            {result.already_watched ? (
-              <span className="inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 bg-emerald-400/10 text-emerald-300">
-                Watched
-              </span>
-            ) : (
-              <span
-                className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 ${
-                  isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
-                }`}
-              >
-                {isTv ? "TV" : "Film"}
-              </span>
-            )}
-            <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-1">
+            {/* Type badge */}
+            <span
+              className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 ${
+                result.already_watched
+                  ? "bg-emerald-400/10 text-emerald-300"
+                  : isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
+              }`}
+            >
+              {result.already_watched ? "Watched" : isTv ? "TV" : "Film"}
+            </span>
+
+            <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-2">
               {displayTitle}
             </h2>
-            <p className="text-sm text-muted mb-2">
-              {result.already_watched
-                ? "Already in your history."
-                : `Score: ${(result.score * 100).toFixed(0)}%`}
-            </p>
-            <p className="text-sm italic text-muted leading-relaxed m-0">{result.explanation}</p>
+
+            {/* Verdict — prominent, in the reading flow */}
+            {!result.already_watched && (
+              <div className="mb-3">
+                <VerdictBadge willLike={result.will_like} score={result.score} />
+              </div>
+            )}
+            {result.already_watched && (
+              <p className="text-sm text-muted mb-3">Already in your history.</p>
+            )}
+
+            <AiBlurb>{result.explanation}</AiBlurb>
           </div>
-          <div className="hidden sm:flex flex-col gap-1.5 text-xs shrink-0 w-28">
-            <div className="flex justify-between items-baseline gap-2">
-              <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Verdict</span>
-              <span className="font-semibold">
-                {result.already_watched ? (
-                  <span className="px-1.5 py-0.5 rounded text-[0.8rem] font-semibold bg-emerald-400/15 text-emerald-300">
-                    Seen
-                  </span>
-                ) : result.will_like ? (
-                  <span className="px-1.5 py-0.5 rounded text-[0.8rem] font-semibold bg-emerald-400/15 text-emerald-300">
-                    Likely Yes
-                  </span>
-                ) : (
-                  <span className="px-1.5 py-0.5 rounded text-[0.8rem] font-semibold bg-yellow-400/12 text-yellow-300">
-                    Probably Not
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-          <div className="shrink-0 self-center">
+
+          <div className="shrink-0 self-start mt-0.5">
             {itemId != null && itemId > 0 && result.item.media_type && (
               <Link
-                className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 hover:no-underline transition-all whitespace-nowrap"
+                className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 transition-all whitespace-nowrap"
                 to={`/similar?id=${itemId}&type=${encodeURIComponent(itemMt)}`}
               >
                 Find Similar

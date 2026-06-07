@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { AiBlurb } from "./AiBlurb";
 import { placeholderPoster, posterUrl } from "../lib/poster";
 
 type Props = {
@@ -47,11 +48,7 @@ export function MediaCard({
         <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] m-0">
           {title}
         </h3>
-        {subtitle && (
-          <p className="text-sm leading-relaxed m-0 px-3 py-2 bg-accent/8 rounded-lg border-l-2 border-accent/40">
-            {subtitle}
-          </p>
-        )}
+        {subtitle && <AiBlurb>{subtitle}</AiBlurb>}
         {overview && String(overview).trim() && (
           <p className="text-sm text-muted leading-relaxed m-0 line-clamp-4">
             {String(overview).slice(0, 280)}

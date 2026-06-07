@@ -1,14 +1,12 @@
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
 import { getApiBase } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
 
-const APP_SECTIONS = [
-  { to: "/history", label: "Watch History", desc: "Browse and filter your full library" },
-  { to: "/recommend", label: "Recommendations", desc: "AI picks based on your taste" },
-  { to: "/will-like", label: "Will I Like It?", desc: "Check a title against your history" },
-  { to: "/similar", label: "Similar Titles", desc: "Find movies and shows like one you love" },
-  { to: "/admin", label: "Maintenance", desc: "Sync Trakt and manage cache" },
+const FEATURES = [
+  { label: "Watch History", desc: "Browse and filter your complete library" },
+  { label: "AI Recommendations", desc: "Personalized picks from your taste profile" },
+  { label: "Will I Like It?", desc: "Check any title against your history" },
+  { label: "Similar Titles", desc: "Discover via semantic similarity search" },
 ] as const;
 
 export function HomePage() {
@@ -23,42 +21,48 @@ export function HomePage() {
     return <p className="text-muted">Loading…</p>;
   }
 
-  if (!authenticated) {
-    return (
-      <div className="max-w-md">
-        <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-2 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watcher</h1>
-        <p className="text-muted mb-6">
-          Sign in with Trakt to open your watch history, recommendations, and similarity search.
-        </p>
-        <a
-          className="inline-flex items-center justify-center px-5 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-sm hover:brightness-110 hover:shadow-[0_0_20px_-4px] hover:shadow-accent/50 hover:no-underline transition-all"
-          href={loginHref}
-        >
-          Log In With Trakt
-        </a>
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watcher</h1>
-      <p className="text-muted mb-8">What do you want to explore?</p>
-      <nav className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl" aria-label="App sections">
-        {APP_SECTIONS.map(({ to, label, desc }) => (
-          <Link
-            key={to}
-            to={to}
-            className="flex flex-col gap-1.5 p-5 bg-surface border border-border rounded-xl hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/20 hover:no-underline transition-all duration-200 group"
+    <div className="relative flex flex-col items-center justify-center min-h-[75vh] text-center px-4 overflow-hidden">
+      {/* Ambient background blobs */}
+      <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[700px] h-[500px] rounded-full bg-accent/8 blur-[140px] pointer-events-none" />
+      <div className="absolute top-[35%] left-[10%] w-[320px] h-[320px] rounded-full bg-blue-500/5 blur-[100px] pointer-events-none" />
+      <div className="absolute top-[25%] right-[8%] w-[260px] h-[260px] rounded-full bg-violet-500/5 blur-[90px] pointer-events-none" />
+
+      {/* Label pill */}
+      <div className="mb-7 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent/10 border border-accent/20 text-accent text-[0.7rem] font-bold uppercase tracking-widest">
+        Trakt · TMDB · AI
+      </div>
+
+      {/* Heading */}
+      <h1 className="text-[4rem] md:text-[5.5rem] font-bold tracking-[-0.05em] leading-[1.05] mb-5 bg-gradient-to-b from-white to-text/50 bg-clip-text text-transparent">
+        Watcher
+      </h1>
+
+      {/* Tagline */}
+      <p className="text-lg md:text-xl text-muted max-w-[44ch] leading-relaxed mb-8">
+        {authenticated
+          ? "AI recommendations, similarity search, and taste analysis — all from your Trakt history."
+          : "Your complete movie and TV companion. Sign in to unlock AI recommendations, similarity search, and taste analysis."}
+      </p>
+
+      {!authenticated && (
+        <>
+          <a
+            className="inline-flex items-center gap-2 px-7 min-h-12 rounded-xl bg-gradient-to-br from-accent to-accent-dim text-white font-semibold text-[0.95rem] hover:brightness-110 hover:shadow-[0_0_30px_-4px] hover:shadow-accent/50 transition-all mb-16"
+            href={loginHref}
           >
-            <span className="font-semibold text-text group-hover:text-accent transition-colors flex items-center justify-between">
-              {label}
-              <span className="text-muted group-hover:text-accent translate-x-0 group-hover:translate-x-0.5 transition-all duration-200">→</span>
-            </span>
-            <span className="text-sm text-muted">{desc}</span>
-          </Link>
-        ))}
-      </nav>
+            Sign in with Trakt →
+          </a>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-10 gap-y-6 max-w-3xl w-full text-left">
+            {FEATURES.map(({ label, desc }) => (
+              <div key={label}>
+                <p className="text-sm font-semibold text-text mb-1">{label}</p>
+                <p className="text-xs text-muted leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

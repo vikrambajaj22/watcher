@@ -56,7 +56,7 @@ export function RecommendPage() {
   return (
     <div className="w-full">
       <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Recommendations</h1>
-      <p className="text-muted max-w-[52ch] mb-6">
+      <p className="text-muted mb-6">
         Personalized picks from your history. The same settings within about a minute reuse the
         previous result.
       </p>
@@ -77,19 +77,19 @@ export function RecommendPage() {
               <option value="tv">TV</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 flex-1 min-w-[200px]">
+          <label className="flex flex-col gap-1">
             <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
-              How Many: {count}
+              Count
             </span>
-            <input
-              className="w-full"
-              style={{ accentColor: "var(--color-accent)" }}
-              type="range"
-              min={1}
-              max={20}
+            <select
+              className={inputCls}
               value={count}
               onChange={(e) => setCount(Number(e.target.value))}
-            />
+            >
+              {[4, 6, 8, 12, 16, 20].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </label>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
@@ -104,7 +104,7 @@ export function RecommendPage() {
           <span className="text-muted text-sm">
             {items && items.length > 0 && !busy
               ? `${items.length} title${items.length === 1 ? "" : "s"} · ${mediaLabel}`
-              : `${mediaLabel} · Up to ${count} results`}
+              : `${mediaLabel} · Up to ${count}`}
           </span>
         </div>
       </div>

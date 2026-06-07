@@ -72,7 +72,7 @@ export function SimilarPage() {
   return (
     <div className="w-full">
       <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Similar Titles</h1>
-      <p className="text-muted max-w-[52ch] mb-6">Find movies or shows similar to a title via TMDB.</p>
+      <p className="text-muted mb-6">Find movies or shows similar to a title via TMDB.</p>
 
       <div className="p-5 bg-surface border border-border rounded-xl mb-4">
         <label className="flex flex-col gap-1.5 mb-4">
@@ -150,7 +150,6 @@ export function SimilarPage() {
                 <SimilarResultRow
                   key={`${item.id}-${item.media_type}-${index}`}
                   item={item}
-                  rank={index + 1}
                 />
               ))}
             </div>

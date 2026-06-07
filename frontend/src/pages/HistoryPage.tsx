@@ -32,6 +32,16 @@ function rowId(row: HistoryRow): number {
   return Number(row.tmdb_id ?? row.id ?? 0);
 }
 
+function fmtDate(iso: string | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (!isNaN(d.getTime()))
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  } catch { /* ignore */ }
+  return String(iso).slice(0, 10);
+}
+
 function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
   const copy = [...rows];
   copy.sort((a, b) => {
@@ -54,6 +64,15 @@ function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
   return copy;
 }
 
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col items-end gap-px">
+      <span className="text-[0.8rem] font-semibold text-text/80 tabular-nums">{value}</span>
+      <span className="text-[0.6rem] uppercase tracking-[0.06em] text-muted">{label}</span>
+    </div>
+  );
+}
+
 const inputCls =
   "bg-bg border border-border rounded-lg text-text px-2.5 py-2 font-sans text-sm outline-none transition-colors focus:border-accent/50";
 
@@ -61,7 +80,6 @@ export function HistoryPage() {
   const [media, setMedia] = useState<MediaFilter>("all");
   const [sort, setSort] = useState<SortKey>("latest");
   const [search, setSearch] = useState("");
-  const [posters, setPosters] = useState(true);
   const [rows, setRows] = useState<HistoryRow[] | null>(null);
   const [rowsOverall, setRowsOverall] = useState<HistoryRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -75,7 +93,7 @@ export function HistoryPage() {
     setSyncNote(null);
     try {
       const mt = media === "all" ? null : media;
-      const path = getHistoryQuery(mt, posters);
+      const path = getHistoryQuery(mt, true);
       const r = await apiFetch(path);
       if (!r.ok) throw new Error(await r.text());
       const data = (await r.json()) as HistoryRow[];
@@ -93,7 +111,7 @@ export function HistoryPage() {
       setRows(null);
       setRowsOverall(null);
     }
-  }, [media, posters]);
+  }, [media]);
 
   useEffect(() => {
     void load();
@@ -190,7 +208,7 @@ export function HistoryPage() {
   return (
     <div className="w-full">
       <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watch History</h1>
-      <p className="text-muted max-w-[52ch] mb-6">
+      <p className="text-muted mb-6">
         Filter and search your library. With this page open, Trakt is refreshed about every five
         minutes. Use <strong>Sync Trakt Now</strong> for an immediate update.
       </p>
@@ -262,14 +280,6 @@ export function HistoryPage() {
               placeholder="Title…"
             />
           </label>
-          <label className="flex items-center gap-2 self-end pb-2">
-            <input
-              type="checkbox"
-              checked={posters}
-              onChange={(e) => setPosters(e.target.checked)}
-            />
-            <span className="text-sm">Poster Cards</span>
-          </label>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
           <button
@@ -307,9 +317,8 @@ export function HistoryPage() {
         <p className="text-muted">No history yet. Sign in and sync Trakt.</p>
       )}
 
-      {/* Poster card list */}
-      {filtered.length > 0 && posters && (
-        <div className="flex flex-col gap-3">
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {filtered.map((row, i) => {
             const title = rowTitle(row);
             const id = rowId(row);
@@ -318,125 +327,65 @@ export function HistoryPage() {
             const src =
               posterUrl(row.poster_path as string | undefined, "w185") ??
               placeholderPoster(title);
-            const re = Number(row.rewatch_engagement) || 0;
             const isTv = mt === "tv";
+            const re = Number(row.rewatch_engagement) || 0;
             return (
               <article
                 key={`${id}-${mt}-${i}`}
-                className="flex gap-4 sm:gap-5 p-4 sm:p-5 bg-surface border border-border rounded-xl transition-all duration-200 hover:border-accent/30 hover:shadow-[0_8px_30px_-8px] hover:shadow-accent/20"
+                className="flex items-center gap-3 px-3 py-2.5 bg-surface border border-border rounded-xl transition-all duration-200 hover:border-accent/30 hover:shadow-[0_4px_20px_-6px] hover:shadow-accent/20"
               >
-                <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
+                <div className="w-10 shrink-0 rounded-md overflow-hidden bg-bg shadow">
                   <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
                 </div>
+
+                {/* Title + secondary */}
                 <div className="flex-1 min-w-0">
-                  <span
-                    className={`inline-block text-[0.65rem] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-full mb-1.5 ${
-                      isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
-                    }`}
-                  >
-                    {isTv ? "TV" : "Film"}
-                  </span>
-                  <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-1 line-clamp-2">
-                    {title}
-                  </h3>
-                  {isTv ? (
-                    <p className="text-sm text-muted m-0">
-                      {String(row.watched_episodes ?? 0)} /{" "}
-                      {String(row.total_episodes ?? "—")} episodes
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted m-0">
-                      {row.year != null ? String(row.year) : "—"}
-                    </p>
-                  )}
-                </div>
-                <ul className="hidden sm:flex flex-col gap-1.5 text-xs shrink-0 w-28 list-none m-0 p-0">
-                  {isTv ? (
-                    <li className="flex justify-between items-baseline gap-2">
-                      <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Complete</span>
-                      <span className="font-semibold">
-                        {`${((Number(row.completion_ratio) || 0) * 100).toFixed(0)}%`}
-                      </span>
-                    </li>
-                  ) : (
-                    <li className="flex justify-between items-baseline gap-2">
-                      <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Watches</span>
-                      <span className="font-semibold">{String(row.watch_count ?? 0)}</span>
-                    </li>
-                  )}
-                  {re > 0 && (
-                    <li className="flex justify-between items-baseline gap-2">
-                      <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Rewatch</span>
-                      <span className="font-semibold">×{re.toFixed(1)}</span>
-                    </li>
-                  )}
-                  <li className="flex justify-between items-baseline gap-2">
-                    <span className="text-[0.72rem] uppercase tracking-[0.04em] text-muted">Last</span>
-                    <span className="font-semibold font-mono text-[0.78rem]">
-                      {String(row.latest_watched_at ?? "—").slice(0, 10)}
-                    </span>
-                  </li>
-                </ul>
-                <div className="shrink-0 self-center">
-                  {id > 0 && mt && (
-                    <Link
-                      className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 hover:no-underline transition-all whitespace-nowrap"
-                      to={`/similar?id=${id}&type=${mtEnc}`}
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span
+                      className={`text-[0.6rem] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded-full shrink-0 ${
+                        isTv ? "bg-blue-400/10 text-blue-300" : "bg-emerald-400/10 text-emerald-300"
+                      }`}
                     >
-                      Similar
-                    </Link>
-                  )}
+                      {isTv ? "TV" : "Film"}
+                    </span>
+                    <span className="text-sm font-semibold leading-snug tracking-[-0.01em] truncate">
+                      {title}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted m-0 pl-[calc(1.5rem+6px)]">
+                    {isTv
+                      ? `${String(row.watched_episodes ?? 0)} / ${String(row.total_episodes ?? "—")} episodes`
+                      : row.year != null ? String(row.year) : "—"}
+                  </p>
                 </div>
+
+                {/* Stats */}
+                <div className="hidden lg:flex items-center gap-4 shrink-0">
+                  <Stat
+                    label={isTv ? "complete" : "watches"}
+                    value={isTv
+                      ? `${((Number(row.completion_ratio) || 0) * 100).toFixed(0)}%`
+                      : String(row.watch_count ?? 1)}
+                  />
+                  {re > 0 && <Stat label="rewatch" value={`×${re.toFixed(1)}`} />}
+                </div>
+
+                {/* Date */}
+                <span className="text-xs text-muted whitespace-nowrap hidden md:block">
+                  {fmtDate(String(row.latest_watched_at ?? ""))}
+                </span>
+
+                {id > 0 && mt && (
+                  <Link
+                    className="shrink-0 inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 transition-all whitespace-nowrap"
+                    to={`/similar?id=${id}&type=${mtEnc}`}
+                  >
+                    Similar
+                  </Link>
+                )}
               </article>
             );
           })}
-        </div>
-      )}
-
-      {/* Table view */}
-      {filtered.length > 0 && !posters && (
-        <div className="overflow-x-auto border border-border rounded-xl bg-surface">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr>
-                {["Title", "Type", "Latest", "Count", ""].map((h) => (
-                  <th
-                    key={h}
-                    className="text-left px-4 py-3 text-[0.72rem] uppercase tracking-[0.05em] text-muted font-semibold border-b border-border"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row, i) => {
-                const id = rowId(row);
-                const mt = String(row.media_type ?? "");
-                const mtEnc = encodeURIComponent(mt === "tv" ? "tv" : "movie");
-                return (
-                  <tr
-                    key={`${row.id}-${row.media_type}-${i}`}
-                    className="border-b border-border last:border-b-0 hover:bg-accent/5 transition-colors"
-                  >
-                    <td className="px-4 py-3">{rowTitle(row)}</td>
-                    <td className="px-4 py-3">{mt || "—"}</td>
-                    <td className="px-4 py-3 font-mono text-[0.85em]">
-                      {String(row.latest_watched_at ?? "—")}
-                    </td>
-                    <td className="px-4 py-3">{String(row.watch_count ?? "—")}</td>
-                    <td className="px-4 py-3">
-                      {id > 0 && mt ? (
-                        <Link to={`/similar?id=${id}&type=${mtEnc}`}>Similar</Link>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
         </div>
       )}
     </div>

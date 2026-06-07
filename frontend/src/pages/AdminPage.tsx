@@ -168,7 +168,7 @@ export function AdminPage() {
   return (
     <div className="w-full">
       <h1 className="text-[1.75rem] font-bold tracking-[-0.03em] mb-1.5">Maintenance</h1>
-      <p className="text-muted max-w-[52ch] mb-6">
+      <p className="text-muted mb-6">
         Sync jobs and cache controls for people operating this instance.
       </p>
 
