@@ -116,7 +116,7 @@ export function SearchTypeahead({
     <div className="relative w-full" ref={wrapRef}>
       <div className="relative flex items-center">
         <input
-          className="w-full glass-input rounded-lg text-text px-2.5 py-2 text-sm pr-8"
+          className="w-full glass-input rounded-lg text-text px-2.5 py-2 text-[16px] sm:text-sm pr-8"
           value={query}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
@@ -133,7 +133,7 @@ export function SearchTypeahead({
       </div>
       {open && hits.length > 0 && (
         <ul
-          className="absolute top-[calc(100%+4px)] left-0 right-0 glass rounded-2xl shadow-2xl shadow-black/50 z-[200] overflow-hidden list-none m-0 p-0"
+          className="absolute top-[calc(100%+4px)] left-0 right-0 glass-dark rounded-2xl shadow-2xl shadow-black/50 z-[200] overflow-hidden list-none m-0 p-0"
           role="listbox"
         >
           {hits.map((hit, idx) => (
