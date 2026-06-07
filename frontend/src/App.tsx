@@ -4,6 +4,7 @@ import { RequireAuth } from "./components/RequireAuth";
 import { AdminPage } from "./pages/AdminPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { HomePage } from "./pages/HomePage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { RecommendPage } from "./pages/RecommendPage";
 import { SimilarPage } from "./pages/SimilarPage";
 import { TasteProfilePage } from "./pages/TasteProfilePage";
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/taste" element={<TasteProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
         </Route>
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );

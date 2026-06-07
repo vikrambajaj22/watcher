@@ -89,8 +89,8 @@ export function SearchTypeahead({
     return (
       <div className="flex items-center gap-3 px-3 py-2 glass rounded-lg min-h-[2.35rem]">
         <img
-          className="w-[26px] h-[39px] rounded object-cover bg-bg shrink-0"
-          src={posterUrl(selected.poster_path, "w92") ?? placeholderPoster(selected.title)}
+          className="w-[26px] h-[39px] rounded object-contain bg-bg shrink-0"
+          src={posterUrl(selected.poster_path, "w92") ?? placeholderPoster()}
           alt=""
         />
         <div className="flex-1 min-w-0">
@@ -147,8 +147,8 @@ export function SearchTypeahead({
               onMouseDown={() => pick(hit)}
             >
               <img
-                className="w-[30px] h-[45px] rounded object-cover bg-bg shrink-0"
-                src={posterUrl(hit.poster_path, "w92") ?? placeholderPoster(hit.title)}
+                className="w-[30px] h-[45px] rounded object-contain bg-bg shrink-0"
+                src={posterUrl(hit.poster_path, "w92") ?? placeholderPoster()}
                 alt=""
               />
               <div className="flex-1 min-w-0">

@@ -95,10 +95,10 @@ export function WillLikePage() {
         <article className="flex flex-wrap items-start gap-4 sm:gap-5 p-4 sm:p-5 glass rounded-2xl">
           <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
             <img
-              src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster(displayTitle)}
+              src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster()}
               alt=""
               loading="lazy"
-              className="w-full aspect-[2/3] object-cover block"
+              className="w-full aspect-[2/3] object-contain block"
             />
           </div>
 

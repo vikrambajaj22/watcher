@@ -14,7 +14,7 @@ type WillState =
 export function SimilarResultRow({ item }: { item: SimilarResult }) {
   const [will, setWill] = useState<WillState>({ status: "idle" });
   const title = item.title ?? String(item.id);
-  const src = posterUrl(item.poster_path ?? null, "w185") ?? placeholderPoster(title);
+  const src = posterUrl(item.poster_path ?? null, "w185") ?? placeholderPoster();
   const mtRaw = (item.media_type || "movie").toLowerCase();
   const isTv = mtRaw === "tv";
   const tmdbUrl =
@@ -65,7 +65,7 @@ export function SimilarResultRow({ item }: { item: SimilarResult }) {
   return (
     <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 glass glass-hover rounded-2xl flex-wrap">
       <div className="w-16 sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
-        <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
+        <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-contain block" />
       </div>
 
       <div className="flex-1 min-w-0 flex items-start gap-4 sm:gap-5">

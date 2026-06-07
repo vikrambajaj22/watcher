@@ -8,7 +8,6 @@ export function posterUrl(
   return `${TMDB_IMG}/${size}${posterPath}`;
 }
 
-export function placeholderPoster(text: string): string {
-  const t = encodeURIComponent(text.slice(0, 40) || "—");
-  return `https://via.placeholder.com/342x513/2a2e38/9aa0a8?text=${t}`;
+export function placeholderPoster(): string {
+  return "/404.png";
 }

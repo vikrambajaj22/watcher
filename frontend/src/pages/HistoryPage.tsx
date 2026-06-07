@@ -319,7 +319,7 @@ export function HistoryPage() {
             const mtEnc = encodeURIComponent(mt === "tv" ? "tv" : "movie");
             const src =
               posterUrl(row.poster_path as string | undefined, "w185") ??
-              placeholderPoster(title);
+              placeholderPoster();
             const isTv = mt === "tv";
             const re = Number(row.rewatch_engagement) || 0;
             return (
@@ -328,7 +328,7 @@ export function HistoryPage() {
                 className="flex items-center gap-3 px-3 py-2.5 glass glass-hover rounded-xl"
               >
                 <div className="w-10 shrink-0 rounded-md overflow-hidden bg-bg shadow">
-                  <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-cover block" />
+                  <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-contain block" />
                 </div>
 
                 {/* Title + secondary */}

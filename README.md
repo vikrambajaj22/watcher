@@ -15,7 +15,7 @@ Watcher is a personal media discovery application that generates tailored recomm
 - 🔍 **TMDB typeahead** — title search with poster previews on Similar and Will I Like pages
 - 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or TV → movie) via LLM keyword search
 - 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
-- 🎬 **Interactive UI** — React SPA with responsive design
+- 🎬 **Interactive UI** — React SPA with responsive design, 404 page, and graceful poster fallbacks
 
 ## Quick Start
 
@@ -225,10 +225,13 @@ app/
   tmdb_client.py               — low-level TMDB HTTP client
 
 frontend/
+  public/
+    404.png                    — fallback image for missing posters and 404 page
   src/
     pages/                     — React pages (history, recommendations, etc.)
     components/                — reusable React components
     api/                       — fetch wrappers for API calls
+    lib/poster.ts              — poster URL helpers; falls back to /404.png when path is missing
     App.tsx                    — main app entry
 ```
 

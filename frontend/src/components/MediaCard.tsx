@@ -24,14 +24,14 @@ export function MediaCard({
   footer,
   similarLink,
 }: Props) {
-  const src = posterUrl(posterPath ?? null, "w342") ?? placeholderPoster(title);
+  const src = posterUrl(posterPath ?? null, "w342") ?? placeholderPoster();
   const mt = (mediaType || "movie").toLowerCase();
   const isTv = mt === "tv";
 
   return (
     <article className="glass glass-hover rounded-2xl overflow-hidden flex flex-col h-full">
       <div className="aspect-[2/3] bg-bg">
-        <img className="w-full h-full object-cover block" src={src} alt="" loading="lazy" />
+        <img className="w-full h-full object-contain block" src={src} alt="" loading="lazy" />
       </div>
       <div className="p-4 flex-1 flex flex-col gap-2">
         {mediaType && (
