@@ -54,7 +54,7 @@ export function Layout() {
             className="flex items-center gap-2 font-bold text-[1.1rem] tracking-tight text-text hover:text-accent transition-colors shrink-0"
           >
             <img
-              src="/watcher-logo.jpeg"
+              src="/watcher-logo.png"
               alt=""
               height={28}
               className="h-7 w-auto max-w-[7rem] object-contain object-left opacity-90"
