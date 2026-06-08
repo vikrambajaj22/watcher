@@ -105,10 +105,10 @@ export function SimilarPage() {
   const filteredHistory = useMemo(() => {
     if (!historyItems) return [];
     const q = historySearch.toLowerCase().trim();
-    const list = q
-      ? historyItems.filter(h => (h.title ?? h.name ?? "").toLowerCase().includes(q))
-      : historyItems;
-    return list.slice(0, 20);
+    if (!q) return [];
+    return historyItems
+      .filter(h => (h.title ?? h.name ?? "").toLowerCase().includes(q))
+      .slice(0, 20);
   }, [historyItems, historySearch]);
 
   return (
@@ -161,7 +161,7 @@ export function SimilarPage() {
             {historyBusy && (
               <p className="text-xs text-muted">Loading history…</p>
             )}
-            {!historyBusy && historyItems !== null && (
+            {!historyBusy && historyItems !== null && historySearch.trim() !== "" && (
               <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-border/30 divide-y divide-border/20">
                 {filteredHistory.length === 0 ? (
                   <p className="text-xs text-muted px-3 py-2">No matches</p>

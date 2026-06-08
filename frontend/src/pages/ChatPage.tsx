@@ -48,7 +48,6 @@ type MediaItem = {
   media_type?: string;
   poster_path?: string | null;
   overview?: string | null;
-  reasoning?: string;
   character?: string;
   watched_at?: string;
   watched?: boolean;
@@ -189,6 +188,15 @@ function ToolResultCards({ data }: { data: Record<string, unknown> }) {
     );
   }
 
+  if (type === "cast") {
+    const cast = (data.cast ?? []) as Array<{ name?: string; character?: string }>;
+    return (
+      <CollapsibleDebug summary={`Cast of ${String(data.title ?? "title")} · ${cast.length} listed`}>
+        {cast.map(c => `${c.name ?? "Unknown"}${c.character ? ` (${c.character})` : ""}`).join(", ") || "—"}
+      </CollapsibleDebug>
+    );
+  }
+
   if (items.length > 0) {
     const watchedExcluded = Number(data.watched_excluded ?? 0);
     return (
@@ -204,9 +212,6 @@ function ToolResultCards({ data }: { data: Record<string, unknown> }) {
               title={item.title ?? "Unknown"}
               mediaType={item.media_type}
               posterPath={item.poster_path}
-              subtitle={
-                type === "recommendations" ? (item.reasoning ?? undefined) : undefined
-              }
               overview={type !== "recommendations" ? (item.overview ?? undefined) : undefined}
               watched={item.watched}
               compact

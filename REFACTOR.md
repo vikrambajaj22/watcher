@@ -335,7 +335,7 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    SSE-streaming chat endpoint backed by a **LangGraph** `StateGraph` (agent node ↔ ToolNode, conditional edge loops until no tool calls remain).
 
    **Architecture** (`app/chat.py`)
-   - 7 LangChain `@tool` functions: `get_recommendations`, `find_similar`, `will_i_like`, `search_by_description`, `lookup_person`, `actor_in_history`, `get_history`
+   - 8 LangChain `@tool` functions: `get_recommendations` (optional `genres` filter), `find_similar`, `will_i_like`, `search_by_description`, `get_cast`, `lookup_person`, `actor_in_history`, `get_history`
    - `ChatOpenAI` (langchain-openai) bound with tools → `_agent_node`; model: `gpt-4.1-mini`
    - `ToolNode` (langgraph.prebuilt) for tool execution with `handle_tool_errors=True`
    - Graph: `START → agent → (tools → agent)* → END`
@@ -348,7 +348,7 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    - Transcript view; tool status indicators (spinner while running, checkmark when done)
    - Tool results rendered inline as compact `MediaCard` grids (3–4 col, no overview, no Find Similar)
    - All returned items shown — no slice cap so agent follow-ups only reference visible titles
-   - `actor_history` and `history` results shown as collapsible summaries, not card grids
+   - `actor_history`, `history`, and `cast` results shown as collapsible summaries, not card grids
    - `will_like` result shown as poster + `VerdictBadge` + `AiBlurb`; no Find Similar link
    - Example prompts shown when history is empty; renders markdown in text responses
    - Mobile: HTTPS-free UUID fallback (`crypto.randomUUID` feature-detected), sticky input via `100dvh` flex layout

@@ -19,6 +19,7 @@ from app.tmdb_discover import (
     fetch_taste_keyword_candidates,
     format_genre_cheat_sheet,
     merge_candidates,
+    resolve_genre_ids,
 )
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_chat_completion
@@ -99,16 +100,47 @@ def _parse_planner_json(text: str) -> Dict[str, Any]:
     return data
 
 
+def _resolve_genre_hints(names: List[str], media_type: str) -> Dict[str, List[int]]:
+    """Return {media_type: [genre_id, ...]} for each applicable media_type."""
+    types = ("movie", "tv") if media_type == "all" else (media_type,)
+    result: Dict[str, List[int]] = {}
+    for mt in types:
+        ids = resolve_genre_ids(names, mt)
+        if ids:
+            result[mt] = ids
+    return result
+
+
+def _filter_by_genre(
+    candidates: List[Dict[str, Any]],
+    genre_id_map: Dict[str, List[int]],
+) -> List[Dict[str, Any]]:
+    """Keep only candidates whose genre_ids intersect the requested IDs for their media_type."""
+    allowed = {mt: set(ids) for mt, ids in genre_id_map.items()}
+    out = []
+    for c in candidates:
+        mt = str(c.get("media_type") or "").lower()
+        wanted = allowed.get(mt)
+        if not wanted:
+            continue
+        if wanted & set(c.get("genre_ids") or []):
+            out.append(c)
+    return out
+
+
 def _run_planner(
     history_lines: List[str],
     media_type: str,
+    genre_id_map: Dict[str, List[int]],
 ) -> Dict[str, Any]:
     registry = PromptRegistry("app/prompts/recommend")
     template = registry.load_prompt_template("taste_planner", 1)
+    genre_ids = {mt: ",".join(str(i) for i in ids) for mt, ids in genre_id_map.items()}
     prompt = template.render(
         media_scope=media_type,
         genre_cheat_sheet=format_genre_cheat_sheet(),
         history_lines=history_lines[:40],
+        genre_ids=genre_ids,
     )
     response = get_openai_chat_completion(
         PLANNER_MODEL,
@@ -261,6 +293,7 @@ class TmdbRecommender:
         self,
         media_type: str = "all",
         recommend_count: int = 5,
+        genre_hint: Optional[List[str]] = None,
     ) -> Tuple[RecommendationsResponse, Dict[str, Any]]:
         t0 = time.time()
         debug: Dict[str, Any] = {"timings_ms": {}, "media_type": media_type}
@@ -287,10 +320,13 @@ class TmdbRecommender:
                 seeds.append(k)
         debug["seed_ids"] = [{"id": s[0], "media_type": s[1]} for s in seeds]
 
+        genre_id_map = _resolve_genre_hints(genre_hint, media_type) if genre_hint else {}
+        debug["genre_id_map"] = genre_id_map
+
         plan: Dict[str, Any]
         t_plan = time.time()
         try:
-            plan = _run_planner(history_lines, media_type)
+            plan = _run_planner(history_lines, media_type, genre_id_map)
         except Exception as e:
             logger.warning("taste planner failed, using defaults: %s", repr(e))
             plan = {
@@ -314,6 +350,14 @@ class TmdbRecommender:
         )
         debug["timings_ms"]["tmdb_fetch"] = int((time.time() - t_fetch) * 1000)
         debug.update(fetch_meta)
+
+        if genre_id_map:
+            filtered = _filter_by_genre(candidates, genre_id_map)
+            debug["genre_filtered"] = {"before": len(candidates), "after": len(filtered)}
+            # Use the filtered pool when non-empty; fall back to the full pool so a
+            # niche genre never returns nothing.
+            if filtered:
+                candidates = filtered
 
         if not candidates:
             return RecommendationsResponse(recommendations=[]), {

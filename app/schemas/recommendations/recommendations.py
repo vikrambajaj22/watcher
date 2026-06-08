@@ -9,6 +9,7 @@ class RecommendRequest(BaseModel):
     """Request body for /recommend/{media_type}."""
 
     recommend_count: int = 5
+    genre_hint: Optional[List[str]] = None
 
     @model_validator(mode="after")
     def clamp_recommend_count(self):

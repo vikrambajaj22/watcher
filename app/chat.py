@@ -2,7 +2,7 @@
 import json
 import time
 from datetime import date as _date
-from typing import Annotated, Any, AsyncGenerator, Dict, Optional, TypedDict
+from typing import Annotated, Any, AsyncGenerator, Dict, List, Optional, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
@@ -17,7 +17,7 @@ from app.config.settings import settings
 from app.dao.history import get_watch_history
 from app.process.describe_discover import discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
-from app.tmdb_client import search_by_title, search_persons
+from app.tmdb_client import get_metadata, search_by_title, search_persons
 from app.tmdb_discover import fetch_similar_and_recommendations
 from app.will_like import WillLikeError, compute_will_like
 from app.utils.logger import get_logger
@@ -38,15 +38,16 @@ def _system_prompt() -> str:
 # ---------------------------------------------------------------------------
 
 @tool
-def get_recommendations(media_type: str, count: int = 5) -> str:
+def get_recommendations(media_type: str, count: int = 5, genres: Optional[List[str]] = None) -> str:
     """Get personalized movie or TV recommendations based on watch history.
 
     Args:
         media_type: 'movie', 'tv', or 'all'
         count: number of recommendations (max 10)
+        genres: optional list of genre constraints (e.g. ['comedy'], ['sci-fi', 'thriller'])
     """
     count = min(int(count), 10)
-    result, _ = TmdbRecommender().generate(media_type=media_type, recommend_count=count)
+    result, _ = TmdbRecommender().generate(media_type=media_type, recommend_count=count, genre_hint=genres or None)
     return json.dumps({
         "type": "recommendations",
         "items": [
@@ -137,6 +138,33 @@ def search_by_description(query: str, limit: int = 10, exclude_watched: bool = T
 
 
 @tool
+def get_cast(tmdb_id: int, media_type: str) -> str:
+    """Get the top-billed cast of a specific movie or TV show. Use this to answer questions
+    about who stars in a title — including questions about titles just returned by another
+    tool (pass the title's id from that tool's result).
+
+    Args:
+        tmdb_id: TMDB id of the title
+        media_type: 'movie' or 'tv'
+    """
+    if media_type not in ("movie", "tv"):
+        return json.dumps({"type": "error", "message": "media_type must be 'movie' or 'tv'"})
+    try:
+        md = get_metadata(int(tmdb_id), media_type=media_type)
+    except Exception:
+        return json.dumps({"type": "error", "message": f"id {tmdb_id} not found on TMDB"})
+    cast = (md.get("credits") or {}).get("cast") or []
+    return json.dumps({
+        "type": "cast",
+        "title": md.get("title") or md.get("name"),
+        "cast": [
+            {"name": c.get("name"), "character": c.get("character")}
+            for c in cast[:8] if c.get("name")
+        ],
+    })
+
+
+@tool
 def lookup_person(name: str) -> str:
     """Look up an actor or director on TMDB to get their profile and known-for titles.
     Use this to answer questions about a person or to confirm who the user is referring to
@@ -190,7 +218,7 @@ def get_history(media_type: Optional[str] = None, limit: int = 20) -> str:
     })
 
 
-_LC_TOOLS = [get_recommendations, find_similar, will_i_like, search_by_description, lookup_person, actor_in_history, get_history]
+_LC_TOOLS = [get_recommendations, find_similar, will_i_like, search_by_description, get_cast, lookup_person, actor_in_history, get_history]
 
 # ---------------------------------------------------------------------------
 # Graph
@@ -253,6 +281,7 @@ def _tool_label(name: str, args: Dict[str, Any]) -> str:
         "find_similar": lambda a: f"Finding titles similar to {a.get('title', '?')}…",
         "will_i_like": lambda a: f"Checking if you'll like {a.get('title', '?')}…",
         "search_by_description": lambda a: f"Searching: {a.get('query', '?')}…",
+        "get_cast": lambda _: "Looking up the cast…",
         "lookup_person": lambda a: f"Looking up {a.get('name', '?')} on TMDB…",
         "actor_in_history": lambda a: f"Looking up {a.get('name', '?')} in your history…",
         "get_history": lambda _: "Loading your watch history…",
@@ -272,18 +301,8 @@ async def stream_chat(thread_id: str, message: str) -> AsyncGenerator[str, None]
         yield _sse({"type": "done"})
 
 
-def _tool_returned_items(raw: str) -> bool:
-    """Return True if a tool result contains a non-empty items list."""
-    try:
-        data = json.loads(raw)
-        return isinstance(data, dict) and bool(data.get("items"))
-    except Exception:
-        return False
-
-
 async def _stream_chat_inner(thread_id: str, message: str) -> AsyncGenerator[str, None]:
     pending_times: Dict[str, float] = {}  # run_id → monotonic start time
-    last_round_had_results = False
 
     async for event in _graph.astream_events(
         {"messages": [HumanMessage(content=message)]},
@@ -297,7 +316,6 @@ async def _stream_chat_inner(thread_id: str, message: str) -> AsyncGenerator[str
             name = event["name"]
             args = event["data"].get("input") or {}
             pending_times[run_id] = time.monotonic()
-            last_round_had_results = False
             logger.debug("tool_call: %s %s", name, args)
             yield _sse({
                 "type": "tool_start",
@@ -321,8 +339,6 @@ async def _stream_chat_inner(thread_id: str, message: str) -> AsyncGenerator[str
             except Exception:
                 data = {"type": "text", "content": raw}
             duration_ms = int((time.monotonic() - pending_times.pop(run_id, time.monotonic())) * 1000)
-            if _tool_returned_items(raw):
-                last_round_had_results = True
             yield _sse({
                 "type": "tool_result",
                 "tool": name,
@@ -332,8 +348,6 @@ async def _stream_chat_inner(thread_id: str, message: str) -> AsyncGenerator[str
             })
 
         elif kind == "on_chat_model_end":
-            if last_round_had_results:
-                continue
             output = event["data"].get("output")
             if not output:
                 continue

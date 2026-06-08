@@ -130,6 +130,7 @@ def recommend_tmdb(media_type: str, payload: RecommendRequest):
         result, debug = recommender.generate(
             media_type=media_type,
             recommend_count=payload.recommend_count,
+            genre_hint=payload.genre_hint or None,
         )
         return TmdbRecommendationsResponse(
             recommendations=result.recommendations,

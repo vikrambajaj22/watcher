@@ -10,12 +10,12 @@ Watcher is a personal media discovery application that generates tailored recomm
 
 - 🔐 **Trakt OAuth** — sign in with your Trakt account; account switch clears all cached state automatically
 - 📺 **Watch history sync** — full Trakt history with runtime data, genres, and poster metadata
-- ✨ **LLM recommendations** — taste planner + three-source TMDB candidate fetch (genre discover, similar/recommendations, keyword discover) merged via RRF; picker reasons from your taste profile
+- ✨ **LLM recommendations** — taste planner + three-source TMDB candidate fetch (genre discover, similar/recommendations, keyword discover) merged via RRF; picker reasons from your taste profile; optional genre filter (names → TMDB genre IDs, hard-filters the candidate pool)
 - 🧠 **Taste Profile** — LLM-generated snapshot: signature, summary, top genres, recurring themes, avoid list; cached 1h and shared across features
 - 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; genre tags shown inline; open in TMDB links
 - 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; optional media-type selector (Movies/TV/Both) overrides LLM inference; excludes already-watched titles
 - 👤 **Actor Search** — find every title in your history featuring a specific actor or director, with character roles
-- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations, similar, will-like, description search, person lookup, actor history, watch history; streams tool status + response via SSE; intermediate lookups (history, actor) shown as collapsible summaries, final results as compact cards; renders markdown in responses; works on mobile (HTTPS-free UUID fallback, fixed sticky input)
+- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations (optional genre filter), similar, will-like, description search, cast lookup, person lookup, actor history, watch history; streams tool status + response via SSE; intermediate lookups (history, actor, cast) shown as collapsible summaries, final results as compact cards; renders markdown in responses; answers follow-up questions about returned titles (e.g. "which of these have actors I'd recognise?"); works on mobile (HTTPS-free UUID fallback, fixed sticky input)
 - 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search; "From History" mode lets you pick a watched title as the seed
 - 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
 - 🎬 **Interactive UI** — React SPA with responsive design, 404 page, and graceful poster fallbacks
@@ -159,7 +159,7 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 - `POST /recommend/tmdb/{media_type}` — LLM taste planner + TMDB discover
   - `media_type`: `all`, `movie`, or `tv`
-  - Body: `{ "recommend_count": 10 }`
+  - Body: `{ "recommend_count": 10, "genre_hint": ["comedy", "thriller"] }` (`genre_hint` optional — genre names resolved to TMDB IDs and hard-filtered)
   - Response: list of `Recommendation` objects with reasoning
 
 ### Discovery Helpers

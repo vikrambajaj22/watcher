@@ -1,6 +1,12 @@
 You plan TMDB API discover queries from a user's watch history. Output ONLY valid JSON (no markdown).
 
 The user wants recommendations for media_type scope: **{{ media_scope }}** (movie | tv | all).
+{% if genre_ids %}
+Genre constraint: every discover_query MUST include these exact genre IDs in with_genres (do not deviate):
+{% for mt, ids in genre_ids.items() %}
+- {{ mt }}: with_genres="{{ ids }}"
+{% endfor %}
+{% endif %}
 
 === GENRE ID REFERENCE (use these numeric IDs in with_genres / without_genres) ===
 {{ genre_cheat_sheet }}

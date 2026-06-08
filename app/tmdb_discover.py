@@ -78,6 +78,38 @@ def get_genre_list(media_type: str) -> List[Dict[str, Any]]:
     return genres
 
 
+def resolve_genre_ids(names: List[str], media_type: str) -> List[int]:
+    """Fuzzy-match genre names to TMDB genre IDs for a given media_type.
+
+    Matching order: exact (case-insensitive) → starts-with → contains.
+    Returns deduplicated IDs in input order.
+    """
+    genres = get_genre_list(media_type)
+    seen: set = set()
+    result: List[int] = []
+    for name in names:
+        q = name.strip().lower()
+        match = None
+        # exact
+        for g in genres:
+            if g.get("name", "").lower() == q:
+                match = g["id"]; break
+        # starts-with
+        if match is None:
+            for g in genres:
+                if g.get("name", "").lower().startswith(q):
+                    match = g["id"]; break
+        # contains
+        if match is None:
+            for g in genres:
+                if q in g.get("name", "").lower():
+                    match = g["id"]; break
+        if match is not None and match not in seen:
+            seen.add(match)
+            result.append(match)
+    return result
+
+
 def format_genre_cheat_sheet() -> str:
     lines = []
     for mt in ("movie", "tv"):
@@ -98,6 +130,7 @@ def _normalize_discover_item(item: Dict[str, Any], media_type: str) -> Dict[str,
         "poster_path": item.get("poster_path"),
         "overview": item.get("overview"),
         "release_date": item.get("release_date") or item.get("first_air_date"),
+        "genre_ids": [int(g) for g in (item.get("genre_ids") or []) if str(g).strip()],
     }
 
 
