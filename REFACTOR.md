@@ -366,12 +366,25 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    - Respect `prefers-color-scheme` as the default; CSS custom properties in `index.css` already use `[data-theme]` / `:root` conventions via Tailwind v4 — extend with a `light` theme variant.
    - Persist the toggle to `localStorage` and expose it in the nav bar.
 
-6. **Code Quality**
+8. **"Will I Like?" on Discover results**
+   - Surface a per-result "Will I Like?" verdict on the Discover (description search) result cards, reusing the existing `/will-like` LLM scoring.
+   - Each `MediaCard` gets an inline verdict badge + confidence (lazy-loaded per card, or batched) so the user can gauge fit without leaving the page.
+   - Reuse `compute_will_like` / `WillLikeResponse`; consider a batch endpoint (`POST /will-like/batch`) to score many titles in one call and avoid N round-trips.
+
+9. **Add any title to chat — title-scoped Q&A**
+   - Let the user attach/pin a specific title to a chat turn (from search typeahead, a card action, or `/chat?id=&type=`) and ask questions scoped to it.
+   - Surface prior interactions with that title if it's in watch history (watch count, dates, rewatches) via the existing history DAO.
+   - Answer questions about its cast/crew and "where else have I seen them" by chaining the new `get_cast` tool with `actor_in_history`.
+   - Backend: a chat tool like `title_context(tmdb_id, media_type)` that bundles TMDB metadata + history match (if any) + top cast into one structured result the agent can reason over.
+   - Titles across all pages would have a "chat with this title" option (a chat icon) that opens it up in the chat page to chat with it.
+
+10. **Code Quality**
    - Add Ruff for code formatting/linting
    - Add pre-commit hooks
    - MongoDB indexes on `watch_history`
 
-6. **Performance**
+11. **Performance**
+   - Make efficiency improvements (speed, LLM cost, etc.)
    - Ensure Trakt sync doesn't block recommendation requests
    - Monitor LLM call latency
 
