@@ -77,6 +77,14 @@ export type SearchHit = {
   poster_path?: string | null;
 };
 
+export type PersonSuggestion = {
+  id: number;
+  name?: string | null;
+  profile_path?: string | null;
+  known_for_department?: string | null;
+  known_for?: string[];
+};
+
 export type SimilarResult = {
   id: number;
   title?: string;
@@ -158,11 +166,9 @@ export type ActorHistoryResponse = {
   items: ActorHistoryItem[];
 };
 
-export type ChatMessage = { role: "user" | "assistant"; content: string };
-
 export type ChatEventToken = { type: "message"; content: string };
-export type ChatEventToolStart = { type: "tool_start"; tool: string; label: string };
-export type ChatEventToolResult = { type: "tool_result"; tool: string; data: Record<string, unknown> };
+export type ChatEventToolStart = { type: "tool_start"; tool: string; label: string; args?: Record<string, unknown>; run_id?: string };
+export type ChatEventToolResult = { type: "tool_result"; tool: string; data: Record<string, unknown>; run_id?: string; duration_ms?: number };
 export type ChatEventError = { type: "error"; message: string };
 export type ChatEventDone = { type: "done" };
 export type ChatEvent =
@@ -172,11 +178,11 @@ export type ChatEvent =
   | ChatEventError
   | ChatEventDone;
 
-export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<ChatEvent> {
+export async function* streamChat(threadId: string, message: string): AsyncGenerator<ChatEvent> {
   const r = await apiFetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ thread_id: threadId, message }),
   });
   if (!r.body) return;
   const reader = r.body.getReader();

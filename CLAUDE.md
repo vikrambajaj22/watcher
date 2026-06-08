@@ -15,5 +15,12 @@
 - Always keep all markdown files up to date - but avoid making edits to this one
 - Keep documentation succinct while retaining all importatnt information - avoid re-stating information
 
+## Prompts
+- All LLM prompts must live in `app/prompts/` as Jinja2 templates, loaded via `PromptRegistry`
+- Never inline prompt strings in Python code
+
 ## Git
 - Never commit or push code
+
+## User Changes
+- Never remove or overwrite changes the user has manually made to any file without explicitly asking first

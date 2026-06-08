@@ -9,10 +9,12 @@ from app.schemas.api import ItemSummary, WillLikeResponse
 from app.taste_profile import get_taste_text
 from app.utils.openai_client import get_openai_client
 from app.utils.logger import get_logger
+from app.utils.prompt_registry import PromptRegistry
 
 logger = get_logger(__name__)
 
 WILL_LIKE_MODEL = "gpt-4.1-nano"
+_registry = PromptRegistry("app/prompts/will_like")
 
 # Cache LLM predictions keyed by (resolved_id, media_type) — 1-hour TTL
 _WILL_LIKE_CACHE: TTLCache = TTLCache(maxsize=256, ttl=3600)
@@ -94,16 +96,13 @@ def compute_will_like(
     item_label = "movie" if media_type == "movie" else "TV show"
     genre_str = ", ".join(genres) if genres else "unknown"
 
-    prompt = (
-        f"You are a movie/TV taste expert. Based on the viewer's taste profile below, "
-        f"predict how likely they are to enjoy the following {item_label}.\n\n"
-        f"Viewer taste profile:\n{taste_text}\n\n"
-        f"Item: {resolved_title}\n"
-        f"Genres: {genre_str}\n"
-        f"Overview: {resolved_overview}\n\n"
-        "Respond ONLY with valid JSON: "
-        '{"score": 0.0-1.0, "reasoning": "one sentence addressed directly to the user using \'you\'"}\n'
-        "score = probability they will enjoy it (0.0 = definitely won't like, 1.0 = definitely will like)."
+    template = _registry.load_prompt_template("predict", 1)
+    prompt = template.render(
+        item_label=item_label,
+        taste_text=taste_text,
+        resolved_title=resolved_title,
+        genre_str=genre_str,
+        resolved_overview=resolved_overview,
     )
 
     client = get_openai_client()

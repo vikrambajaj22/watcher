@@ -1,10 +1,15 @@
+import { LoadingBox } from "../components/LoadingBox";
+import { ErrorBox } from "../components/ErrorBox";
 import { useState } from "react";
 import { apiFetch } from "../api/client";
 import { type DescribeFilters, type DiscoverItem } from "../api/watcher";
 import { MediaCard } from "../components/MediaCard";
 
+type MediaTypeFilter = "both" | "movie" | "tv";
+
 export function DiscoverPage() {
   const [query, setQuery] = useState("");
+  const [mediaType, setMediaType] = useState<MediaTypeFilter>("both");
   const [results, setResults] = useState<DiscoverItem[] | null>(null);
   const [filters, setFilters] = useState<DescribeFilters | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -21,7 +26,7 @@ export function DiscoverPage() {
       const r = await apiFetch("/discover/describe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, limit: 20 }),
+        body: JSON.stringify({ query: q, limit: 20, media_type: mediaType }),
       });
       const raw = await r.text();
       let j: unknown;
@@ -56,7 +61,7 @@ export function DiscoverPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">
+      <h1 className="page-title">
         Discover
       </h1>
       <p className="text-muted mb-6">
@@ -65,11 +70,11 @@ export function DiscoverPage() {
 
       <div className="p-5 glass-dark rounded-2xl mb-4">
         <label className="flex flex-col gap-1.5 mb-4">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+          <span className="field-label">
             What are you in the mood for?
           </span>
           <input
-            className="glass-input rounded-lg text-text px-3 py-2.5 text-sm w-full"
+            className="glass-input rounded-lg text-text px-3 py-2.5 text-[16px] sm:text-sm w-full"
             type="text"
             placeholder="e.g. 90s sci-fi with practical effects, feel-good comedy like The Grand Budapest Hotel…"
             value={query}
@@ -77,9 +82,23 @@ export function DiscoverPage() {
             onKeyDown={(e) => { if (e.key === "Enter") void search(); }}
           />
         </label>
+        <label className="flex flex-col gap-1.5 mb-4">
+          <span className="field-label">
+            Type
+          </span>
+          <select
+            className="glass-input rounded-lg text-text px-3 py-2.5 text-[16px] sm:text-sm w-36"
+            value={mediaType}
+            onChange={(e) => setMediaType(e.target.value as MediaTypeFilter)}
+          >
+            <option value="both">Movies & TV</option>
+            <option value="movie">Movies only</option>
+            <option value="tv">TV only</option>
+          </select>
+        </label>
         <button
           type="button"
-          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
+          className="btn-primary"
           disabled={busy || !query.trim()}
           onClick={() => void search()}
         >
@@ -87,18 +106,10 @@ export function DiscoverPage() {
         </button>
       </div>
 
-      {err && (
-        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
-          <strong className="text-danger">Error: </strong>
-          {err}
-        </div>
-      )}
+      {err && <ErrorBox message={err} />}
 
       {busy && (
-        <div className="flex items-center gap-4 p-5 glass rounded-2xl mb-4" role="status" aria-live="polite">
-          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
-          <p className="text-sm m-0">Searching…</p>
-        </div>
+        <LoadingBox label="Searching…" />
       )}
 
       {!busy && results !== null && (
@@ -116,7 +127,7 @@ export function DiscoverPage() {
             </div>
           )}
           {results.length === 0 ? (
-            <p className="text-muted p-5 glass rounded-2xl">No results found. Try a different description.</p>
+            <p className="empty-state">No results found. Try a different description.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {results.map((item) => (

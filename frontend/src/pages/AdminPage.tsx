@@ -1,3 +1,4 @@
+import { ErrorBox } from "../components/ErrorBox";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../api/client";
 import {
@@ -193,12 +194,7 @@ export function AdminPage() {
           {msg}
         </div>
       )}
-      {err && (
-        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
-          <strong className="text-danger">Error: </strong>
-          {err}
-        </div>
-      )}
+      {err && <ErrorBox message={err} />}
 
       {tab === "status" && <StatusTab health={health} syncStatus={syncStatus} />}
 
@@ -210,7 +206,7 @@ export function AdminPage() {
             </h2>
             <button
               type="button"
-              className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] border-0"
+              className="btn-primary"
               onClick={() => void startTrakt()}
             >
               Start Trakt Sync
@@ -264,7 +260,7 @@ export function AdminPage() {
               Poll Job
             </h2>
             <label className="flex flex-col gap-1.5 mb-3">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+              <span className="field-label">
                 Job ID or Full Key
               </span>
               <input
@@ -297,7 +293,7 @@ export function AdminPage() {
           </p>
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] border-0"
+            className="btn-primary"
             onClick={() => void clearHistoryCache()}
           >
             Clear History Cache

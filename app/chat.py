@@ -1,11 +1,13 @@
 """Chat assistant using a LangGraph StateGraph (agent ↔ tool nodes)."""
 import json
+import time
 from datetime import date as _date
-from typing import Annotated, Any, Dict, Generator, List, Optional, TypedDict
+from typing import Annotated, Any, AsyncGenerator, Dict, Optional, TypedDict
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -15,27 +17,21 @@ from app.config.settings import settings
 from app.dao.history import get_watch_history
 from app.process.describe_discover import discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
-from app.schemas.api import ChatMessage
-from app.tmdb_client import search_by_title
+from app.tmdb_client import search_by_title, search_persons
 from app.tmdb_discover import fetch_similar_and_recommendations
 from app.will_like import WillLikeError, compute_will_like
 from app.utils.logger import get_logger
+from app.utils.prompt_registry import PromptRegistry
 
 logger = get_logger(__name__)
 
-_MODEL = "gpt-4.1-nano"
-
-_SYSTEM_TEMPLATE = """You are Watcher, a personal movie and TV assistant. You help users explore their watch history, discover new titles, and understand their taste.
-
-Today's date is {today}. Use this to resolve relative time references like "yesterday" or "last week" against the watched_at dates returned by get_history.
-
-Available tools: get_recommendations, find_similar, will_i_like, search_by_description, actor_in_history, get_history.
-
-Keep responses concise and conversational. Briefly say what you're looking up before calling a tool."""
+_MODEL = "gpt-4.1-mini"
+_registry = PromptRegistry("app/prompts/chat")
 
 
 def _system_prompt() -> str:
-    return _SYSTEM_TEMPLATE.format(today=_date.today().isoformat())
+    template = _registry.load_prompt_template("system", 1)
+    return template.render(today=_date.today().isoformat())
 
 # ---------------------------------------------------------------------------
 # Tools
@@ -113,20 +109,46 @@ def will_i_like(title: str, media_type: str) -> str:
 
 
 @tool
-def search_by_description(query: str, limit: int = 10) -> str:
+def search_by_description(query: str, limit: int = 10, exclude_watched: bool = True) -> str:
     """Find titles matching a natural language description, mood, genre, era, or theme.
+    Cross-references the user's watch history and marks each result as watched or not.
 
     Args:
         query: natural language description
         limit: max results (default 10)
+        exclude_watched: True (default) to omit titles already in the user's history — set False if the user wants to include or find titles they've already seen
     """
     limit = min(int(limit), 20)
-    res = discover_by_description(query, limit=limit)
+    fetch_limit = min(limit * 2, 40) if exclude_watched else limit
+    res = discover_by_description(query, limit=fetch_limit)
+    all_items = [r.model_dump() for r in res.results]
+    if exclude_watched:
+        items = [i for i in all_items if not i.get("watched")][:limit]
+        watched_excluded = sum(1 for i in all_items if i.get("watched"))
+    else:
+        items = all_items[:limit]
+        watched_excluded = 0
     return json.dumps({
         "type": "discover",
-        "items": [r.model_dump() for r in res.results],
+        "items": items,
         "filters": res.filters.model_dump() if res.filters else None,
+        "watched_excluded": watched_excluded,
     })
+
+
+@tool
+def lookup_person(name: str) -> str:
+    """Look up an actor or director on TMDB to get their profile and known-for titles.
+    Use this to answer questions about a person or to confirm who the user is referring to
+    before calling actor_in_history.
+
+    Args:
+        name: actor or director name
+    """
+    results = search_persons(name, limit=3)
+    if not results:
+        return json.dumps({"type": "error", "message": f"'{name}' not found on TMDB"})
+    return json.dumps({"type": "person_lookup", "results": results})
 
 
 @tool
@@ -144,7 +166,8 @@ def actor_in_history(name: str) -> str:
 
 @tool
 def get_history(media_type: Optional[str] = None, limit: int = 20) -> str:
-    """Get the user's watch history, optionally filtered by type.
+    """Get the user's watch history. Use only when the user asks about what they've watched
+    or when dates/counts matter. Do not call just to filter search results.
 
     Args:
         media_type: 'movie' or 'tv' (optional)
@@ -167,7 +190,7 @@ def get_history(media_type: Optional[str] = None, limit: int = 20) -> str:
     })
 
 
-_LC_TOOLS = [get_recommendations, find_similar, will_i_like, search_by_description, actor_in_history, get_history]
+_LC_TOOLS = [get_recommendations, find_similar, will_i_like, search_by_description, lookup_person, actor_in_history, get_history]
 
 # ---------------------------------------------------------------------------
 # Graph
@@ -193,9 +216,9 @@ def _get_llm() -> Any:
     return _llm_with_tools
 
 
-def _agent_node(state: State) -> Dict[str, Any]:
+async def _agent_node(state: State) -> Dict[str, Any]:
     messages = [SystemMessage(content=_system_prompt())] + state["messages"]
-    return {"messages": [_get_llm().invoke(messages)]}
+    return {"messages": [await _get_llm().ainvoke(messages)]}
 
 
 def _should_continue(state: State) -> str:
@@ -213,7 +236,8 @@ _graph_builder.add_node("tools", _tool_node)
 _graph_builder.add_edge(START, "agent")
 _graph_builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", END: END})
 _graph_builder.add_edge("tools", "agent")
-_graph = _graph_builder.compile()
+_checkpointer = MemorySaver()
+_graph = _graph_builder.compile(checkpointer=_checkpointer)
 
 # ---------------------------------------------------------------------------
 # SSE streaming
@@ -229,6 +253,7 @@ def _tool_label(name: str, args: Dict[str, Any]) -> str:
         "find_similar": lambda a: f"Finding titles similar to {a.get('title', '?')}…",
         "will_i_like": lambda a: f"Checking if you'll like {a.get('title', '?')}…",
         "search_by_description": lambda a: f"Searching: {a.get('query', '?')}…",
+        "lookup_person": lambda a: f"Looking up {a.get('name', '?')} on TMDB…",
         "actor_in_history": lambda a: f"Looking up {a.get('name', '?')} in your history…",
         "get_history": lambda _: "Loading your watch history…",
     }
@@ -236,68 +261,90 @@ def _tool_label(name: str, args: Dict[str, Any]) -> str:
     return fn(args) if fn else f"Running {name}…"
 
 
-def stream_chat(messages: List[ChatMessage]) -> Generator[str, None, None]:
+async def stream_chat(thread_id: str, message: str) -> AsyncGenerator[str, None]:
     """Run the LangGraph chat loop, yielding SSE event strings."""
     try:
-        yield from _stream_chat_inner(messages)
+        async for chunk in _stream_chat_inner(thread_id, message):
+            yield chunk
     except Exception as e:
         logger.error("chat stream error: %s", repr(e), exc_info=True)
         yield _sse({"type": "error", "message": "An error occurred"})
         yield _sse({"type": "done"})
 
 
-def _stream_chat_inner(messages: List[ChatMessage]) -> Generator[str, None, None]:
-    lc_messages = []
-    for m in messages:
-        if m.role == "user":
-            lc_messages.append(HumanMessage(content=m.content))
-        elif m.role == "assistant":
-            lc_messages.append(AIMessage(content=m.content))
+def _tool_returned_items(raw: str) -> bool:
+    """Return True if a tool result contains a non-empty items list."""
+    try:
+        data = json.loads(raw)
+        return isinstance(data, dict) and bool(data.get("items"))
+    except Exception:
+        return False
 
-    # Maps tool_call_id → tool_name for correlating ToolMessages back to their tool.
-    pending: Dict[str, str] = {}
 
-    for chunk in _graph.stream(
-        {"messages": lc_messages},
-        stream_mode="updates",
-        config={"recursion_limit": 10},
+async def _stream_chat_inner(thread_id: str, message: str) -> AsyncGenerator[str, None]:
+    pending_times: Dict[str, float] = {}  # run_id → monotonic start time
+    last_round_had_results = False
+
+    async for event in _graph.astream_events(
+        {"messages": [HumanMessage(content=message)]},
+        config={"configurable": {"thread_id": thread_id}, "recursion_limit": 10},
+        version="v2",
     ):
-        for node_name, update in chunk.items():
-            msgs: list = update.get("messages", [])
+        kind = event["event"]
 
-            if node_name == "agent":
-                last = msgs[-1] if msgs else None
-                if not isinstance(last, AIMessage):
-                    continue
-                if last.tool_calls:
-                    for tc in last.tool_calls:
-                        pending[tc["id"]] = tc["name"]
-                        yield _sse({
-                            "type": "tool_start",
-                            "tool": tc["name"],
-                            "label": _tool_label(tc["name"], tc.get("args", {})),
-                        })
-                else:
-                    content = last.content
-                    if isinstance(content, list):
-                        content = " ".join(
-                            b.get("text", "") if isinstance(b, dict) else str(b)
-                            for b in content
-                        )
-                    yield _sse({"type": "message", "content": str(content or "")})
+        if kind == "on_tool_start":
+            run_id = event["run_id"]
+            name = event["name"]
+            args = event["data"].get("input") or {}
+            pending_times[run_id] = time.monotonic()
+            last_round_had_results = False
+            logger.debug("tool_call: %s %s", name, args)
+            yield _sse({
+                "type": "tool_start",
+                "tool": name,
+                "label": _tool_label(name, args),
+                "args": args,
+                "run_id": run_id,
+            })
 
-            elif node_name == "tools":
-                for msg in msgs:
-                    if not isinstance(msg, ToolMessage):
-                        continue
-                    tool_name = msg.name or pending.get(msg.tool_call_id, "")
-                    raw = msg.content
-                    if isinstance(raw, list):
-                        raw = json.dumps(raw)
-                    try:
-                        data = json.loads(raw)
-                    except Exception:
-                        data = {"type": "text", "content": str(raw)}
-                    yield _sse({"type": "tool_result", "tool": tool_name, "data": data})
+        elif kind == "on_tool_end":
+            run_id = event["run_id"]
+            name = event["name"]
+            raw = event["data"].get("output")
+            if hasattr(raw, "content"):
+                raw = raw.content
+            if isinstance(raw, list):
+                raw = json.dumps(raw)
+            raw = str(raw) if raw is not None else "{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                data = {"type": "text", "content": raw}
+            duration_ms = int((time.monotonic() - pending_times.pop(run_id, time.monotonic())) * 1000)
+            if _tool_returned_items(raw):
+                last_round_had_results = True
+            yield _sse({
+                "type": "tool_result",
+                "tool": name,
+                "run_id": run_id,
+                "data": data,
+                "duration_ms": duration_ms,
+            })
+
+        elif kind == "on_chat_model_end":
+            if last_round_had_results:
+                continue
+            output = event["data"].get("output")
+            if not output:
+                continue
+            if getattr(output, "tool_calls", None):
+                continue  # intermediate LLM call that produced tool invocations
+            content = getattr(output, "content", "")
+            if isinstance(content, list):
+                content = " ".join(
+                    b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+                )
+            if content:
+                yield _sse({"type": "message", "content": str(content)})
 
     yield _sse({"type": "done"})

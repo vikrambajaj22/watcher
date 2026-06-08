@@ -27,6 +27,35 @@ def search_person(name: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def search_persons(query: str, limit: int = 6) -> List[Dict[str, Any]]:
+    """Search TMDB for people, returning top results with known_for titles."""
+    if not query or not query.strip():
+        return []
+    q = urllib.parse.quote_plus(query.strip())
+    url = f"{settings.TMDB_API_URL}/search/person?api_key={settings.TMDB_API_KEY}&query={q}&page=1"
+    resp = requests.get(url, timeout=15)
+    if resp.status_code != 200:
+        return []
+    results = (resp.json().get("results") or [])[:limit]
+    out = []
+    for r in results:
+        if not r.get("id"):
+            continue
+        known_for = [
+            kf.get("title") or kf.get("name")
+            for kf in (r.get("known_for") or [])
+            if kf.get("title") or kf.get("name")
+        ][:3]
+        out.append({
+            "id": int(r["id"]),
+            "name": r.get("name"),
+            "profile_path": r.get("profile_path"),
+            "known_for_department": r.get("known_for_department"),
+            "known_for": known_for,
+        })
+    return out
+
+
 def get_person_credits(person_id: int) -> Dict[str, Any]:
     """Fetch combined movie+TV credits for a person."""
     url = f"{settings.TMDB_API_URL}/person/{person_id}/combined_credits?api_key={settings.TMDB_API_KEY}"

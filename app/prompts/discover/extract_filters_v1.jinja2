@@ -1,0 +1,13 @@
+Extract structured TMDB discover filters from this query:
+"{{ query }}"
+
+Valid genre names (use exact spelling): {{ valid_genres }}
+
+Return JSON with only the fields clearly present:
+- media_type: 'movie', 'tv', or 'both'
+- genres: list of genre names (must match the valid list exactly)
+- cast: list of actor/director names
+- keywords: list of 4-6 short thematic keywords or phrases
+- year_from: earliest release year (integer)
+- year_to: latest release year (integer)
+Respond ONLY with valid JSON.

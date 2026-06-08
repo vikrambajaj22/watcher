@@ -335,21 +335,25 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    SSE-streaming chat endpoint backed by a **LangGraph** `StateGraph` (agent node ↔ ToolNode, conditional edge loops until no tool calls remain).
 
    **Architecture** (`app/chat.py`)
-   - 6 LangChain `@tool` functions: `get_recommendations`, `find_similar`, `will_i_like`, `search_by_description`, `actor_in_history`, `get_history`
-   - `ChatOpenAI` (langchain-openai) bound with tools → `_agent_node`
+   - 7 LangChain `@tool` functions: `get_recommendations`, `find_similar`, `will_i_like`, `search_by_description`, `lookup_person`, `actor_in_history`, `get_history`
+   - `ChatOpenAI` (langchain-openai) bound with tools → `_agent_node`; model: `gpt-4.1-mini`
    - `ToolNode` (langgraph.prebuilt) for tool execution with `handle_tool_errors=True`
    - Graph: `START → agent → (tools → agent)* → END`
-   - `_graph.stream(stream_mode="updates")` drives the SSE generator
+   - `_graph.astream_events(version="v2")` drives the SSE generator
    - SSE event types: `tool_start`, `tool_result`, `message`, `error`, `done`
 
    **Dependencies added**: `langgraph`, `langchain-openai`, `langchain-core`
 
    **Frontend** (`/chat`)
    - Transcript view; tool status indicators (spinner while running, checkmark when done)
-   - Tool results rendered inline as `MediaCard` grids
-   - Example prompts shown when history is empty
+   - Tool results rendered inline as compact `MediaCard` grids (3–4 col, no overview, no Find Similar)
+   - All returned items shown — no slice cap so agent follow-ups only reference visible titles
+   - `actor_history` and `history` results shown as collapsible summaries, not card grids
+   - `will_like` result shown as poster + `VerdictBadge` + `AiBlurb`; no Find Similar link
+   - Example prompts shown when history is empty; renders markdown in text responses
+   - Mobile: HTTPS-free UUID fallback (`crypto.randomUUID` feature-detected), sticky input via `100dvh` flex layout
 
-5. **Actor Search Auto-populate Dropdown**
+5. **Actor Search Auto-populate Dropdown** ✅
    - The Actor Search page uses a plain text input. Add a typeahead dropdown backed by TMDB `/search/person` (similar to the title search typeahead) so users can confirm the exact person before submitting.
    - Show profile photo + known-for titles in the suggestion row.
 

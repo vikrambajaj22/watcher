@@ -1,0 +1,11 @@
+You are a movie/TV taste expert. Based on the viewer's taste profile below, predict how likely they are to enjoy the following {{ item_label }}.
+
+Viewer taste profile:
+{{ taste_text }}
+
+Item: {{ resolved_title }}
+Genres: {{ genre_str }}
+Overview: {{ resolved_overview }}
+
+Respond ONLY with valid JSON: {"score": 0.0-1.0, "reasoning": "one sentence addressed directly to the user using 'you'"}
+score = probability they will enjoy it (0.0 = definitely won't like, 1.0 = definitely will like).

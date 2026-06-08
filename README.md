@@ -12,11 +12,11 @@ Watcher is a personal media discovery application that generates tailored recomm
 - 📺 **Watch history sync** — full Trakt history with runtime data, genres, and poster metadata
 - ✨ **LLM recommendations** — taste planner + three-source TMDB candidate fetch (genre discover, similar/recommendations, keyword discover) merged via RRF; picker reasons from your taste profile
 - 🧠 **Taste Profile** — LLM-generated snapshot: signature, summary, top genres, recurring themes, avoid list; cached 1h and shared across features
-- 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; copy TMDB links; genre tags shown inline
-- 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; excludes already-watched titles
+- 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; genre tags shown inline; open in TMDB links
+- 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; optional media-type selector (Movies/TV/Both) overrides LLM inference; excludes already-watched titles
 - 👤 **Actor Search** — find every title in your history featuring a specific actor or director, with character roles
-- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations, similar, will-like, description search, actor history, watch history; streams tool status + response via SSE
-- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search
+- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations, similar, will-like, description search, person lookup, actor history, watch history; streams tool status + response via SSE; intermediate lookups (history, actor) shown as collapsible summaries, final results as compact cards; renders markdown in responses; works on mobile (HTTPS-free UUID fallback, fixed sticky input)
+- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search; "From History" mode lets you pick a watched title as the seed
 - 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
 - 🎬 **Interactive UI** — React SPA with responsive design, 404 page, and graceful poster fallbacks
 
@@ -165,12 +165,13 @@ The `/recommend/tmdb/{media_type}` endpoint:
 ### Discovery Helpers
 
 - `GET /search?q=&limit=` — **Title typeahead** — proxies TMDB `/search/multi`, returns movies and TV shows with poster thumbnails
+- `GET /search/person?q=&limit=` — **Person typeahead** — proxies TMDB `/search/person`, returns people with profile photo and known-for titles
 - `POST /similar` — **Similar titles** — merges TMDB `/similar` + `/recommendations` via RRF (k=60), TTL-cached 6h. Set `cross_type: true` for opposite-type results (movie → TV or TV → movie): LLM extracts thematic keywords from the title's overview → resolved to TMDB keyword IDs → per-keyword `/discover` merged via RRF
 - `GET /taste-profile` — **Taste Profile** — LLM-generated viewer profile (signature, summary, genres, themes, avoid), TTL-cached 1h
-- `POST /will-like` — **Will I Like?** — LLM (`gpt-4.1-nano`) scores 0–100% likelihood using the shared taste profile, TTL-cached 1h
-- `POST /discover/describe` — **Discover by description** — natural language → LLM filter extraction → TMDB Discover; excludes watched titles, TTL-cached 1h
+- `POST /will-like` — **Will I Like?** — LLM scores 0–100% likelihood using the shared taste profile, TTL-cached 1h
+- `POST /discover/describe` — **Discover by description** — natural language → LLM filter extraction → TMDB Discover; optional `media_type` body field (`movie`/`tv`/`both`) overrides LLM inference; genres joined with OR for broader results; excludes watched titles, TTL-cached 1h
 - `GET /history/actor?name=` — **Actor search** — TMDB person lookup → combined credits cross-referenced with watch history
-- `POST /chat` — **Chat** — LangGraph SSE stream; accepts `{ messages: [{role, content}] }`; streams `tool_start`, `tool_result`, `message`, `done` events
+- `POST /chat` — **Chat** — LangGraph SSE stream; accepts `{ thread_id, message }`; streams `tool_start`, `tool_result`, `message`, `done` events; agent model: `gpt-4.1-mini`
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
@@ -221,10 +222,18 @@ app/
     tmdb_recommendation.py     — taste planner + candidate fetch + picker
     describe_discover.py       — natural language → TMDB Discover (1h cache)
 
-  prompts/
+  prompts/                       — Jinja2 prompt templates, loaded via PromptRegistry
+    chat/
+      system_v1.jinja2
     recommend/
       taste_planner_v1.jinja2
       tmdb_picker_v1.jinja2
+    discover/
+      extract_filters_v1.jinja2
+    will_like/
+      predict_v1.jinja2
+    taste_profile/
+      generate_v1.jinja2
 
   schemas/
     api.py                     — all API Pydantic models

@@ -44,8 +44,10 @@ export function Layout() {
   const isAdminActive =
     location.pathname === "/admin" || location.pathname.startsWith("/admin");
 
+  const isChatPage = location.pathname === "/chat";
+
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen" style={isChatPage ? { height: "100dvh" } : undefined}>
       <header className="sticky top-0 z-10 glass-nav">
         <div className="flex items-center px-4 md:px-6 py-3 max-w-[1320px] mx-auto">
           {/* Logo */}
@@ -222,7 +224,7 @@ export function Layout() {
         )}
       </header>
 
-      <main className="flex-1 px-4 md:px-6 py-7 max-w-[1320px] mx-auto w-full">
+      <main className={`flex-1 px-4 md:px-6 max-w-[1320px] mx-auto w-full${isChatPage ? " overflow-hidden" : " py-7"}`}>
         <Outlet />
       </main>
     </div>

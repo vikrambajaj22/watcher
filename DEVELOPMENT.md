@@ -34,6 +34,7 @@ Further env detail: [README.md](README.md) (Environment, Quick Start) and [front
 | Actor search | GET | `/history/actor?name=` |
 | Chat (SSE stream) | POST | `/chat` |
 | Title typeahead | GET | `/search?q=&limit=` |
+| Person typeahead | GET | `/search/person?q=&limit=` |
 | Maintenance | GET/POST | `/admin/sync/status`, `/admin/sync/job/{id}`, `/admin/sync/jobs` |
 
 OpenAPI / interactive docs: `http://localhost:8080/docs` (or `/redoc`) when the API is running.

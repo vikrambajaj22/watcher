@@ -9,10 +9,12 @@ from app.dao.history import get_watch_history
 from app.schemas.api import TasteProfile
 from app.utils.openai_client import get_openai_client
 from app.utils.logger import get_logger
+from app.utils.prompt_registry import PromptRegistry
 
 logger = get_logger(__name__)
 
 TASTE_PROFILE_MODEL = "gpt-4.1-nano"
+_registry = PromptRegistry("app/prompts/taste_profile")
 _CACHE: TTLCache = TTLCache(maxsize=4, ttl=3600)
 
 _SKIP_KEYWORDS = {
@@ -60,18 +62,8 @@ def compute_taste_profile() -> TasteProfile:
     history_text = _format_history(history)
     themes = _top_keywords(history)
 
-    prompt = (
-        "You are a film and TV critic analyzing someone's viewing taste. "
-        "The history includes both movies (tagged 'movie') and TV shows (tagged 'tv'). "
-        "Based on the watch history below, generate a concise taste profile that reflects both.\n\n"
-        f"Watch history ({len(history)} titles):\n{history_text}\n\n"
-        "Respond ONLY with valid JSON matching this exact shape:\n"
-        '{"signature": "a punchy 5-10 word phrase capturing their overall taste across movies and TV", '
-        '"summary": "2-3 sentence paragraph describing their taste in movies and TV, addressed to the user using \'you\'", '
-        '"genres": ["up to 5 genres they clearly favor across movies and TV"], '
-        '"avoid": ["up to 3 things they seem to avoid or rarely watch"]}\n'
-        "Be specific and grounded in the actual titles — don't be generic."
-    )
+    template = _registry.load_prompt_template("generate", 1)
+    prompt = template.render(history_count=len(history), history_text=history_text)
 
     client = get_openai_client()
     resp = client.chat.completions.create(

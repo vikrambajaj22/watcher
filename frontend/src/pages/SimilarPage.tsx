@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { LoadingBox } from "../components/LoadingBox";
+import { ErrorBox } from "../components/ErrorBox";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { type SearchHit, type SimilarResponse, type SimilarResult } from "../api/watcher";
 import { SearchTypeahead } from "../components/SearchTypeahead";
 import { SimilarResultRow } from "../components/SimilarResultRow";
 
-const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-sm";
+type Mode = "search" | "history";
+type HistoryHit = { id?: number; tmdb_id?: number; title?: string; name?: string; media_type?: string };
+
+const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-[16px] sm:text-sm";
 
 export function SimilarPage() {
   const [searchParams] = useSearchParams();
+  const [mode, setMode] = useState<Mode>("search");
   const [selectedHit, setSelectedHit] = useState<SearchHit | null>(null);
   const [k, setK] = useState(20);
   const [crossType, setCrossType] = useState(false);
@@ -17,6 +23,12 @@ export function SimilarPage() {
   const [sourceLabel, setSourceLabel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // History mode state
+  const [historyItems, setHistoryItems] = useState<HistoryHit[] | null>(null);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const historyInputRef = useRef<HTMLInputElement>(null);
 
   const kRef = useRef(k);
   kRef.current = k;
@@ -58,6 +70,14 @@ export function SimilarPage() {
     await callSimilar({ tmdb_id: selectedHit.id, media_type: selectedHit.media_type, k, cross_type: crossType });
   }
 
+  async function searchFromHistory(item: HistoryHit) {
+    const id = item.tmdb_id ?? item.id;
+    const mt = item.media_type;
+    if (!id || (mt !== "movie" && mt !== "tv")) { setErr("Invalid item"); return; }
+    setSourceLabel(item.title ?? item.name ?? "");
+    await callSimilar({ tmdb_id: id, media_type: mt, k: kRef.current, cross_type: crossType });
+  }
+
   useEffect(() => {
     const id = searchParams.get("id");
     const type = searchParams.get("type");
@@ -68,26 +88,106 @@ export function SimilarPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL-driven search only
   }, [searchParams]);
 
+  useEffect(() => {
+    if (mode !== "history" || historyItems !== null) return;
+    setHistoryBusy(true);
+    apiFetch("/history?include_posters=false")
+      .then(r => r.json() as Promise<HistoryHit[]>)
+      .then(d => setHistoryItems(Array.isArray(d) ? d : []))
+      .catch(() => setHistoryItems([]))
+      .finally(() => setHistoryBusy(false));
+  }, [mode, historyItems]);
+
+  useEffect(() => {
+    if (mode === "history") setTimeout(() => historyInputRef.current?.focus(), 50);
+  }, [mode]);
+
+  const filteredHistory = useMemo(() => {
+    if (!historyItems) return [];
+    const q = historySearch.toLowerCase().trim();
+    const list = q
+      ? historyItems.filter(h => (h.title ?? h.name ?? "").toLowerCase().includes(q))
+      : historyItems;
+    return list.slice(0, 20);
+  }, [historyItems, historySearch]);
+
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Similar Titles</h1>
+      <h1 className="page-title">Similar Titles</h1>
       <p className="text-muted mb-6">Find movies or shows similar to a title via TMDB.</p>
 
       <div className="p-5 glass-dark rounded-2xl mb-4">
-        <label className="flex flex-col gap-1.5 mb-4">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
-            Title
-          </span>
-          <SearchTypeahead
-            selected={selectedHit}
-            onSelect={(hit) => { setSelectedHit(hit); setResults(null); setErr(null); }}
-            onClear={() => setSelectedHit(null)}
-            placeholder="Search movie or show…"
-          />
-        </label>
+        {/* Mode toggle */}
+        <div className="flex gap-1 p-1 glass rounded-xl w-fit mb-5">
+          {(["search", "history"] as Mode[]).map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); setResults(null); setErr(null); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border-0 font-sans ${
+                mode === m ? "bg-accent/20 text-accent" : "text-muted hover:text-text bg-transparent"
+              }`}
+            >
+              {m === "search" ? "By Title" : "From History"}
+            </button>
+          ))}
+        </div>
+
+        {mode === "search" ? (
+          <label className="flex flex-col gap-1.5 mb-4">
+            <span className="field-label">
+              Title
+            </span>
+            <SearchTypeahead
+              selected={selectedHit}
+              onSelect={(hit) => { setSelectedHit(hit); setResults(null); setErr(null); }}
+              onClear={() => setSelectedHit(null)}
+              placeholder="Search movie or show…"
+            />
+          </label>
+        ) : (
+          <div className="flex flex-col gap-2 mb-4">
+            <span className="field-label">
+              Pick from history
+            </span>
+            <input
+              ref={historyInputRef}
+              className={`${inputCls} w-full`}
+              type="text"
+              placeholder="Filter titles…"
+              value={historySearch}
+              onChange={e => setHistorySearch(e.target.value)}
+            />
+            {historyBusy && (
+              <p className="text-xs text-muted">Loading history…</p>
+            )}
+            {!historyBusy && historyItems !== null && (
+              <div className="flex flex-col max-h-48 overflow-y-auto rounded-lg border border-border/30 divide-y divide-border/20">
+                {filteredHistory.length === 0 ? (
+                  <p className="text-xs text-muted px-3 py-2">No matches</p>
+                ) : filteredHistory.map((h, i) => {
+                  const title = h.title ?? h.name ?? "Unknown";
+                  const mt = h.media_type ?? "";
+                  return (
+                    <button
+                      key={`${h.id ?? h.tmdb_id}-${i}`}
+                      type="button"
+                      onClick={() => void searchFromHistory(h)}
+                      className="flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-0 font-sans text-text"
+                    >
+                      <span className="truncate">{title}</span>
+                      <span className="text-[0.65rem] uppercase tracking-wide text-muted shrink-0">{mt}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-3 items-end mb-4">
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Results
             </span>
             <input
@@ -108,28 +208,23 @@ export function SimilarPage() {
             <span className="text-sm">Cross-type</span>
           </label>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
-          disabled={busy || !selectedHit}
-          onClick={() => void search()}
-        >
-          {busy ? "Searching…" : "Find Similar"}
-        </button>
+
+        {mode === "search" && (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !selectedHit}
+            onClick={() => void search()}
+          >
+            {busy ? "Searching…" : "Find Similar"}
+          </button>
+        )}
       </div>
 
-      {err && (
-        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
-          <strong className="text-danger">Error: </strong>
-          {err}
-        </div>
-      )}
+      {err && <ErrorBox message={err} />}
 
       {busy && (
-        <div className="flex items-center gap-4 p-5 glass rounded-2xl mb-4" role="status" aria-live="polite">
-          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
-          <p className="text-sm m-0">Finding Similar Titles…</p>
-        </div>
+        <LoadingBox label="Finding Similar Titles…" />
       )}
 
       {!busy && results !== null && (
@@ -140,7 +235,7 @@ export function SimilarPage() {
             </h2>
           )}
           {results.length === 0 ? (
-            <p className="text-muted p-5 glass rounded-2xl">
+            <p className="empty-state">
               No similar titles found.
             </p>
           ) : (

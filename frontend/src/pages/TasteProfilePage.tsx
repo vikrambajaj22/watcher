@@ -43,7 +43,7 @@ export function TasteProfilePage() {
 
   return (
     <div className="w-full max-w-2xl">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">
+      <h1 className="page-title">
         Taste Profile
       </h1>
       <p className="text-muted mb-6">
@@ -52,7 +52,7 @@ export function TasteProfilePage() {
 
       {state.status === "loading" && (
         <div className="flex items-center gap-4 p-5 glass rounded-2xl" role="status" aria-live="polite">
-          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
+          <div className="spinner" aria-hidden />
           <p className="text-sm m-0">Analyzing your history…</p>
         </div>
       )}

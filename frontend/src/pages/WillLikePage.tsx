@@ -1,5 +1,7 @@
+import { LoadingBox } from "../components/LoadingBox";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { ErrorBox } from "../components/ErrorBox";
 import { apiFetch } from "../api/client";
 import { type SearchHit, type WillLikeResponse } from "../api/watcher";
 import { AiBlurb } from "../components/AiBlurb";
@@ -50,14 +52,14 @@ export function WillLikePage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Will I Like It?</h1>
+      <h1 className="page-title">Will I Like It?</h1>
       <p className="text-muted mb-6">
         A short model-assisted read on whether a title fits your taste, based on your watch history.
       </p>
 
       <div className="p-5 glass-dark rounded-2xl mb-4">
         <label className="flex flex-col gap-1.5 mb-4">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+          <span className="field-label">
             Title
           </span>
           <SearchTypeahead
@@ -69,7 +71,7 @@ export function WillLikePage() {
         </label>
         <button
           type="button"
-          className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
+          className="btn-primary"
           disabled={busy || !selectedHit}
           onClick={() => void submit()}
         >
@@ -77,18 +79,10 @@ export function WillLikePage() {
         </button>
       </div>
 
-      {err && (
-        <div className="p-4 bg-surface border border-danger/40 rounded-xl mb-4">
-          <strong className="text-danger">Error: </strong>
-          {err}
-        </div>
-      )}
+      {err && <ErrorBox message={err} />}
 
       {busy && (
-        <div className="flex items-center gap-4 p-5 glass rounded-2xl mb-4" role="status" aria-live="polite">
-          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
-          <p className="text-sm m-0">Checking Your Taste Fit…</p>
-        </div>
+        <LoadingBox label="Checking Your Taste Fit…" />
       )}
 
       {!busy && result && (

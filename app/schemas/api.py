@@ -148,10 +148,13 @@ class DiscoverFilters(BaseModel):
 class DescribeRequest(BaseModel):
     query: str
     limit: int = 20
+    media_type: Optional[str] = None
 
     @model_validator(mode="after")
     def _clamp_limit(self):
         self.limit = max(1, min(self.limit, 40))
+        if self.media_type and self.media_type not in ("movie", "tv", "both"):
+            self.media_type = None
         return self
 
 
@@ -191,13 +194,9 @@ class TasteProfile(BaseModel):
     history_count: int = 0
 
 
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-
 class ChatRequest(BaseModel):
-    messages: List[ChatMessage]
+    thread_id: str
+    message: str
 
 
 class HistoryItem(BaseModel):

@@ -8,11 +8,13 @@ from app.schemas.api import DescribeResponse, DiscoverFilters, DiscoverItem
 from app.tmdb_discover import _api_get, discover, get_genre_list
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
+from app.utils.prompt_registry import PromptRegistry
 
 logger = get_logger(__name__)
 
 _DESCRIBE_CACHE: TTLCache = TTLCache(maxsize=128, ttl=3600)
 _MODEL = "gpt-4.1-nano"
+_registry = PromptRegistry("app/prompts/discover")
 
 
 def clear_describe_cache() -> None:
@@ -26,18 +28,8 @@ def _extract_filters(query: str) -> DiscoverFilters:
     movie_genres = [g["name"] for g in get_genre_list("movie") if g.get("name")]
     tv_genres = [g["name"] for g in get_genre_list("tv") if g.get("name")]
     valid_genres = ", ".join(sorted(set(movie_genres + tv_genres)))
-    prompt = (
-        f'Extract structured TMDB discover filters from this query:\n"{query}"\n\n'
-        f"Valid genre names (use exact spelling): {valid_genres}\n\n"
-        "Return JSON with only the fields clearly present:\n"
-        "- media_type: 'movie', 'tv', or 'both'\n"
-        "- genres: list of genre names (must match the valid list exactly)\n"
-        "- cast: list of actor/director names\n"
-        "- keywords: list of 4-6 short thematic keywords or phrases\n"
-        "- year_from: earliest release year (integer)\n"
-        "- year_to: latest release year (integer)\n"
-        "Respond ONLY with valid JSON."
-    )
+    template = _registry.load_prompt_template("extract_filters", 1)
+    prompt = template.render(query=query, valid_genres=valid_genres)
     client = get_openai_client()
     resp = client.chat.completions.create(
         model=_MODEL,
@@ -102,14 +94,16 @@ def _get_watched_ids() -> Set[Tuple[int, str]]:
     return watched
 
 
-def discover_by_description(query: str, limit: int = 20) -> DescribeResponse:
+def discover_by_description(query: str, limit: int = 20, *, media_type: Optional[str] = None) -> DescribeResponse:
     """LLM-extract filters from a natural language query, then run TMDB Discover."""
-    cache_key = (query.strip().lower(), limit)
+    cache_key = (query.strip().lower(), limit, media_type)
     cached = _DESCRIBE_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
     filters = _extract_filters(query)
+    if media_type and media_type in ("movie", "tv", "both"):
+        filters.media_type = media_type
     media_type = filters.media_type
 
     genre_ids = _genre_ids_from_names(filters.genres, media_type)
@@ -118,7 +112,7 @@ def discover_by_description(query: str, limit: int = 20) -> DescribeResponse:
 
     base_params: Dict[str, Any] = {"sort_by": "vote_count.desc", "vote_count.gte": "50"}
     if genre_ids:
-        base_params["with_genres"] = ",".join(genre_ids[:3])
+        base_params["with_genres"] = "|".join(genre_ids[:3])
     if person_ids:
         base_params["with_people"] = ",".join(person_ids)
     if keyword_ids:

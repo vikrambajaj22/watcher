@@ -1,3 +1,5 @@
+import { LoadingBox } from "../components/LoadingBox";
+import { ErrorBox } from "../components/ErrorBox";
 import { useRef, useState } from "react";
 import { apiFetch } from "../api/client";
 import { type Recommendation } from "../api/watcher";
@@ -7,7 +9,7 @@ type Media = "movie" | "tv" | "all";
 
 const REC_CACHE_TTL_MS = 60_000;
 
-const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-sm";
+const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-[16px] sm:text-sm";
 
 export function RecommendPage() {
   const [media, setMedia] = useState<Media>("all");
@@ -54,7 +56,7 @@ export function RecommendPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Recommendations</h1>
+      <h1 className="page-title">Recommendations</h1>
       <p className="text-muted mb-6">
         Personalized picks from your history. The same settings within about a minute reuse the
         previous result.
@@ -63,7 +65,7 @@ export function RecommendPage() {
       <div className="p-4 glass-dark rounded-2xl mb-4">
         <div className="flex flex-wrap gap-3 items-end mb-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Media
             </span>
             <select
@@ -77,7 +79,7 @@ export function RecommendPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Count
             </span>
             <select
@@ -94,7 +96,7 @@ export function RecommendPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
+            className="btn-primary"
             disabled={busy}
             onClick={() => void run()}
           >
@@ -114,22 +116,14 @@ export function RecommendPage() {
         </p>
       )}
 
-      {err && (
-        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
-          <strong className="text-danger">Error: </strong>
-          {err}
-        </div>
-      )}
+      {err && <ErrorBox message={err} />}
 
       {busy && (
-        <div className="flex items-center gap-4 p-5 glass rounded-2xl mb-4" role="status" aria-live="polite">
-          <div className="size-7 rounded-full border-[3px] border-border border-t-accent animate-spin [animation-duration:0.7s] shrink-0" aria-hidden />
-          <p className="text-sm m-0">Generating Recommendations…</p>
-        </div>
+        <LoadingBox label="Generating Recommendations…" />
       )}
 
       {!busy && items && items.length === 0 && (
-        <p className="text-muted p-5 glass rounded-2xl">
+        <p className="empty-state">
           No recommendations returned. Try a different mix or check that your watch history is synced.
         </p>
       )}

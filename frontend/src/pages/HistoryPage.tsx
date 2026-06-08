@@ -1,35 +1,7 @@
+import { ErrorBox } from "../components/ErrorBox";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-function CopyTmdbButton({ id, mt }: { id: number; mt: string }) {
-  const [copied, setCopied] = useState(false);
-  function copy(e: React.MouseEvent) {
-    e.preventDefault();
-    const url = `https://www.themoviedb.org/${mt === "tv" ? "tv" : "movie"}/${id}`;
-    void navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }
-  return (
-    <button
-      type="button"
-      onClick={copy}
-      title={copied ? "Copied!" : "Copy TMDB URL"}
-      className={`inline-flex items-center shrink-0 text-muted hover:text-text transition-colors cursor-pointer bg-transparent border-0 p-0 ${copied ? "text-accent" : ""}`}
-    >
-      {copied ? (
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-      ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-        </svg>
-      )}
-    </button>
-  );
-}
 import { apiFetch } from "../api/client";
 import {
   apiJson,
@@ -96,7 +68,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-sm";
+const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-[16px] sm:text-sm";
 
 export function HistoryPage() {
   const [media, setMedia] = useState<MediaFilter>("all");
@@ -265,7 +237,7 @@ export function HistoryPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-[1.75rem] font-bold tracking-[-0.04em] mb-1.5 bg-gradient-to-b from-white to-text/70 bg-clip-text text-transparent">Watch History</h1>
+      <h1 className="page-title">Watch History</h1>
       <p className="text-muted mb-6">
         Filter and search your library. With this page open, Trakt is refreshed about every five
         minutes. Use <strong>Sync Trakt Now</strong> for an immediate update.
@@ -298,7 +270,7 @@ export function HistoryPage() {
       <div className="p-4 glass-dark rounded-2xl mb-4">
         <div className="flex flex-wrap gap-3 items-end mb-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Media
             </span>
             <select
@@ -312,7 +284,7 @@ export function HistoryPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Sort
             </span>
             <select
@@ -328,7 +300,7 @@ export function HistoryPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1 flex-1 min-w-[180px]">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Search
             </span>
             <input
@@ -339,7 +311,7 @@ export function HistoryPage() {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Genre
             </span>
             <select
@@ -354,7 +326,7 @@ export function HistoryPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-muted">
+            <span className="field-label">
               Watch Year
             </span>
             <select
@@ -372,7 +344,7 @@ export function HistoryPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <button
             type="button"
-            className="inline-flex items-center justify-center px-4 min-h-11 rounded-lg bg-gradient-to-br from-accent to-accent-dim text-bg font-semibold text-sm cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_24px_-4px_rgba(74,222,128,0.45)] disabled:opacity-50 disabled:cursor-not-allowed border-0"
+            className="btn-primary"
             disabled={busy}
             onClick={() => void syncNow(true)}
           >
@@ -393,12 +365,7 @@ export function HistoryPage() {
         {autoSyncNote && <p className="text-sm text-muted mt-2 mb-0">{autoSyncNote}</p>}
       </div>
 
-      {err && (
-        <div className="p-4 glass border-danger/40 rounded-xl mb-4">
-          <strong className="text-danger">Error: </strong>
-          {err}
-        </div>
-      )}
+      {err && <ErrorBox message={err} />}
 
       {rows === null && !err && <p className="text-muted">Loading…</p>}
       {rows && rows.length === 0 && (
@@ -452,7 +419,6 @@ export function HistoryPage() {
                             <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                           </svg>
                         </a>
-                        <CopyTmdbButton id={id} mt={mt} />
                       </>
                     )}
                   </div>

@@ -18,7 +18,7 @@ from app.dao.history import get_watch_history, clear_history_cache
 from app.db import sync_meta_collection
 from app.process.describe_discover import clear_describe_cache, discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
-from app.tmdb_client import get_metadata, search_by_title, search_multi
+from app.tmdb_client import get_metadata, search_by_title, search_multi, search_persons
 from app.tmdb_discover import fetch_cross_type_similar, fetch_similar_and_recommendations
 from app.will_like import clear_will_like_cache, compute_will_like, WillLikeError
 from app.taste_profile import compute_taste_profile
@@ -84,6 +84,18 @@ def search_titles(q: str = Query(""), limit: int = Query(6, ge=1, le=10)):
         return {"results": search_multi(q, limit=limit)}
     except Exception as e:
         logger.error("search_titles error: %s", repr(e))
+        raise HTTPException(status_code=500, detail="Search failed")
+
+
+@router.get("/search/person")
+def search_people(q: str = Query(""), limit: int = Query(6, ge=1, le=10)):
+    """Search TMDB for people (typeahead helper)."""
+    if not q.strip():
+        return {"results": []}
+    try:
+        return {"results": search_persons(q, limit=limit)}
+    except Exception as e:
+        logger.error("search_people error: %s", repr(e))
         raise HTTPException(status_code=500, detail="Search failed")
 
 
@@ -379,7 +391,7 @@ def auth_logout():
 def discover_describe(payload: DescribeRequest) -> DescribeResponse:
     """Find titles matching a natural language description using LLM + TMDB Discover."""
     try:
-        return discover_by_description(payload.query, limit=payload.limit)
+        return discover_by_description(payload.query, limit=payload.limit, media_type=payload.media_type)
     except Exception as e:
         logger.error("discover_describe error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -404,7 +416,7 @@ def history_actor(name: str = Query(..., min_length=1)):
 def chat_stream(payload: ChatRequest):
     """Streaming chat assistant with tool calling (SSE)."""
     return StreamingResponse(
-        stream_chat(payload.messages),
+        stream_chat(payload.thread_id, payload.message),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
