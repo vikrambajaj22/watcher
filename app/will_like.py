@@ -50,13 +50,13 @@ def compute_will_like(
     if tmdb_id is not None:
         try:
             md = get_metadata(tmdb_id, media_type=media_type)
-        except Exception:
-            md = None
+        except Exception as e:
+            logger.warning("get_metadata failed for %s/%s: %s", media_type, tmdb_id, e)
     if md is None and title:
         try:
             md = search_by_title(title, media_type=media_type)
-        except Exception:
-            md = None
+        except Exception as e:
+            logger.warning("search_by_title fallback failed for %r: %s", title, e)
 
     if not md or not md.get("id"):
         raise WillLikeError("item not found")

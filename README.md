@@ -16,7 +16,7 @@ Watcher is a personal media discovery application that generates tailored recomm
 - 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; optional media-type selector (Movies/TV/Both) overrides LLM inference; excludes already-watched titles
 - 👤 **Actor Search** — find every title in your history featuring a specific actor or director, with character roles
 - 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations (optional genre filter), similar, will-like, description search, cast lookup, person lookup, actor history, watch history; streams tool status + response via SSE; intermediate lookups (history, actor, cast) shown as collapsible summaries, final results as compact cards; renders markdown in responses; answers follow-up questions about returned titles (e.g. "which of these have actors I'd recognise?"); works on mobile (HTTPS-free UUID fallback, fixed sticky input)
-- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search; "From History" mode lets you pick a watched title as the seed
+- 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search; three modes: **By Title** (any title → TMDB similar), **From History** (pick a watched title as seed), **To History** (search any title → find matches from your history that TMDB considers similar)
 - 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
 - 🎬 **Interactive UI** — React SPA with responsive design, 404 page, and graceful poster fallbacks
 
@@ -166,7 +166,7 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 - `GET /search?q=&limit=` — **Title typeahead** — proxies TMDB `/search/multi`, returns movies and TV shows with poster thumbnails
 - `GET /search/person?q=&limit=` — **Person typeahead** — proxies TMDB `/search/person`, returns people with profile photo and known-for titles
-- `POST /similar` — **Similar titles** — merges TMDB `/similar` + `/recommendations` via RRF (k=60), TTL-cached 6h. Set `cross_type: true` for opposite-type results (movie → TV or TV → movie): LLM extracts thematic keywords from the title's overview → resolved to TMDB keyword IDs → per-keyword `/discover` merged via RRF
+- `POST /similar` — **Similar titles** — merges TMDB `/similar` + `/recommendations` via RRF (k=60), TTL-cached 6h. Set `cross_type: true` for opposite-type results (movie → TV or TV → movie): LLM extracts thematic keywords from the title's overview → resolved to TMDB keyword IDs → per-keyword `/discover` merged via RRF. Set `filter_to_history: true` to restrict results to titles already in your watch history
 - `GET /taste-profile` — **Taste Profile** — LLM-generated viewer profile (signature, summary, genres, themes, avoid), TTL-cached 1h
 - `POST /will-like` — **Will I Like?** — LLM scores 0–100% likelihood using the shared taste profile, TTL-cached 1h
 - `POST /discover/describe` — **Discover by description** — natural language → LLM filter extraction → TMDB Discover; optional `media_type` body field (`movie`/`tv`/`both`) overrides LLM inference; genres joined with OR for broader results; excludes watched titles, TTL-cached 1h

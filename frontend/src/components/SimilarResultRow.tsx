@@ -11,7 +11,7 @@ type WillState =
   | { status: "ok"; data: Record<string, unknown> }
   | { status: "err"; message: string };
 
-export function SimilarResultRow({ item }: { item: SimilarResult }) {
+export function SimilarResultRow({ item, hideWillLike }: { item: SimilarResult; hideWillLike?: boolean }) {
   const [will, setWill] = useState<WillState>({ status: "idle" });
   const title = item.title ?? String(item.id);
   const src = posterUrl(item.poster_path ?? null, "w185") ?? placeholderPoster();
@@ -32,6 +32,7 @@ export function SimilarResultRow({ item }: { item: SimilarResult }) {
         body: JSON.stringify({
           tmdb_id: item.id,
           media_type: item.media_type === "tv" ? "tv" : "movie",
+          title: item.title ?? undefined,
         }),
       });
       const raw = await r.text();
@@ -105,7 +106,7 @@ export function SimilarResultRow({ item }: { item: SimilarResult }) {
         </div>
 
         <div className="shrink-0 self-center">
-          {item.id && item.media_type && (
+          {!hideWillLike && item.id && item.media_type && (
             <button
               type="button"
               className="inline-flex items-center justify-center px-3 py-2 rounded-lg text-sm font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"

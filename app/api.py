@@ -168,6 +168,7 @@ def similar_items(payload: SimilarRequest) -> SimilarResponse:
         k = payload.k
 
         source_title: str | None = None
+        md: dict = {}
 
         if tmdb_id is None:
             md = search_by_title(payload.title, media_type=media_type)
@@ -182,10 +183,19 @@ def similar_items(payload: SimilarRequest) -> SimilarResponse:
             try:
                 md = get_metadata(tmdb_id, media_type=media_type)
                 source_title = md.get("title") or md.get("name")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("similar: get_metadata failed for %s/%s: %s", media_type, tmdb_id, e)
 
-        per_endpoint = max(10, (k + 1) // 2)
+        history_set: set[tuple[int, str]] | None = None
+        if payload.filter_to_history:
+            history = get_watch_history(include_posters=False)
+            history_set = {
+                (int(h["id"]), str(h.get("media_type", "")))
+                for h in history
+                if h.get("id") is not None
+            }
+
+        per_endpoint = max(10, (k + 1) // 2) if history_set is None else 40
         if payload.cross_type:
             raw = fetch_cross_type_similar(tmdb_id, media_type, per_endpoint=per_endpoint)
         else:
@@ -197,6 +207,10 @@ def similar_items(payload: SimilarRequest) -> SimilarResponse:
             iid = int(item["id"])
             if iid in seen or iid == tmdb_id:
                 continue
+            if history_set is not None:
+                imt = str(item.get("media_type", ""))
+                if (iid, imt) not in history_set:
+                    continue
             seen.add(iid)
             results.append(
                 SimilarResultItem(
@@ -210,6 +224,16 @@ def similar_items(payload: SimilarRequest) -> SimilarResponse:
             )
             if len(results) >= k:
                 break
+
+        if history_set is not None and (tmdb_id, media_type) in history_set:
+            results.insert(0, SimilarResultItem(
+                id=tmdb_id,
+                title=md.get("title") or md.get("name") or source_title,
+                media_type=media_type,
+                poster_path=md.get("poster_path"),
+                overview=md.get("overview"),
+                release_date=md.get("release_date") or md.get("first_air_date"),
+            ))
 
         return SimilarResponse(source_title=source_title, results=results)
     except HTTPException:

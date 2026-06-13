@@ -84,7 +84,8 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
             meta = sync_meta_collection.find_one({"_id": "trakt_last_activity"})
             stored_trakt = meta.get("last_activity") if meta else None
             t_stored = _parse_iso(stored_trakt)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to read trakt_last_activity from DB: %s", e)
             t_stored = None
 
         if db_history and t_stored and t_trakt and t_trakt <= t_stored:
@@ -101,8 +102,8 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
                             {"$set": {"last_activity": trakt_latest}},
                             upsert=True,
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to update trakt_last_activity in DB: %s", e)
                 return
         else:
             if db_latest and trakt_latest and trakt_latest <= db_latest:
@@ -114,8 +115,8 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
                             {"$set": {"last_activity": trakt_latest}},
                             upsert=True,
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to update trakt_last_activity in DB: %s", e)
                 return
 
         logger.info("New Trakt activity detected. Syncing history...")
@@ -128,8 +129,8 @@ def check_trakt_last_activities_and_sync(*, for_recommend: bool = False):
                     {"$set": {"last_activity": trakt_latest}},
                     upsert=True,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to update trakt_last_activity after sync: %s", e)
 
     except Exception as e:
         logger.error(

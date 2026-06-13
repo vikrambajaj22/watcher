@@ -264,7 +264,8 @@ def fetch_cross_type_similar(
 
     try:
         md = get_metadata(tmdb_id, media_type=source_media_type)
-    except Exception:
+    except Exception as e:
+        logger.warning("fetch_cross_type_similar: get_metadata failed for %s/%s: %s", source_media_type, tmdb_id, e)
         return []
     if not md:
         return []

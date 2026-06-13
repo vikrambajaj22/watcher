@@ -15,6 +15,7 @@ class SimilarRequest(BaseModel):
     media_type: str  # 'movie' or 'tv'
     k: int = 20
     cross_type: bool = False
+    filter_to_history: bool = False
 
     @model_validator(mode="after")
     def check_inputs(self):
@@ -59,8 +60,6 @@ class WillLikeRequest(BaseModel):
         has_title = bool(self.title)
         if not has_id and not has_title:
             raise ValueError("one of tmdb_id or title must be provided")
-        if has_id and has_title:
-            raise ValueError("provide exactly one of tmdb_id or title, not both")
         if str(self.media_type).lower() not in {"movie", "tv"}:
             raise ValueError("media_type must be 'movie' or 'tv'")
         self.media_type = str(self.media_type).lower()

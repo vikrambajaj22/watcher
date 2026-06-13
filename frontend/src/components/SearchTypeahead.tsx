@@ -133,7 +133,7 @@ export function SearchTypeahead({
       </div>
       {open && hits.length > 0 && (
         <ul
-          className="absolute top-[calc(100%+4px)] left-0 right-0 glass-dark rounded-2xl shadow-2xl shadow-black/50 z-[200] overflow-hidden list-none m-0 p-0"
+          className="absolute top-[calc(100%+4px)] left-0 right-0 glass-popup rounded-2xl z-[200] overflow-hidden list-none m-0 p-0"
           role="listbox"
         >
           {hits.map((hit, idx) => (
