@@ -11,6 +11,7 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { RecommendPage } from "./pages/RecommendPage";
 import { SimilarPage } from "./pages/SimilarPage";
 import { TasteProfilePage } from "./pages/TasteProfilePage";
+import { WatchlistPage } from "./pages/WatchlistPage";
 import { WillLikePage } from "./pages/WillLikePage";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route element={<RequireAuth />}>
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/recommend" element={<RecommendPage />} />
           <Route path="/will-like" element={<WillLikePage />} />
           <Route path="/similar" element={<SimilarPage />} />

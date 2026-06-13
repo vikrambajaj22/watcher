@@ -23,8 +23,10 @@ from app.tmdb_discover import fetch_cross_type_similar, fetch_similar_and_recomm
 from app.will_like import clear_will_like_cache, compute_will_like, WillLikeError
 from app.taste_profile import compute_taste_profile
 from app.scheduler import check_trakt_last_activities_and_sync
+from app.dao.watchlist import get_watchlist as dao_get_watchlist
 from app.schemas.api import (
     ActorHistoryResponse,
+    AddWatchlistRequest,
     AdminAckResponse,
     AdminCancelJobRequest,
     AdminJobAcceptedResponse,
@@ -37,9 +39,12 @@ from app.schemas.api import (
     SimilarResponse,
     SimilarResultItem,
     SyncStatusResponse,
+    WatchlistItem,
+    WatchlistSyncResponse,
     WillLikeRequest,
     WillLikeResponse,
 )
+from app.watchlist_sync import add_to_watchlist, pull_watchlist, remove_from_watchlist
 from app.schemas.recommendations.recommendations import (
     TmdbRecommendationsResponse,
     RecommendRequest,
@@ -276,6 +281,54 @@ def taste_profile():
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/watchlist", response_model=List[WatchlistItem])
+def get_watchlist_route(media_type: str = None):
+    try:
+        return dao_get_watchlist(media_type)
+    except Exception as e:
+        logger.error("get_watchlist error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/watchlist", response_model=WatchlistItem)
+def add_watchlist_route(payload: AddWatchlistRequest):
+    try:
+        return add_to_watchlist(
+            payload.tmdb_id,
+            payload.media_type,
+            title=payload.title,
+            poster_path=payload.poster_path,
+            overview=payload.overview,
+            release_date=payload.release_date,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error("add_watchlist error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete("/watchlist/{tmdb_id}")
+def remove_watchlist_route(tmdb_id: int, media_type: str = Query(...)):
+    try:
+        remove_from_watchlist(tmdb_id, media_type)
+        return {"status": "removed"}
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error("remove_watchlist error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/watchlist/sync", response_model=WatchlistSyncResponse)
+def sync_watchlist_route():
+    try:
+        return pull_watchlist()
+    except Exception as e:
+        logger.error("sync_watchlist error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.post(
     "/admin/sync/trakt",
     response_model=AdminJobAcceptedResponse,
@@ -300,10 +353,10 @@ def admin_sync(background_tasks: BackgroundTasks):
                 sync_meta_collection.update_one(
                     {"_id": job_key_inner}, {"$set": {"status": "running"}}
                 )
-                sync_trakt_history()
+                sync_result = sync_trakt_history() or {}
                 sync_meta_collection.update_one(
                     {"_id": job_key_inner},
-                    {"$set": {"status": "completed", "finished_at": int(_time.time())}},
+                    {"$set": {"status": "completed", "finished_at": int(_time.time()), "result": sync_result}},
                 )
             except Exception as e:
                 try:

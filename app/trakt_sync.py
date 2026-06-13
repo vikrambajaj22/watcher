@@ -8,6 +8,7 @@ import requests
 from app.auth.trakt_auth import refresh_token
 from app.config.settings import settings
 from app.dao.history import get_watch_history, store_watch_history
+from app.dao.watchlist import clear_watchlist_items_in_history
 from app.tmdb_client import get_metadata
 from app.utils.logger import get_logger
 
@@ -394,3 +395,11 @@ def sync_trakt_history():
         store_watch_history(all_history)
     else:
         logger.info("Watch history unchanged, not updating database.")
+
+    cleared = clear_watchlist_items_in_history({
+        "movie": set(seen_movies.keys()),
+        "tv": set(seen_shows.keys()),
+    })
+    if cleared:
+        logger.info("Removed %d watchlist item(s) now in watch history.", cleared)
+    return {"watchlist_cleared": cleared}

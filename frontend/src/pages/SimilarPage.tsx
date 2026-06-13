@@ -315,6 +315,7 @@ export function SimilarPage() {
                   key={`${item.id}-${item.media_type}-${index}`}
                   item={item}
                   hideWillLike={mode === "to-history"}
+                  hideWatchlist={mode === "to-history"}
                 />
               ))}
             </div>

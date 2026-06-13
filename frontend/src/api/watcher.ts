@@ -206,6 +206,19 @@ export async function* streamChat(threadId: string, message: string): AsyncGener
   }
 }
 
+export type WatchlistItem = {
+  tmdb_id: number;
+  media_type: string;
+  title?: string | null;
+  poster_path?: string | null;
+  overview?: string | null;
+  release_date?: string | null;
+  genres?: string[] | null;
+  synced_at?: string | null;
+};
+
+export type WatchlistSyncResult = { added: number; removed: number };
+
 export function getHistoryQuery(mediaType: string | null, includePosters: boolean) {
   const p = new URLSearchParams();
   if (mediaType) p.set("media_type", mediaType);

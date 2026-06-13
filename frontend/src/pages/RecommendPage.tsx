@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { apiFetch } from "../api/client";
 import { type Recommendation } from "../api/watcher";
 import { MediaCard } from "../components/MediaCard";
+import { useWatchlist } from "../contexts/WatchlistContext";
 
 type Media = "movie" | "tv" | "all";
 
@@ -18,6 +19,8 @@ const GENRES = [
 ];
 
 export function RecommendPage() {
+  const { isOnWatchlist, toggle, isToggling } = useWatchlist();
+  const [hideWatchlisted, setHideWatchlisted] = useState(false);
   const [media, setMedia] = useState<Media>("all");
   const [count, setCount] = useState(8);
   const [genres, setGenres] = useState<string[]>([]);
@@ -135,6 +138,14 @@ export function RecommendPage() {
           >
             {busy ? "Generating…" : "Get Recommendations"}
           </button>
+          <label className="flex items-center gap-2 text-sm text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={hideWatchlisted}
+              onChange={(e) => setHideWatchlisted(e.target.checked)}
+            />
+            Hide watchlisted
+          </label>
           <span className="text-muted text-sm">
             {items && items.length > 0 && !busy
               ? `${items.length} title${items.length === 1 ? "" : "s"} · ${mediaLabel}`
@@ -158,17 +169,25 @@ export function RecommendPage() {
         </p>
       )}
 
-      {!busy && items && items.length > 0 && (
+      {!busy && items && items.length > 0 && (() => {
+        const visibleItems = hideWatchlisted
+          ? items.filter((rec) => {
+              const raw = rec.metadata?.id != null ? String(rec.metadata.id) : String(rec.id ?? "").trim();
+              const id = Number(raw);
+              return !(Number.isFinite(id) && id > 0 && rec.media_type && isOnWatchlist(id, rec.media_type));
+            })
+          : items;
+        return (
         <>
           <div className="flex items-baseline gap-2 mb-3">
             <h2 className="text-lg font-semibold tracking-tight m-0">Your Picks</h2>
             <span className="text-sm text-muted">
-              {items.length} title{items.length === 1 ? "" : "s"}
+              {visibleItems.length} title{visibleItems.length === 1 ? "" : "s"}
               {genres.length > 0 && ` · ${genres.join(", ")}`}
             </span>
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4 sm:gap-5">
-            {items.map((rec, index) => {
+            {visibleItems.map((rec, index) => {
               const md = rec.metadata ?? {};
               const poster = (md.poster_path as string | undefined) ?? undefined;
               const overview = (md.overview as string | undefined) ?? null;
@@ -191,13 +210,21 @@ export function RecommendPage() {
                     subtitle={rec.reasoning}
                     overview={overview}
                     similarLink={idOk}
+                    watchlistOn={idOk && rec.media_type ? isOnWatchlist(id, rec.media_type) : undefined}
+                    watchlistLoading={idOk && rec.media_type ? isToggling(id, rec.media_type) : undefined}
+                    onWatchlistToggle={
+                      idOk && rec.media_type
+                        ? () => void toggle({ id, title: rec.title, mediaType: rec.media_type!, posterPath: poster, overview })
+                        : undefined
+                    }
                   />
                 </div>
               );
             })}
           </div>
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }

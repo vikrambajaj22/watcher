@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  Home, Clock, Heart, Star, HelpCircle, Layers, Compass, Users, MessageCircle, Settings,
+  Home, Clock, Heart, Star, HelpCircle, Layers, Compass, Users, MessageCircle, Settings, Bookmark,
 } from "lucide-react";
 import { apiFetch, getApiBase } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
@@ -75,6 +75,9 @@ export function Layout() {
               <>
                 <NavLink to="/history" className={linkClass}>
                   History
+                </NavLink>
+                <NavLink to="/watchlist" className={linkClass}>
+                  Watchlist
                 </NavLink>
                 <NavLink to="/taste" className={linkClass}>
                   Taste Profile
@@ -175,6 +178,7 @@ export function Layout() {
             {[
               { to: "/", label: "Home", end: true, Icon: Home },
               { to: "/history", label: "History", Icon: Clock },
+              { to: "/watchlist", label: "Watchlist", Icon: Bookmark },
               { to: "/taste", label: "Taste", Icon: Heart },
               { to: "/recommend", label: "Recs", Icon: Star },
               { to: "/will-like", label: "Will I Like", Icon: HelpCircle },

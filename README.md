@@ -10,6 +10,7 @@ Watcher is a personal media discovery application that generates tailored recomm
 
 - 🔐 **Trakt OAuth** — sign in with your Trakt account; account switch clears all cached state automatically
 - 📺 **Watch history sync** — full Trakt history with runtime data, genres, and poster metadata
+- 🔖 **Watchlist** — synced bidirectionally with Trakt custom lists (`TRAKT_MOVIE_LIST_ID` / `TRAKT_TV_LIST_ID`); add/remove from any results page via bookmark toggle; genre filter tags; home page counter widget; items already in history auto-cleared on sync
 - ✨ **LLM recommendations** — taste planner + three-source TMDB candidate fetch (genre discover, similar/recommendations, keyword discover) merged via RRF; picker reasons from your taste profile; optional genre filter (names → TMDB genre IDs, hard-filters the candidate pool)
 - 🧠 **Taste Profile** — LLM-generated snapshot: signature, summary, top genres, recurring themes, avoid list; cached 1h and shared across features
 - 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; genre tags shown inline; open in TMDB links
@@ -100,9 +101,10 @@ pip install -r requirements.txt
 ### Data Flow
 
 1. **User signs in** → Trakt OAuth → store access token
-2. **Sync watch history** → fetch from Trakt `/sync/watched/{movie|tv}` → enrich with TMDB metadata (poster, overview, `runtime_minutes` / `episode_runtime_minutes`) → store in MongoDB
+2. **Sync watch history** → fetch from Trakt `/sync/watched/{movie|tv}` → enrich with TMDB metadata (poster, overview, `runtime_minutes` / `episode_runtime_minutes`) → store in MongoDB; auto-clears watchlist items that now appear in history
 3. **Request recommendations** → taste planner + three-source candidate fetch + picker → return top N with reasoning
 4. **User browses** → watch history queried from MongoDB (5-minute TTL cache)
+5. **Watchlist** → local MongoDB cache synced bidirectionally with two Trakt custom lists; mutations write to Trakt first, then update cache; pull sync on demand (paginated, up to 1000 items/page)
 
 **Key design choices:**
 - Watch history is stored (needed for personalization, much smaller dataset)
@@ -154,6 +156,13 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 - `GET /history` — fetch user's watch history (supports pagination, filtering)
   - Query params: `limit`, `offset`, `media_type`, etc.
+
+### Watchlist
+
+- `GET /watchlist` — return cached watchlist (`?media_type=movie|tv`)
+- `POST /watchlist` — add item; resolves TMDB metadata, writes to Trakt, updates cache; body: `{ tmdb_id, media_type, title?, poster_path?, overview?, release_date? }`
+- `DELETE /watchlist/{tmdb_id}?media_type=` — remove from Trakt and local cache
+- `POST /watchlist/sync` — pull both Trakt lists, refresh cache; returns `{ added, removed }`
 
 ### Recommendations
 
@@ -207,7 +216,8 @@ app/
   taste_profile.py              — shared taste profile (LLM, 1h cache, Pydantic)
   actor_history.py              — actor/director search against watch history
   chat.py                       — LangGraph chat agent (StateGraph, ToolNode, SSE)
-  trakt_sync.py                 — Trakt → TMDB enrich → MongoDB sync
+  trakt_sync.py                 — Trakt → TMDB enrich → MongoDB sync; auto-clears watched items from watchlist
+  watchlist_sync.py             — Trakt custom list pull (paginated) + push add/remove; TMDB enrichment
 
   auth/
     trakt_auth.py              — Trakt OAuth flow
@@ -217,6 +227,7 @@ app/
 
   dao/
     history.py                 — watch history queries (5-min TTL cache)
+    watchlist.py               — watchlist cache CRUD (MongoDB `watchlist` collection)
 
   process/
     tmdb_recommendation.py     — taste planner + candidate fetch + picker
@@ -251,12 +262,14 @@ frontend/
   public/
     404.png                    — poster fallback and 404 page image
   src/
-    pages/                     — History, Recommend, WillLike, Similar, Discover,
+    pages/                     — History, Watchlist, Recommend, WillLike, Similar, Discover,
                                   Actor, Chat, Taste, Admin, Home, NotFound
-    components/                — Layout, MediaCard, SearchTypeahead, AiBlurb, etc.
+    components/                — Layout, MediaCard, SearchTypeahead, AiBlurb, SimilarResultRow, etc.
     api/                       — typed fetch wrappers (watcher.ts, client.ts)
     lib/poster.ts              — TMDB poster URL helper with /404.png fallback
-    contexts/AuthContext.tsx   — auth state provider
+    contexts/
+      AuthContext.tsx          — auth state provider
+      WatchlistContext.tsx     — watchlist state, optimistic toggle, sync
     App.tsx                    — routes
 ```
 
@@ -274,6 +287,8 @@ Key environment variables:
 | `MONGODB_URI` | MongoDB connection string |
 | `MONGODB_DB_NAME` | MongoDB database name |
 | `ADMIN_API_KEY` | Optional: require this header on admin/recommend/chat routes |
+| `TRAKT_MOVIE_LIST_ID` | Trakt custom list slug for movie watchlist (default: `watchlist-movies`) |
+| `TRAKT_TV_LIST_ID` | Trakt custom list slug for TV watchlist (default: `watchlist-shows`) |
 | `WATCHER_CORS_ORIGINS` | Comma-separated allowed origins (default: localhost:8501) |
 | `WATCHER_CORS_ORIGIN_REGEX` | Optional regex for additional origins (e.g. LAN IP for mobile) |
 

@@ -26,6 +26,9 @@ Further env detail: [README.md](README.md) (Environment, Quick Start) and [front
 | Auth | GET | `/auth/trakt/start`, `/auth/trakt/callback`, `/auth/logout` |
 | Watch history | GET | `/history` |
 | Watch history | POST | `/admin/sync/trakt`, `/admin/clear-history-cache` |
+| Watchlist | GET | `/watchlist` |
+| Watchlist | POST | `/watchlist`, `/watchlist/sync` |
+| Watchlist | DELETE | `/watchlist/{tmdb_id}?media_type=` |
 | Recommendations | POST | `/recommend/tmdb/{all\|movie\|tv}` |
 | Taste Profile | GET | `/taste-profile` |
 | Will I Like? | POST | `/will-like` |

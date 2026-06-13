@@ -378,7 +378,7 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    - Backend: a chat tool like `title_context(tmdb_id, media_type)` that bundles TMDB metadata + history match (if any) + top cast into one structured result the agent can reason over.
    - Titles across all pages would have a "chat with this title" option (a chat icon) that opens it up in the chat page to chat with it.
 
-12. **Watchlist**
+12. **Watchlist** ✅
 
    Personal watchlist synced bidirectionally with Trakt custom lists — movies and TV shows managed separately, both readable and writable from Watcher or on mobile via Trakt.
 

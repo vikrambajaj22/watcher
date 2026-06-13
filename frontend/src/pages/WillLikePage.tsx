@@ -8,8 +8,10 @@ import { AiBlurb } from "../components/AiBlurb";
 import { SearchTypeahead } from "../components/SearchTypeahead";
 import { VerdictBadge } from "../components/VerdictBadge";
 import { posterUrl, placeholderPoster } from "../lib/poster";
+import { useWatchlist } from "../contexts/WatchlistContext";
 
 export function WillLikePage() {
+  const { isOnWatchlist, toggle, isToggling } = useWatchlist();
   const [selectedHit, setSelectedHit] = useState<SearchHit | null>(null);
   const [result, setResult] = useState<WillLikeResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -141,6 +143,29 @@ export function WillLikePage() {
             {!result.already_watched && <VerdictBadge willLike={result.will_like} score={result.score} />}
             {result.already_watched && <p className="text-sm text-muted m-0">Already in your history.</p>}
             <AiBlurb>{result.explanation}</AiBlurb>
+            {!result.already_watched && itemId != null && itemId > 0 && result.item.media_type && (
+              <button
+                type="button"
+                onClick={() => void toggle({ id: itemId, title: displayTitle, mediaType: itemMt, posterPath: result.item.poster_path })}
+                disabled={isToggling(itemId, itemMt)}
+                className={`self-start inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all cursor-pointer font-sans ${
+                  isOnWatchlist(itemId, itemMt)
+                    ? "bg-accent/15 text-accent border-accent/35 hover:bg-accent/10"
+                    : "bg-transparent text-muted border-border hover:text-text hover:border-white/25"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {isToggling(itemId, itemMt) ? (
+                  <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill={isOnWatchlist(itemId, itemMt) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                  </svg>
+                )}
+                {isOnWatchlist(itemId, itemMt) ? "On your watchlist" : "Add to watchlist"}
+              </button>
+            )}
           </div>
         </article>
       )}

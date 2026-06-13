@@ -15,10 +15,12 @@ from langgraph.prebuilt import ToolNode
 from app.actor_history import get_actor_history
 from app.config.settings import settings
 from app.dao.history import get_watch_history
+from app.dao.watchlist import get_watchlist
 from app.process.describe_discover import discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
 from app.tmdb_client import get_metadata, search_by_title, search_persons
 from app.tmdb_discover import fetch_similar_and_recommendations
+from app.watchlist_sync import add_to_watchlist, remove_from_watchlist
 from app.will_like import WillLikeError, compute_will_like
 from app.utils.logger import get_logger
 from app.utils.prompt_registry import PromptRegistry
@@ -218,7 +220,64 @@ def get_history(media_type: Optional[str] = None, limit: int = 20) -> str:
     })
 
 
-_LC_TOOLS = [get_recommendations, find_similar, will_i_like, search_by_description, get_cast, lookup_person, actor_in_history, get_history]
+@tool
+def get_watchlist_tool(media_type: Optional[str] = None) -> str:
+    """Return the user's watchlist — titles they want to watch.
+
+    Args:
+        media_type: 'movie', 'tv', or None for all
+    """
+    items = get_watchlist(media_type)
+    return json.dumps({
+        "type": "watchlist",
+        "items": [
+            {
+                "id": w.get("tmdb_id"),
+                "title": w.get("title"),
+                "media_type": w.get("media_type"),
+                "poster_path": w.get("poster_path"),
+                "genres": w.get("genres") or [],
+            }
+            for w in items
+        ],
+    })
+
+
+@tool
+def add_to_watchlist_tool(tmdb_id: int, media_type: str) -> str:
+    """Add a movie or TV show to the user's watchlist.
+
+    Args:
+        tmdb_id: TMDB id of the title
+        media_type: 'movie' or 'tv'
+    """
+    if media_type not in ("movie", "tv"):
+        return json.dumps({"type": "error", "message": "media_type must be 'movie' or 'tv'"})
+    try:
+        doc = add_to_watchlist(int(tmdb_id), media_type)
+        return json.dumps({"type": "watchlist_add", "title": doc.get("title"), "media_type": media_type})
+    except Exception as e:
+        return json.dumps({"type": "error", "message": str(e)})
+
+
+@tool
+def remove_from_watchlist_tool(tmdb_id: int, media_type: str) -> str:
+    """Remove a movie or TV show from the user's watchlist.
+
+    Args:
+        tmdb_id: TMDB id of the title
+        media_type: 'movie' or 'tv'
+    """
+    if media_type not in ("movie", "tv"):
+        return json.dumps({"type": "error", "message": "media_type must be 'movie' or 'tv'"})
+    try:
+        remove_from_watchlist(int(tmdb_id), media_type)
+        return json.dumps({"type": "watchlist_remove", "tmdb_id": tmdb_id, "media_type": media_type})
+    except Exception as e:
+        return json.dumps({"type": "error", "message": str(e)})
+
+
+_LC_TOOLS = [get_recommendations, find_similar, will_i_like, search_by_description, get_cast, lookup_person, actor_in_history, get_history, get_watchlist_tool, add_to_watchlist_tool, remove_from_watchlist_tool]
 
 # ---------------------------------------------------------------------------
 # Graph
@@ -285,6 +344,9 @@ def _tool_label(name: str, args: Dict[str, Any]) -> str:
         "lookup_person": lambda a: f"Looking up {a.get('name', '?')} on TMDB…",
         "actor_in_history": lambda a: f"Looking up {a.get('name', '?')} in your history…",
         "get_history": lambda _: "Loading your watch history…",
+        "get_watchlist_tool": lambda _: "Loading your watchlist…",
+        "add_to_watchlist_tool": lambda a: f"Adding id {a.get('tmdb_id')} to watchlist…",
+        "remove_from_watchlist_tool": lambda a: f"Removing id {a.get('tmdb_id')} from watchlist…",
     }
     fn = labels.get(name)
     return fn(args) if fn else f"Running {name}…"

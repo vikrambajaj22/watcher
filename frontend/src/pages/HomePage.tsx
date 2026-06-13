@@ -1,6 +1,8 @@
 import { useEffect } from "react";
+import { Link } from "react-router-dom";
 import { getApiBase } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
+import { useWatchlist } from "../contexts/WatchlistContext";
 
 const FEATURES = [
   { label: "Watch History", desc: "Browse and filter your library by genre, year, and more" },
@@ -15,7 +17,10 @@ const FEATURES = [
 
 export function HomePage() {
   const { authenticated, refresh: refreshAuth } = useAuth();
+  const { watchlist } = useWatchlist();
   const loginHref = `${getApiBase()}/auth/trakt/start?from_ui=true`;
+  const movieCount = watchlist.filter((w) => w.media_type === "movie").length;
+  const tvCount = watchlist.filter((w) => w.media_type === "tv").length;
 
   useEffect(() => {
     void refreshAuth();
@@ -48,6 +53,28 @@ export function HomePage() {
           ? "AI recommendations, natural language discovery, taste analysis, similarity search, actor lookups, and more — all from your Trakt history."
           : "Your complete movie and TV companion. Sign in to unlock AI-powered discovery, recommendations, and more."}
       </p>
+
+      {/* Watchlist widget */}
+      {authenticated && watchlist.length > 0 && (
+        <Link
+          to="/watchlist"
+          className="mb-8 inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl glass hover:bg-white/8 transition-all group"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
+            <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+          </svg>
+          <span className="text-sm font-medium text-text group-hover:text-accent transition-colors">
+            {movieCount > 0 && tvCount > 0
+              ? `${movieCount} movie${movieCount !== 1 ? "s" : ""} · ${tvCount} show${tvCount !== 1 ? "s" : ""} to watch`
+              : movieCount > 0
+              ? `${movieCount} movie${movieCount !== 1 ? "s" : ""} to watch`
+              : `${tvCount} show${tvCount !== 1 ? "s" : ""} to watch`}
+          </span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted group-hover:text-accent transition-colors">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </Link>
+      )}
 
       {!authenticated && (
         <>

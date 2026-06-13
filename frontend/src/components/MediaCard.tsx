@@ -14,6 +14,9 @@ type Props = {
   similarLink?: boolean;
   watched?: boolean;
   compact?: boolean;
+  watchlistOn?: boolean;
+  watchlistLoading?: boolean;
+  onWatchlistToggle?: () => void;
 };
 
 export function MediaCard({
@@ -27,6 +30,9 @@ export function MediaCard({
   similarLink,
   watched,
   compact,
+  watchlistOn,
+  watchlistLoading,
+  onWatchlistToggle,
 }: Props) {
   const src = posterUrl(posterPath ?? null, compact ? "w185" : "w342") ?? placeholderPoster();
   const mt = (mediaType || "movie").toLowerCase();
@@ -34,8 +40,31 @@ export function MediaCard({
 
   return (
     <article className="glass glass-hover rounded-xl overflow-hidden flex flex-col h-full">
-      <div className="aspect-[2/3] bg-bg">
+      <div className="aspect-[2/3] bg-bg relative">
         <img className="w-full h-full object-contain block" src={src} alt="" loading="lazy" />
+        {onWatchlistToggle && (
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWatchlistToggle(); }}
+            disabled={watchlistLoading}
+            title={watchlistOn ? "Remove from watchlist" : "Add to watchlist"}
+            className={`absolute top-1.5 right-1.5 w-7 h-7 flex items-center justify-center rounded-full transition-all cursor-pointer border font-sans ${
+              watchlistOn
+                ? "bg-accent text-bg border-accent/60 shadow-md shadow-black/40"
+                : "bg-bg/80 text-muted border-white/15 hover:text-accent hover:border-accent/40"
+            } ${watchlistLoading ? "opacity-60" : ""}`}
+          >
+            {watchlistLoading ? (
+              <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill={watchlistOn ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+              </svg>
+            )}
+          </button>
+        )}
       </div>
       <div className={`${compact ? "p-2" : "p-4"} flex-1 flex flex-col gap-1.5`}>
         {(mediaType || watched) && (

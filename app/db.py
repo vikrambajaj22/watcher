@@ -6,3 +6,4 @@ client = MongoClient(settings.MONGODB_URI)
 db = client.get_database(settings.MONGODB_DB_NAME)
 watch_history_collection = db["watch_history"]
 sync_meta_collection = db["sync_meta"]
+watchlist_collection = db["watchlist"]

@@ -4,6 +4,7 @@ import type { SimilarResult } from "../api/watcher";
 import { AiBlurb } from "./AiBlurb";
 import { VerdictBadge } from "./VerdictBadge";
 import { placeholderPoster, posterUrl } from "../lib/poster";
+import { useWatchlist } from "../contexts/WatchlistContext";
 
 type WillState =
   | { status: "idle" }
@@ -11,7 +12,8 @@ type WillState =
   | { status: "ok"; data: Record<string, unknown> }
   | { status: "err"; message: string };
 
-export function SimilarResultRow({ item, hideWillLike }: { item: SimilarResult; hideWillLike?: boolean }) {
+export function SimilarResultRow({ item, hideWillLike, hideWatchlist }: { item: SimilarResult; hideWillLike?: boolean; hideWatchlist?: boolean }) {
+  const { isOnWatchlist, toggle, isToggling } = useWatchlist();
   const [will, setWill] = useState<WillState>({ status: "idle" });
   const title = item.title ?? String(item.id);
   const src = posterUrl(item.poster_path ?? null, "w185") ?? placeholderPoster();
@@ -105,7 +107,30 @@ export function SimilarResultRow({ item, hideWillLike }: { item: SimilarResult; 
           )}
         </div>
 
-        <div className="shrink-0 self-center">
+        <div className="shrink-0 self-center flex items-center gap-2">
+          {!hideWatchlist && item.id && item.media_type && (
+            <button
+              type="button"
+              onClick={() => void toggle({ id: item.id, title: item.title ?? String(item.id), mediaType: item.media_type!, posterPath: item.poster_path, overview: item.overview, releaseDate: item.release_date })}
+              disabled={isToggling(item.id, item.media_type)}
+              title={isOnWatchlist(item.id, item.media_type) ? "Remove from watchlist" : "Add to watchlist"}
+              className={`w-8 h-8 flex items-center justify-center rounded-full transition-all cursor-pointer border font-sans ${
+                isOnWatchlist(item.id, item.media_type)
+                  ? "bg-accent text-bg border-accent/60 shadow-sm shadow-black/30"
+                  : "bg-transparent text-muted border-border hover:text-accent hover:border-accent/40"
+              } ${isToggling(item.id, item.media_type) ? "opacity-60" : ""}`}
+            >
+              {isToggling(item.id, item.media_type) ? (
+                <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill={isOnWatchlist(item.id, item.media_type) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                </svg>
+              )}
+            </button>
+          )}
           {!hideWillLike && item.id && item.media_type && (
             <button
               type="button"

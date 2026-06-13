@@ -6,8 +6,10 @@ import { type ActorHistoryResponse, type PersonSuggestion } from "../api/watcher
 import { MediaCard } from "../components/MediaCard";
 import { posterUrl } from "../lib/poster";
 import { PersonTypeahead } from "../components/PersonTypeahead";
+import { useWatchlist } from "../contexts/WatchlistContext";
 
 export function ActorPage() {
+  const { isOnWatchlist, toggle, isToggling } = useWatchlist();
   const [selected, setSelected] = useState<PersonSuggestion | null>(null);
   const [result, setResult] = useState<ActorHistoryResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -118,6 +120,13 @@ export function ActorPage() {
                     posterPath={item.poster_path}
                     subtitle={item.character ?? undefined}
                     similarLink
+                    watchlistOn={item.media_type ? isOnWatchlist(item.id, item.media_type) : undefined}
+                    watchlistLoading={item.media_type ? isToggling(item.id, item.media_type) : undefined}
+                    onWatchlistToggle={
+                      item.media_type
+                        ? () => void toggle({ id: item.id, title: item.title ?? "", mediaType: item.media_type!, posterPath: item.poster_path })
+                        : undefined
+                    }
                   />
                 ))}
               </div>

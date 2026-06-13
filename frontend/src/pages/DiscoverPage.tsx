@@ -4,10 +4,12 @@ import { useState } from "react";
 import { apiFetch } from "../api/client";
 import { type DescribeFilters, type DiscoverItem } from "../api/watcher";
 import { MediaCard } from "../components/MediaCard";
+import { useWatchlist } from "../contexts/WatchlistContext";
 
 type MediaTypeFilter = "both" | "movie" | "tv";
 
 export function DiscoverPage() {
+  const { isOnWatchlist, toggle, isToggling } = useWatchlist();
   const [query, setQuery] = useState("");
   const [mediaType, setMediaType] = useState<MediaTypeFilter>("both");
   const [results, setResults] = useState<DiscoverItem[] | null>(null);
@@ -140,6 +142,13 @@ export function DiscoverPage() {
                   overview={item.overview}
                   watched={item.watched}
                   similarLink
+                  watchlistOn={item.media_type ? isOnWatchlist(item.id, item.media_type) : undefined}
+                  watchlistLoading={item.media_type ? isToggling(item.id, item.media_type) : undefined}
+                  onWatchlistToggle={
+                    item.media_type
+                      ? () => void toggle({ id: item.id, title: item.title ?? "", mediaType: item.media_type!, posterPath: item.poster_path, overview: item.overview, releaseDate: item.release_date })
+                      : undefined
+                  }
                 />
               ))}
             </div>

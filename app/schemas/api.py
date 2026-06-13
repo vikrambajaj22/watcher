@@ -214,3 +214,34 @@ class HistoryItem(BaseModel):
     year: Optional[int] = None
     genres: Optional[List[str]] = None
     model_config = {"extra": "allow"}
+
+
+class WatchlistItem(BaseModel):
+    tmdb_id: int
+    media_type: str
+    title: Optional[str] = None
+    poster_path: Optional[str] = None
+    overview: Optional[str] = None
+    release_date: Optional[str] = None
+    genres: Optional[List[str]] = None
+    synced_at: Optional[str] = None
+
+
+class AddWatchlistRequest(BaseModel):
+    tmdb_id: int
+    media_type: str
+    title: Optional[str] = None
+    poster_path: Optional[str] = None
+    overview: Optional[str] = None
+    release_date: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate(self):
+        if self.media_type not in ("movie", "tv"):
+            raise ValueError("media_type must be 'movie' or 'tv'")
+        return self
+
+
+class WatchlistSyncResponse(BaseModel):
+    added: int
+    removed: int
