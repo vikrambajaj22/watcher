@@ -6,6 +6,7 @@
 - Use pydantic classes / schemas where appropriate
 - All imports must be top-level unless a circular dependency requires otherwise
 - Always remove dead code
+- Always keep requirements.txt updated
 
 ## Token Efficiency
 - Only read what you absolutely have to - avoid reading everything in the first pass
