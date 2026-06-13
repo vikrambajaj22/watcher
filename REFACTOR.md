@@ -380,38 +380,49 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 
 12. **Watchlist**
 
-   Personal watchlist backed by MongoDB, with Letterboxd RSS sync for movies and manual entry for TV shows (Hobi has no export API).
+   Personal watchlist synced bidirectionally with Trakt custom lists — movies and TV shows managed separately, both readable and writable from Watcher or on mobile via Trakt.
 
-   **Data model** — new `watchlist` collection, unique key `(tmdb_id, media_type)`:
+   **Sources of truth**
+   - **Movies**: Trakt custom list (`TRAKT_MOVIE_LIST_ID` in `.env`)
+   - **TV shows**: Trakt custom list (`TRAKT_TV_LIST_ID` in `.env`)
+   - Trakt auth already in place — no additional credentials needed
+   - Items added/removed in Watcher write back to Trakt immediately; items added on mobile sync in on next pull
+
+   **Trakt API** (verified against live API):
+   - `GET /users/me/lists/{slug}/items` — fetch list contents
+   - `POST /users/me/lists/{slug}/items` — add item by TMDB ID (`{"movies": [{"ids": {"tmdb": id}}]}`)
+   - `POST /users/me/lists/{slug}/items/remove` — remove item
+
+   **Data model** — local MongoDB `watchlist` cache, unique key `(tmdb_id, media_type)`:
    ```
-   { tmdb_id, media_type, title, poster_path, overview, release_date, added_at, source: "manual"|"letterboxd" }
+   { tmdb_id, media_type, title, poster_path, overview, release_date, synced_at }
    ```
+   Local cache is write-through: mutations hit Trakt first, then update local state. Pull sync refreshes the cache on demand and on app load.
 
    **Backend**
-   - `app/dao/watchlist.py` — CRUD: get, add, remove, upsert-batch
-   - `app/watchlist_sync.py` — Letterboxd RSS fetch → XML parse → TMDB title resolution (50ms sleep between calls to avoid 429s)
+   - `app/dao/watchlist.py` — local cache CRUD
+   - `app/watchlist_sync.py` — Trakt pull (GET both lists → upsert cache), push add/remove (POST to Trakt → update cache)
    - New endpoints:
-     - `GET /watchlist` — list items (`?media_type=movie|tv`)
-     - `POST /watchlist` — add item; backend resolves title/poster from TMDB
-     - `DELETE /watchlist/{tmdb_id}` — remove item (`?media_type=`)
-     - `POST /watchlist/sync/letterboxd` — fetch `letterboxd.com/{username}/watchlist/rss/`, parse `<letterboxd:filmTitle>` + `<letterboxd:filmYear>`, resolve to TMDB, upsert; returns `{ added, already_present, failed }`
-   - History sync auto-clear: after each Trakt sync, remove watchlist items that now appear in watch history; surface count as `watchlist_cleared: N` in sync response
+     - `GET /watchlist` — return cached items (`?media_type=movie|tv`)
+     - `POST /watchlist` — add item: resolves TMDB metadata, writes to Trakt, updates cache
+     - `DELETE /watchlist/{tmdb_id}?media_type=` — remove: deletes from Trakt, updates cache
+     - `POST /watchlist/sync` — pull latest from both Trakt lists, refresh cache; returns `{ added, removed }`
+   - History sync auto-clear: after each Trakt history sync, remove watchlist items that now appear in watch history; surface count as `watchlist_cleared: N` in sync response
 
    **Frontend**
-   - New `/watchlist` page: poster card grid (using `MediaCard`), filter tabs (All / Movies / TV), inline add via `SearchTypeahead`, per-card remove button, "Sync Letterboxd" button (prompts username once, persists to `localStorage`), source badge per card
-   - `useWatchlist` context — fetches once on mount, exposes `watchlist`, `isOnWatchlist(id, mediaType)`, `toggle(item)`; shared app-wide so no page re-fetches
+   - New `/watchlist` page: poster card grid (using `MediaCard`), filter tabs (All / Movies / TV), per-card remove button, "Sync" button to pull latest from Trakt, inline add via `SearchTypeahead`
+   - `useWatchlist` context — fetches cache on mount, exposes `watchlist`, `isOnWatchlist(id, mediaType)`, `toggle(item)`; optimistic updates so UI feels instant
 
    **Integrations with existing features**
    - **Recommendations** — watchlist badge + add/remove toggle on every card; optional "hide watchlisted" filter
    - **Similar Titles** — badge + toggle on By Title and From History results; not shown in To History mode (all results already watched)
    - **Will I Like?** — show "already on your watchlist" alongside prediction; add/remove button in result panel
    - **Discover** — badge + toggle on each result card
-   - **Recommendations / Similar / Discover** — all route through the same `useWatchlist` context so toggle state is consistent across pages
    - **Chat** — three new tools: `get_watchlist()`, `add_to_watchlist(tmdb_id, media_type)`, `remove_from_watchlist(tmdb_id, media_type)`; enables queries like "which of my watchlist shows matches my taste?"
    - **Actor Search** — watchlist badge inline on filmography results
    - **Home page** — summary widget: "12 movies · 8 shows to watch" linking to `/watchlist`
 
-   **Build order**: core CRUD + WatchlistPage → `useWatchlist` context + MediaCard badges → history sync auto-clear → chat tools → home widget
+   **Build order**: Trakt sync + local cache + endpoints → WatchlistPage → `useWatchlist` context + MediaCard badges → history auto-clear → chat tools → home widget
 
 13. **Code Quality**
    - Add Ruff for code formatting/linting
