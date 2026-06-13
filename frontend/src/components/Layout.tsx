@@ -161,7 +161,14 @@ export function Layout() {
       {/* Mobile bottom floating nav */}
       {showAppNav && (
         <nav
-          className="md:hidden fixed bottom-3 left-3 right-3 z-20 glass-nav rounded-2xl border border-white/10 shadow-2xl shadow-black/40"
+          className="md:hidden fixed bottom-2 left-8 right-8 z-20 rounded-2xl"
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            backdropFilter: 'blur(40px) saturate(200%)',
+            WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12)',
+          }}
           aria-label="Main"
         >
           <div className="flex overflow-x-auto gap-1 px-2 py-2 scrollbar-none">
@@ -201,7 +208,7 @@ export function Layout() {
         </nav>
       )}
 
-      <main className={`flex-1 px-4 md:px-6 max-w-[1320px] mx-auto w-full${isChatPage ? " overflow-hidden pb-20 md:pb-0" : " py-7 pb-24 md:pb-7"}`}>
+      <main className={`flex-1 px-4 md:px-6 max-w-[1320px] mx-auto w-full${isChatPage ? " overflow-hidden pb-24 md:pb-0" : " py-7 pb-28 md:pb-7"}`}>
         <Outlet />
       </main>
     </div>
