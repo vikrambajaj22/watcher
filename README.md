@@ -16,7 +16,7 @@ Watcher is a personal media discovery application that generates tailored recomm
 - 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; genre tags shown inline; open in TMDB links
 - 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; optional media-type selector (Movies/TV/Both) overrides LLM inference; excludes already-watched titles
 - 👤 **Actor Search** — find every title in your history featuring a specific actor or director, with character roles
-- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop); tools: recommendations (optional genre filter), similar, will-like, description search, cast lookup, person lookup, actor history, watch history; streams tool status + response via SSE; intermediate lookups (history, actor, cast) shown as collapsible summaries, final results as compact cards; renders markdown in responses; answers follow-up questions about returned titles (e.g. "which of these have actors I'd recognise?"); works on mobile (HTTPS-free UUID fallback, fixed sticky input)
+- 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop with a conditional self-correction `verify` node); routing lives in self-describing tool docstrings, not a prescriptive prompt; the user's taste profile is injected into context every turn (TTL-cached) so the agent personalises and picks from the watchlist itself without an extra lookup; 14 tools: recommendations (optional genre filter), similar (incl. cross-type movie↔TV), similar-in-history, will-like, description search, cast lookup, title details, taste profile, person lookup, actor history, watch history, watchlist read/add/remove (the similar tools share `compute_similar` with the `/similar` route — no duplicated logic); streams tool status + response via SSE; intermediate lookups shown as collapsible summaries, final results as compact cards; renders markdown in responses; answers follow-up questions about returned titles (e.g. "which of these have actors I'd recognise?") and re-tries once if its answer misses the question; models configurable via `CHAT_MODEL` / `CHAT_VERIFY_MODEL`; works on mobile (HTTPS-free UUID fallback, fixed sticky input)
 - 🎯 **Similar titles** — TMDB `/similar` + `/recommendations` merged via RRF; cross-type mode (movie → TV or vice versa) via LLM keyword search; three modes: **By Title** (any title → TMDB similar), **From History** (pick a watched title as seed), **To History** (search any title → find matches from your history that TMDB considers similar)
 - 🤔 **Will I Like?** — LLM scores 0–100% likelihood based on your taste profile
 - 🎬 **Interactive UI** — React SPA with responsive design, 404 page, and graceful poster fallbacks
@@ -180,7 +180,7 @@ The `/recommend/tmdb/{media_type}` endpoint:
 - `POST /will-like` — **Will I Like?** — LLM scores 0–100% likelihood using the shared taste profile, TTL-cached 1h
 - `POST /discover/describe` — **Discover by description** — natural language → LLM filter extraction → TMDB Discover; optional `media_type` body field (`movie`/`tv`/`both`) overrides LLM inference; genres joined with OR for broader results; excludes watched titles, TTL-cached 1h
 - `GET /history/actor?name=` — **Actor search** — TMDB person lookup → combined credits cross-referenced with watch history
-- `POST /chat` — **Chat** — LangGraph SSE stream; accepts `{ thread_id, message }`; streams `tool_start`, `tool_result`, `message`, `done` events; agent model: `gpt-4.1-mini`
+- `POST /chat` — **Chat** — LangGraph SSE stream; accepts `{ thread_id, message }`; streams `tool_start`, `tool_result`, `message`, `done` events; agent model `CHAT_MODEL` (default `gpt-4.1-mini`), self-correction judge `CHAT_VERIFY_MODEL` (default `gpt-4.1-nano`)
 
 ### Maintenance (requires `ADMIN_API_KEY` if set)
 
@@ -214,8 +214,9 @@ app/
   db.py                         — MongoDB connection
   will_like.py                  — LLM Will I Like? (Pydantic response, TTL cache)
   taste_profile.py              — shared taste profile (LLM, 1h cache, Pydantic)
+  similar.py                    — shared compute_similar() (used by /similar route + chat tools)
   actor_history.py              — actor/director search against watch history
-  chat.py                       — LangGraph chat agent (StateGraph, ToolNode, SSE)
+  chat.py                       — LangGraph chat agent (agent ↔ ToolNode + conditional verify node, taste context, SSE)
   trakt_sync.py                 — Trakt → TMDB enrich → MongoDB sync; auto-clears watched items from watchlist
   watchlist_sync.py             — Trakt custom list pull (paginated) + push add/remove; TMDB enrichment
 
@@ -235,7 +236,9 @@ app/
 
   prompts/                       — Jinja2 prompt templates, loaded via PromptRegistry
     chat/
-      system_v1.jinja2
+      system_v1.jinja2          — legacy prescriptive prompt (kept for rollback)
+      system_v2.jinja2          — slim prompt; taste context + behaviour principles (active)
+      verify_v1.jinja2          — self-correction judge prompt
     recommend/
       taste_planner_v1.jinja2
       tmdb_picker_v1.jinja2
@@ -287,6 +290,8 @@ Key environment variables:
 | `MONGODB_URI` | MongoDB connection string |
 | `MONGODB_DB_NAME` | MongoDB database name |
 | `ADMIN_API_KEY` | Optional: require this header on admin/recommend/chat routes |
+| `CHAT_MODEL` | Optional: chat agent model (default `gpt-4.1-mini`) |
+| `CHAT_VERIFY_MODEL` | Optional: chat self-correction judge model (default `gpt-4.1-nano`) |
 | `TRAKT_MOVIE_LIST_ID` | Trakt custom list slug for movie watchlist (default: `watchlist-movies`) |
 | `TRAKT_TV_LIST_ID` | Trakt custom list slug for TV watchlist (default: `watchlist-shows`) |
 | `WATCHER_CORS_ORIGINS` | Comma-separated allowed origins (default: localhost:8501) |

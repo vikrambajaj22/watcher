@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     TRAKT_TV_LIST_ID: str = "watchlist-shows"
     TMDB_API_URL: str = "https://api.themoviedb.org/3"
     OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
+    # Chat assistant models (overridable via .env)
+    CHAT_MODEL: str = "gpt-4.1-mini"
+    CHAT_VERIFY_MODEL: str = "gpt-4.1-nano"
     # Browser UI origin after Trakt OAuth (Vite dev and Trakt app should use this port, e.g. http://localhost:8501).
     UI_BASE_URL: str = "http://localhost:8501"
 

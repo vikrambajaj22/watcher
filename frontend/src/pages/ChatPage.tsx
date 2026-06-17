@@ -126,8 +126,14 @@ function ToolResultCards({ data }: { data: Record<string, unknown> }) {
           />
         )}
         <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-          <VerdictBadge willLike={Boolean(data.will_like)} score={Number(data.score ?? 0.5)} />
-          {data.explanation ? <AiBlurb>{String(data.explanation)}</AiBlurb> : null}
+          {data.already_watched ? (
+            <span className="text-sm font-semibold text-emerald-300">Already watched</span>
+          ) : (
+            <>
+              <VerdictBadge willLike={Boolean(data.will_like)} score={Number(data.score ?? 0.5)} />
+              {data.explanation ? <AiBlurb>{String(data.explanation)}</AiBlurb> : null}
+            </>
+          )}
         </div>
       </div>
     );
@@ -194,6 +200,70 @@ function ToolResultCards({ data }: { data: Record<string, unknown> }) {
       <CollapsibleDebug summary={`Cast of ${String(data.title ?? "title")} · ${cast.length} listed`}>
         {cast.map(c => `${c.name ?? "Unknown"}${c.character ? ` (${c.character})` : ""}`).join(", ") || "—"}
       </CollapsibleDebug>
+    );
+  }
+
+  if (type === "watchlist") {
+    const titles = (data.titles ?? []) as Array<{ title?: string; media_type?: string }>;
+    return (
+      <CollapsibleDebug summary={`${titles.length} title${titles.length !== 1 ? "s" : ""} on your watchlist`}>
+        {titles.map(t => t.title ?? "Unknown").join(", ") || "—"}
+      </CollapsibleDebug>
+    );
+  }
+
+  if (type === "title_details") {
+    const genres = (data.genres ?? []) as string[];
+    const runtime = data.runtime_minutes as number | null;
+    const seasons = data.number_of_seasons as number | null;
+    const meta = [
+      data.year ? String(data.year) : null,
+      genres.length ? genres.join(", ") : null,
+      runtime ? `${runtime} min` : null,
+      seasons ? `${seasons} season${seasons !== 1 ? "s" : ""}` : null,
+      data.vote_average ? `★ ${data.vote_average}` : null,
+    ].filter(Boolean);
+    return (
+      <div className="mt-2 flex flex-wrap gap-3 items-start">
+        {data.poster_path ? (
+          <img
+            src={posterUrl(String(data.poster_path), "w185") ?? ""}
+            alt=""
+            className="w-14 rounded-md shrink-0"
+            loading="lazy"
+          />
+        ) : null}
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          <div className="text-sm font-semibold">{String(data.title ?? "Unknown")}</div>
+          <div className="text-xs text-muted">{meta.join(" · ")}</div>
+          {data.tagline ? <div className="text-xs italic text-muted/80">{String(data.tagline)}</div> : null}
+          {data.overview ? <p className="text-xs text-muted leading-relaxed mt-0.5">{String(data.overview)}</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "taste_profile") {
+    const genres = (data.genres ?? []) as string[];
+    const themes = (data.themes ?? []) as string[];
+    const avoid = (data.avoid ?? []) as string[];
+    const Chips = ({ label, values }: { label: string; values: string[] }) =>
+      values.length ? (
+        <div className="flex flex-wrap gap-1 items-center">
+          <span className="text-[10px] uppercase tracking-wide text-muted/60">{label}</span>
+          {values.map(v => (
+            <span key={v} className="text-[11px] px-1.5 py-0.5 rounded-md bg-white/[0.06] text-muted">{v}</span>
+          ))}
+        </div>
+      ) : null;
+    return (
+      <div className="mt-2 flex flex-col gap-1.5">
+        {data.signature ? <div className="text-sm font-semibold">{String(data.signature)}</div> : null}
+        {data.summary ? <p className="text-xs text-muted leading-relaxed">{String(data.summary)}</p> : null}
+        <Chips label="genres" values={genres} />
+        <Chips label="themes" values={themes} />
+        <Chips label="avoids" values={avoid} />
+      </div>
     );
   }
 

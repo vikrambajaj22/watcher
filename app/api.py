@@ -18,8 +18,8 @@ from app.dao.history import get_watch_history, clear_history_cache
 from app.db import sync_meta_collection
 from app.process.describe_discover import clear_describe_cache, discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
-from app.tmdb_client import get_metadata, search_by_title, search_multi, search_persons
-from app.tmdb_discover import fetch_cross_type_similar, fetch_similar_and_recommendations
+from app.similar import SimilarError, compute_similar
+from app.tmdb_client import search_multi, search_persons
 from app.will_like import clear_will_like_cache, compute_will_like, WillLikeError
 from app.taste_profile import compute_taste_profile
 from app.scheduler import check_trakt_last_activities_and_sync
@@ -37,7 +37,6 @@ from app.schemas.api import (
     JobStatusModel,
     SimilarRequest,
     SimilarResponse,
-    SimilarResultItem,
     SyncStatusResponse,
     WatchlistItem,
     WatchlistSyncResponse,
@@ -176,81 +175,16 @@ def get_history(media_type: str = None, include_posters: bool = True):
 def similar_items(payload: SimilarRequest) -> SimilarResponse:
     """Find similar movies/TV shows using TMDB's similar/recommendations API."""
     try:
-        tmdb_id = payload.tmdb_id
-        media_type = payload.media_type
-        k = payload.k
-
-        source_title: str | None = None
-        md: dict = {}
-
-        if tmdb_id is None:
-            md = search_by_title(payload.title, media_type=media_type)
-            if not md or not md.get("id"):
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"'{payload.title}' not found on TMDB",
-                )
-            tmdb_id = int(md["id"])
-            source_title = md.get("title") or md.get("name") or payload.title
-        else:
-            try:
-                md = get_metadata(tmdb_id, media_type=media_type)
-                source_title = md.get("title") or md.get("name")
-            except Exception as e:
-                logger.warning("similar: get_metadata failed for %s/%s: %s", media_type, tmdb_id, e)
-
-        history_set: set[tuple[int, str]] | None = None
-        if payload.filter_to_history:
-            history = get_watch_history(include_posters=False)
-            history_set = {
-                (int(h["id"]), str(h.get("media_type", "")))
-                for h in history
-                if h.get("id") is not None
-            }
-
-        per_endpoint = max(10, (k + 1) // 2) if history_set is None else 40
-        if payload.cross_type:
-            raw = fetch_cross_type_similar(tmdb_id, media_type, per_endpoint=per_endpoint)
-        else:
-            raw = fetch_similar_and_recommendations(tmdb_id, media_type, per_endpoint=per_endpoint)
-
-        seen: set[int] = set()
-        results: list[SimilarResultItem] = []
-        for item in raw:
-            iid = int(item["id"])
-            if iid in seen or iid == tmdb_id:
-                continue
-            if history_set is not None:
-                imt = str(item.get("media_type", ""))
-                if (iid, imt) not in history_set:
-                    continue
-            seen.add(iid)
-            results.append(
-                SimilarResultItem(
-                    id=iid,
-                    title=item.get("title"),
-                    media_type=item.get("media_type"),
-                    poster_path=item.get("poster_path"),
-                    overview=item.get("overview"),
-                    release_date=item.get("release_date"),
-                )
-            )
-            if len(results) >= k:
-                break
-
-        if history_set is not None and (tmdb_id, media_type) in history_set:
-            results.insert(0, SimilarResultItem(
-                id=tmdb_id,
-                title=md.get("title") or md.get("name") or source_title,
-                media_type=media_type,
-                poster_path=md.get("poster_path"),
-                overview=md.get("overview"),
-                release_date=md.get("release_date") or md.get("first_air_date"),
-            ))
-
-        return SimilarResponse(source_title=source_title, results=results)
-    except HTTPException:
-        raise
+        return compute_similar(
+            tmdb_id=payload.tmdb_id,
+            title=payload.title,
+            media_type=payload.media_type,
+            k=payload.k,
+            cross_type=payload.cross_type,
+            filter_to_history=payload.filter_to_history,
+        )
+    except SimilarError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error("similar_items error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")

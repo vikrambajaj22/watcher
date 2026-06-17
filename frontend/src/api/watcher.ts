@@ -75,6 +75,7 @@ export type SearchHit = {
   media_type: "movie" | "tv";
   year?: string | null;
   poster_path?: string | null;
+  watched?: boolean;
 };
 
 export type PersonSuggestion = {

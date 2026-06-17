@@ -332,14 +332,18 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 
 4. **"Chat with Watcher" — Conversational Agent** ✅
 
-   SSE-streaming chat endpoint backed by a **LangGraph** `StateGraph` (agent node ↔ ToolNode, conditional edge loops until no tool calls remain).
+   SSE-streaming chat endpoint backed by a **LangGraph** `StateGraph` (agent node ↔ ToolNode, with a conditional self-correction `verify` node). **Routing and decisions live in the tools and graph structure, not a prescriptive prompt** — each tool's docstring states when/when-not to use it, the slim `system_v2.jinja2` carries only identity + behaviour principles, and the agent self-decides (e.g. it picks from the watchlist itself rather than delegating to a hardcoded sub-prompt).
+
+   **Taste profile always in context** — `_agent_node` rebuilds the system message every turn via `_system_prompt()`, which injects `get_taste_text()` (signature + summary + genres + themes) into `system_v2.jinja2`. The profile is computed once and TTL-cached for 1h (`taste_profile.py`), so it is present on every turn with no extra LLM/DB round-trip, and degrades silently to no taste block when history isn't synced yet. This is what lets the agent personalise recommendations and pick from the watchlist without first calling a history/taste tool.
 
    **Architecture** (`app/chat.py`)
-   - 8 LangChain `@tool` functions: `get_recommendations` (optional `genres` filter), `find_similar`, `will_i_like`, `search_by_description`, `get_cast`, `lookup_person`, `actor_in_history`, `get_history`
-   - `ChatOpenAI` (langchain-openai) bound with tools → `_agent_node`; model: `gpt-4.1-mini`
+   - 14 LangChain `@tool` functions: `get_recommendations` (optional `genres` filter), `find_similar`, `find_similar_in_history`, `will_i_like`, `search_by_description`, `get_cast`, `get_title_details`, `get_taste_profile`, `lookup_person`, `actor_in_history`, `get_history`, `get_watchlist_tool` (also the basis for watchlist recommendations — the agent fetches the list, filters by `media_type`, and picks the best taste-fit itself), `add_to_watchlist_tool`, `remove_from_watchlist_tool`
+   - **No duplicated logic with the API/UI**: tools call the same shared functions the routes do — `find_similar` / `find_similar_in_history` → `app/similar.py::compute_similar` (also backs `POST /similar`), `will_i_like` → `compute_will_like`, `get_taste_profile` → `compute_taste_profile`, `get_recommendations` → `TmdbRecommender`, `search_by_description` → `discover_by_description`, `actor_in_history` → `get_actor_history`, watchlist tools → the watchlist DAO/sync
+   - `ChatOpenAI` (langchain-openai) bound with tools → `_agent_node`; models configurable via `settings.CHAT_MODEL` (default `gpt-4.1-mini`) and `settings.CHAT_VERIFY_MODEL` (default `gpt-4.1-nano`)
    - `ToolNode` (langgraph.prebuilt) for tool execution with `handle_tool_errors=True`
-   - Graph: `START → agent → (tools → agent)* → END`
-   - `_graph.astream_events(version="v2")` drives the SSE generator
+   - `verify` node: after a final answer on a **tool-using** turn, a cheap LLM judge (`verify_v1.jinja2`) checks whether the user's question was actually addressed; if not, it injects a correction nudge and loops back to the agent **once** (`State.revised` caps it). Pure-chat turns skip verification (balanced latency).
+   - Graph: `START → agent → (tools → agent)* → [verify → agent?] → END`
+   - `_graph.astream_events(version="v2")` drives the SSE generator; the final answer is buffered so a correction supersedes the first draft
    - SSE event types: `tool_start`, `tool_result`, `message`, `error`, `done`
 
    **Dependencies added**: `langgraph`, `langchain-openai`, `langchain-core`
@@ -348,8 +352,9 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    - Transcript view; tool status indicators (spinner while running, checkmark when done)
    - Tool results rendered inline as compact `MediaCard` grids (3–4 col, no overview, no Find Similar)
    - All returned items shown — no slice cap so agent follow-ups only reference visible titles
-   - `actor_history`, `history`, and `cast` results shown as collapsible summaries, not card grids
+   - `actor_history`, `history`, `cast`, and `watchlist` results shown as collapsible summaries, not card grids (so the agent's own pick — shown via `get_title_details` — is the only prominent card)
    - `will_like` result shown as poster + `VerdictBadge` + `AiBlurb`; no Find Similar link
+   - `title_details` shown as poster + metadata line (year · genres · runtime · rating) + overview; `taste_profile` shown as signature + summary + genre/theme/avoid chips
    - Example prompts shown when history is empty; renders markdown in text responses
    - Mobile: HTTPS-free UUID fallback (`crypto.randomUUID` feature-detected), sticky input via `100dvh` flex layout
 
