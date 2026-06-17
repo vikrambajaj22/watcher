@@ -59,7 +59,7 @@ export function WillLikePage() {
         A short model-assisted read on whether a title fits your taste, based on your watch history.
       </p>
 
-      <div className="p-5 glass-dark rounded-2xl mb-4">
+      <div className="relative z-10 p-5 glass-dark rounded-2xl mb-4">
         <label className="flex flex-col gap-1.5 mb-4">
           <span className="field-label">
             Title

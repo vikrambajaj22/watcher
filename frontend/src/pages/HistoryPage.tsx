@@ -17,7 +17,8 @@ import {
 import { placeholderPoster, posterUrl } from "../lib/poster";
 
 type MediaFilter = "all" | "movie" | "tv";
-type SortKey = "latest" | "earliest" | "title" | "year" | "rewatch_engagement";
+type SortKey = "latest" | "earliest" | "title" | "year" | "rewatch_engagement" | "popularity" | "rating";
+type StatusFilter = "all" | "incomplete" | "complete";
 
 const AUTO_SYNC_MS = 300_000;
 
@@ -45,6 +46,10 @@ function sortRows(rows: HistoryRow[], key: SortKey): HistoryRow[] {
     if (key === "title") return rowTitle(a).localeCompare(rowTitle(b));
     if (key === "rewatch_engagement")
       return (Number(b.rewatch_engagement) || 0) - (Number(a.rewatch_engagement) || 0);
+    if (key === "popularity")
+      return (Number(b.popularity) || 0) - (Number(a.popularity) || 0);
+    if (key === "rating")
+      return (Number(b.vote_average) || 0) - (Number(a.vote_average) || 0);
     if (key === "year")
       return (Number(b.year) || 0) - (Number(a.year) || 0);
     if (key === "earliest") {
@@ -73,6 +78,7 @@ const inputCls = "glass-input rounded-lg text-text px-2.5 py-2 text-[16px] sm:te
 export function HistoryPage() {
   const [media, setMedia] = useState<MediaFilter>("all");
   const [sort, setSort] = useState<SortKey>("latest");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [yearFilter, setYearFilter] = useState("");
   const [genreFilter, setGenreFilter] = useState("");
@@ -131,8 +137,13 @@ export function HistoryPage() {
         return genres.includes(genreFilter);
       });
     }
+    if (statusFilter === "incomplete") {
+      r = r.filter((row) => row.media_type === "tv" && (Number(row.completion_ratio) || 0) < 1);
+    } else if (statusFilter === "complete") {
+      r = r.filter((row) => row.media_type !== "tv" || (Number(row.completion_ratio) || 0) >= 1);
+    }
     return r;
-  }, [rows, sort, search, yearFilter, genreFilter]);
+  }, [rows, sort, search, yearFilter, genreFilter, statusFilter]);
 
   const genreOptions = useMemo(() => {
     if (!rows) return [];
@@ -284,6 +295,18 @@ export function HistoryPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
+            <span className="field-label">Status</span>
+            <select
+              className={inputCls}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            >
+              <option value="all">All</option>
+              <option value="incomplete">Incomplete</option>
+              <option value="complete">Complete</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
             <span className="field-label">
               Sort
             </span>
@@ -297,6 +320,8 @@ export function HistoryPage() {
               <option value="year">Release Year</option>
               <option value="title">Title</option>
               <option value="rewatch_engagement">Engagement</option>
+              <option value="popularity">Popularity</option>
+              <option value="rating">Rating</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 flex-1 min-w-[180px]">

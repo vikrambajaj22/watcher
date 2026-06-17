@@ -143,7 +143,7 @@ export function SimilarPage() {
       <h1 className="page-title">Similar Titles</h1>
       <p className="text-muted mb-6">Find movies or shows similar to a title via TMDB.</p>
 
-      <div className="p-5 glass-dark rounded-2xl mb-4">
+      <div className="relative z-10 p-5 glass-dark rounded-2xl mb-4">
         {/* Mode toggle */}
         <div className="flex gap-1 p-1 glass rounded-xl w-fit mb-5">
           {(["search", "history", "to-history"] as Mode[]).map(m => (

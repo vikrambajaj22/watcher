@@ -86,7 +86,15 @@ def search_titles(q: str = Query(""), limit: int = Query(6, ge=1, le=10)):
     if not q.strip():
         return {"results": []}
     try:
-        return {"results": search_multi(q, limit=limit)}
+        results = search_multi(q, limit=limit)
+        try:
+            history = get_watch_history(include_posters=False)
+            watched_ids = {(item["id"], item.get("media_type")) for item in history}
+            for r in results:
+                r["watched"] = (r.get("id"), r.get("media_type")) in watched_ids
+        except Exception:
+            pass
+        return {"results": results}
     except Exception as e:
         logger.error("search_titles error: %s", repr(e))
         raise HTTPException(status_code=500, detail="Search failed")

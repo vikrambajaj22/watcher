@@ -209,6 +209,10 @@ def sync_trakt_history():
                 kw_raw = (tmdb_meta.get("keywords") or {}).get("keywords") or []
                 movie_data["tmdb_keywords"] = [k["name"].lower() for k in kw_raw if k.get("name")]
                 movie_data["genres"] = [g["name"] for g in (tmdb_meta.get("genres") or []) if g.get("name")]
+                if tmdb_meta.get("popularity") is not None:
+                    movie_data["popularity"] = float(tmdb_meta["popularity"])
+                if tmdb_meta.get("vote_average") is not None:
+                    movie_data["vote_average"] = float(tmdb_meta["vote_average"])
         except Exception as e:
             logger.warning("Could not fetch TMDB metadata for movie %s: %s", tmdb_id, repr(e))
         all_history.append(movie_data)
@@ -243,6 +247,10 @@ def sync_trakt_history():
                 kw_raw = (meta.get("keywords") or {}).get("results") or []
                 show_data["tmdb_keywords"] = [k["name"].lower() for k in kw_raw if k.get("name")]
                 show_data["genres"] = [g["name"] for g in (meta.get("genres") or []) if g.get("name")]
+                if meta.get("popularity") is not None:
+                    show_data["popularity"] = float(meta["popularity"])
+                if meta.get("vote_average") is not None:
+                    show_data["vote_average"] = float(meta["vote_average"])
                 if meta.get("seasons"):
                     for season in meta["seasons"]:
                         if (

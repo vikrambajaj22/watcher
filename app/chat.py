@@ -230,12 +230,11 @@ def get_watchlist_tool(media_type: Optional[str] = None) -> str:
     items = get_watchlist(media_type)
     return json.dumps({
         "type": "watchlist",
-        "items": [
+        "titles": [
             {
-                "id": w.get("tmdb_id"),
+                "tmdb_id": w.get("tmdb_id"),
                 "title": w.get("title"),
                 "media_type": w.get("media_type"),
-                "poster_path": w.get("poster_path"),
                 "genres": w.get("genres") or [],
             }
             for w in items

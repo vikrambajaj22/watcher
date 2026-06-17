@@ -107,7 +107,7 @@ export function WatchlistPage() {
       )}
 
       {/* Add via search */}
-      <div className="p-4 glass-dark rounded-2xl mb-5 flex flex-wrap items-end gap-3">
+      <div className="relative z-10 p-4 glass-dark rounded-2xl mb-5 flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[220px] flex flex-col gap-1">
           <span className="field-label">Add title</span>
           <SearchTypeahead
@@ -123,12 +123,15 @@ export function WatchlistPage() {
           disabled={
             !selectedHit ||
             adding ||
-            (selectedHit != null && isOnWatchlist(selectedHit.id, selectedHit.media_type))
+            selectedHit.watched ||
+            isOnWatchlist(selectedHit.id, selectedHit.media_type)
           }
           onClick={() => void handleAdd()}
         >
           {adding
             ? "Adding…"
+            : selectedHit?.watched
+            ? "Already watched"
             : selectedHit && isOnWatchlist(selectedHit.id, selectedHit.media_type)
             ? "Already on list"
             : "Add"}

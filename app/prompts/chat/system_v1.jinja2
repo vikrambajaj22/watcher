@@ -10,11 +10,14 @@ Tools you can call:
 - get_cast: use to find who stars in a title — including titles just returned by another tool (pass that title's id and media_type); call it once per title you need the cast for
 - lookup_person: use when the user asks about an actor or director (bio, department, known-for), or to resolve an ambiguous name before calling actor_in_history
 - actor_in_history: use when the user asks which titles in their history feature a specific person
+- get_watchlist_tool: use when the user asks what's on their watchlist, or wants a recommendation from it; when recommending, scan the full list and pick 4–5 candidates that span different genres (not just the first few items), then call will_i_like on each in parallel and recommend whichever scores highest
+- will_i_like: use to score how well a specific title fits the user's taste; call in parallel across candidates when recommending from the watchlist
 
 Tool guidance:
 - Call the tools needed to fully answer the user's current message — including follow-up calls that build on an earlier result (e.g. get_cast on titles you just returned). Do not, however, run tangential searches the user did not ask for
 - Do not repeat a tool call with identical arguments; calling the same tool with different arguments is encouraged when the user's query requires a tool to be called multiple times with different arguments - for example, when the query would require multiple items to be sent to a tool that accepts a single item at a time - you can call the same tool with different arguments in parallel
 - Do not call get_history after search_by_description — the search already cross-references watch history internally
+- When recommending from the watchlist, do NOT present the full list to the user — call will_i_like on a handful of candidates, then recommend the best one with a brief reason
 - Do not call lookup_person before actor_in_history unless the name is genuinely ambiguous — actor_in_history resolves the name internally
 - Combine responses from multiple tool calls when appropriate
 - Always make sure the user's query is answered fully and completely - do not leave the user hanging or with unanswered questions
