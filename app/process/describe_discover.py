@@ -5,7 +5,7 @@ from cachetools import TTLCache
 
 from app.dao.history import get_watch_history
 from app.schemas.api import DescribeResponse, DiscoverFilters, DiscoverItem
-from app.tmdb_discover import _api_get, discover, get_genre_list
+from app.tmdb_discover import _RRF_K, _api_get, discover, get_genre_list
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
 from app.utils.prompt_registry import PromptRegistry
@@ -80,6 +80,46 @@ def _resolve_keyword_id(term: str) -> Optional[str]:
     return None
 
 
+def _year_params(mt: str, year_from: Optional[int], year_to: Optional[int]) -> Dict[str, Any]:
+    params: Dict[str, Any] = {}
+    if year_from:
+        params["primary_release_date.gte" if mt == "movie" else "first_air_date.gte"] = f"{year_from}-01-01"
+    if year_to:
+        params["primary_release_date.lte" if mt == "movie" else "first_air_date.lte"] = f"{year_to}-12-31"
+    return params
+
+
+def _discover_for_type(
+    mt: str, base_params: Dict[str, Any], keyword_ids: List[str], want: int
+) -> List[Dict[str, Any]]:
+    """Discover candidates for one media type.
+
+    Each keyword is queried separately (genres/people AND one keyword) and merged
+    via RRF so titles matching more themes rank higher. AND-ing every keyword into
+    a single query over-constrains and can collapse to a handful of results, so a
+    keyword-free pass broadens the tail when the themed set is thin.
+    """
+    if not keyword_ids:
+        return discover(mt, base_params, max_pages=2)
+
+    scores: Dict[int, float] = {}
+    items: Dict[int, Dict[str, Any]] = {}
+    for kid in keyword_ids:
+        for rank, item in enumerate(discover(mt, {**base_params, "with_keywords": kid}, max_pages=1), start=1):
+            iid = int(item["id"])
+            scores[iid] = scores.get(iid, 0.0) + 1.0 / (_RRF_K + rank)
+            items.setdefault(iid, item)
+    ranked = [items[iid] for iid in sorted(scores, key=scores.__getitem__, reverse=True)]
+
+    if len(ranked) < want:
+        for item in discover(mt, base_params, max_pages=2):
+            iid = int(item["id"])
+            if iid not in items:
+                items[iid] = item
+                ranked.append(item)
+    return ranked
+
+
 def _get_watched_ids() -> Set[Tuple[int, str]]:
     history = get_watch_history(media_type=None, include_posters=False)
     watched: Set[Tuple[int, str]] = set()
@@ -115,22 +155,14 @@ def discover_by_description(query: str, limit: int = 20, *, media_type: Optional
         base_params["with_genres"] = "|".join(genre_ids[:3])
     if person_ids:
         base_params["with_people"] = ",".join(person_ids)
-    if keyword_ids:
-        base_params["with_keywords"] = "|".join(keyword_ids)
 
     watched_ids = _get_watched_ids()
     target_types = ["movie", "tv"] if media_type == "both" else [media_type]
 
     all_results: List[Dict[str, Any]] = []
     for mt in target_types:
-        mt_params = dict(base_params)
-        if filters.year_from:
-            date_key = "primary_release_date.gte" if mt == "movie" else "first_air_date.gte"
-            mt_params[date_key] = f"{filters.year_from}-01-01"
-        if filters.year_to:
-            date_key = "primary_release_date.lte" if mt == "movie" else "first_air_date.lte"
-            mt_params[date_key] = f"{filters.year_to}-12-31"
-        all_results.extend(discover(mt, mt_params, max_pages=2))
+        mt_params = {**base_params, **_year_params(mt, filters.year_from, filters.year_to)}
+        all_results.extend(_discover_for_type(mt, mt_params, keyword_ids, limit))
 
     seen: Set[Tuple[int, str]] = set()
     unwatched: List[Dict[str, Any]] = []

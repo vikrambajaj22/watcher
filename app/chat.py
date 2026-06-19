@@ -20,7 +20,7 @@ from app.process.describe_discover import discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
 from app.similar import SimilarError, compute_similar
 from app.taste_profile import compute_taste_profile, get_taste_text
-from app.tmdb_client import get_metadata, search_persons
+from app.tmdb_client import get_metadata, search_multi, search_persons
 from app.watchlist_sync import add_to_watchlist, remove_from_watchlist
 from app.will_like import WillLikeError, compute_will_like
 from app.utils.logger import get_logger
@@ -350,6 +350,22 @@ def get_taste_profile() -> str:
 
 
 @tool
+def search_title(title: str) -> str:
+    """Find a specific movie or TV show by name. Searches across both movies and TV, so call
+    this whenever the user names a title (e.g. "what's Widow's Bay", "is X any good") to resolve
+    it to a tmdb_id and media_type before using get_title_details, get_cast, find_similar, or
+    will_i_like. Returns the top matches — pick the best one rather than guessing the media type.
+
+    Args:
+        title: the title to look up
+    """
+    results = search_multi(title, limit=6)
+    if not results:
+        return json.dumps({"type": "error", "message": f"'{title}' not found on TMDB"})
+    return json.dumps({"type": "title_search", "items": results})
+
+
+@tool
 def get_title_details(tmdb_id: int, media_type: str) -> str:
     """Get details about a specific movie or TV show — overview, genres, release year, runtime,
     tagline, and TMDB rating. Use to answer factual questions about a title (e.g. "how long is
@@ -387,7 +403,7 @@ def get_title_details(tmdb_id: int, media_type: str) -> str:
     })
 
 
-_LC_TOOLS = [get_recommendations, find_similar, find_similar_in_history, will_i_like, search_by_description, get_cast, lookup_person, actor_in_history, get_history, get_watchlist_tool, add_to_watchlist_tool, remove_from_watchlist_tool, get_taste_profile, get_title_details]
+_LC_TOOLS = [get_recommendations, find_similar, find_similar_in_history, will_i_like, search_by_description, search_title, get_cast, lookup_person, actor_in_history, get_history, get_watchlist_tool, add_to_watchlist_tool, remove_from_watchlist_tool, get_taste_profile, get_title_details]
 
 # ---------------------------------------------------------------------------
 # Graph

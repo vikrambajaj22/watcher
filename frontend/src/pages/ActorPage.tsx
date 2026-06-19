@@ -66,7 +66,7 @@ export function ActorPage() {
             selected={selected}
             onSelect={handleSelect}
             onClear={handleClear}
-            placeholder="e.g. Cate Blanchett, Christopher Nolan…"
+            placeholder="e.g. Leonardo DiCaprio, Kate Winslet…"
           />
         </label>
       </div>
