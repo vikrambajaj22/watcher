@@ -24,6 +24,7 @@ class Settings(BaseSettings):
         "https://api.trakt.tv/sync/watched/movies"
     )
     TRAKT_WATCHED_SHOWS_API_URL: str = "https://api.trakt.tv/sync/watched/shows"
+    TRAKT_CALENDAR_SHOWS_API_URL: str = "https://api.trakt.tv/calendars/my/shows"
     TRAKT_MOVIE_LIST_ID: str = "watchlist-movies"
     TRAKT_TV_LIST_ID: str = "watchlist-shows"
     TMDB_API_URL: str = "https://api.themoviedb.org/3"

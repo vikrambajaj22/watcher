@@ -54,6 +54,18 @@ export type JobStatus = {
 
 export type HistoryRow = Record<string, unknown>;
 
+export type UpcomingEpisode = {
+  tmdb_id: number;
+  show_title?: string | null;
+  poster_path?: string | null;
+  season?: number | null;
+  episode?: number | null;
+  episode_title?: string | null;
+  first_aired?: string | null;
+};
+
+export type UpcomingResponse = { episodes: UpcomingEpisode[] };
+
 export type Recommendation = {
   id: string;
   title: string;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  Home, Clock, Heart, Star, HelpCircle, Layers, Compass, Users, MessageCircle, Settings, Bookmark,
+  Clock, Heart, Star, HelpCircle, Layers, Compass, Users, MessageCircle, Settings, Bookmark, Play,
 } from "lucide-react";
 import { apiFetch, getApiBase } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
@@ -68,13 +68,13 @@ export function Layout() {
 
           {/* Desktop nav — centered */}
           <nav className="hidden md:flex items-center gap-1 flex-1 justify-center" aria-label="Main">
-            <NavLink to="/" end className={linkClass}>
-              Home
-            </NavLink>
             {showAppNav && (
               <>
                 <NavLink to="/history" className={linkClass}>
                   History
+                </NavLink>
+                <NavLink to="/watching" className={linkClass}>
+                  Watching
                 </NavLink>
                 <NavLink to="/watchlist" className={linkClass}>
                   Watchlist
@@ -176,8 +176,8 @@ export function Layout() {
         >
           <div className="flex overflow-x-auto gap-1 px-2 py-2 scrollbar-none">
             {[
-              { to: "/", label: "Home", end: true, Icon: Home },
               { to: "/history", label: "History", Icon: Clock },
+              { to: "/watching", label: "Watching", Icon: Play },
               { to: "/watchlist", label: "Watchlist", Icon: Bookmark },
               { to: "/taste", label: "Taste", Icon: Heart },
               { to: "/recommend", label: "Recs", Icon: Star },
@@ -187,11 +187,10 @@ export function Layout() {
               { to: "/actor", label: "Actors", Icon: Users },
               { to: "/chat", label: "Chat", Icon: MessageCircle },
               { to: "/admin", label: "Admin", Icon: Settings },
-            ].map(({ to, label, end, Icon }) => (
+            ].map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
                 to={to}
-                end={end}
                 className={({ isActive }) =>
                   `shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-2xl text-[10px] font-medium transition-all whitespace-nowrap ${
                     isActive

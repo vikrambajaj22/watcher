@@ -14,7 +14,8 @@ from app.actor_history import get_actor_history
 from app.auth.trakt_auth import exchange_code_for_token, get_auth_url, save_token_data
 from app.chat import stream_chat
 from app.config.settings import settings
-from app.dao.history import get_watch_history, clear_history_cache
+from app.dao.history import get_watch_history, get_in_progress, clear_history_cache
+from app.calendar_sync import get_upcoming_episodes
 from app.db import sync_meta_collection
 from app.process.describe_discover import clear_describe_cache, discover_by_description
 from app.process.tmdb_recommendation import TmdbRecommender
@@ -38,6 +39,7 @@ from app.schemas.api import (
     SimilarRequest,
     SimilarResponse,
     SyncStatusResponse,
+    UpcomingResponse,
     WatchlistItem,
     WatchlistSyncResponse,
     WillLikeRequest,
@@ -164,6 +166,26 @@ def get_history(media_type: str = None, include_posters: bool = True):
         return history
     except Exception as e:
         logger.error("get_history error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/history/in-progress", response_model=List[HistoryItem])
+def get_history_in_progress():
+    """TV shows started but not finished, most recently watched first."""
+    try:
+        return get_in_progress()
+    except Exception as e:
+        logger.error("get_history_in_progress error: %s", repr(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/calendar/upcoming", response_model=UpcomingResponse)
+def get_calendar_upcoming(days: int = 14):
+    """Upcoming episodes for the user's shows over the next ``days`` days."""
+    try:
+        return {"episodes": get_upcoming_episodes(days=days)}
+    except Exception as e:
+        logger.error("get_calendar_upcoming error: %s", repr(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

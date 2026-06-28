@@ -107,6 +107,19 @@ def get_watch_history(media_type=None, include_posters: bool = True):
     return history
 
 
+def get_in_progress():
+    """TV shows that have been started but not finished, most recently watched first."""
+    shows = get_watch_history(media_type="tv")
+    in_progress = [
+        s
+        for s in shows
+        if (s.get("watched_episodes") or 0) > 0
+        and 0 <= (s.get("completion_ratio") or 0) < 1
+    ]
+    in_progress.sort(key=lambda s: s.get("latest_watched_at") or "", reverse=True)
+    return in_progress
+
+
 def clear_history_cache() -> bool:
     try:
         _HISTORY_CACHE.clear()

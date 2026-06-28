@@ -2,20 +2,58 @@ import { LoadingBox } from "../components/LoadingBox";
 import { ErrorBox } from "../components/ErrorBox";
 import { useState } from "react";
 import { apiFetch } from "../api/client";
-import { type DescribeFilters, type DiscoverItem } from "../api/watcher";
+import { type DescribeFilters, type DiscoverItem, type WillLikeResponse } from "../api/watcher";
 import { MediaCard } from "../components/MediaCard";
+import { VerdictBadge } from "../components/VerdictBadge";
+import { AiBlurb } from "../components/AiBlurb";
 import { useWatchlist } from "../contexts/WatchlistContext";
 
-type MediaTypeFilter = "both" | "movie" | "tv";
+type MediaTypeFilter = "auto" | "both" | "movie" | "tv";
+
+type WillLikeState =
+  | { status: "loading" }
+  | { status: "done"; data: WillLikeResponse }
+  | { status: "error"; message: string };
+
+const cardKey = (item: DiscoverItem) => `${item.id}-${item.media_type ?? ""}`;
 
 export function DiscoverPage() {
   const { isOnWatchlist, toggle, isToggling } = useWatchlist();
   const [query, setQuery] = useState("");
-  const [mediaType, setMediaType] = useState<MediaTypeFilter>("both");
+  const [mediaType, setMediaType] = useState<MediaTypeFilter>("auto");
   const [results, setResults] = useState<DiscoverItem[] | null>(null);
   const [filters, setFilters] = useState<DescribeFilters | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hideWatched, setHideWatched] = useState(false);
+  const [willLike, setWillLike] = useState<Record<string, WillLikeState>>({});
+
+  async function checkWillLike(item: DiscoverItem) {
+    if (!item.media_type) return;
+    const key = cardKey(item);
+    setWillLike((prev) => ({ ...prev, [key]: { status: "loading" } }));
+    try {
+      const r = await apiFetch("/will-like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tmdb_id: item.id, media_type: item.media_type }),
+      });
+      const text = await r.text();
+      let j: unknown;
+      try { j = JSON.parse(text); } catch { j = { detail: text }; }
+      if (!r.ok) {
+        const message =
+          typeof j === "object" && j && "detail" in j
+            ? String((j as { detail: unknown }).detail)
+            : text;
+        setWillLike((prev) => ({ ...prev, [key]: { status: "error", message } }));
+        return;
+      }
+      setWillLike((prev) => ({ ...prev, [key]: { status: "done", data: j as WillLikeResponse } }));
+    } catch (e) {
+      setWillLike((prev) => ({ ...prev, [key]: { status: "error", message: e instanceof Error ? e.message : "Request failed" } }));
+    }
+  }
 
   async function search() {
     const q = query.trim();
@@ -24,11 +62,12 @@ export function DiscoverPage() {
     setErr(null);
     setResults(null);
     setFilters(null);
+    setWillLike({});
     try {
       const r = await apiFetch("/discover/describe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, limit: 20, media_type: mediaType }),
+        body: JSON.stringify({ query: q, limit: 20, media_type: mediaType === "auto" ? null : mediaType }),
       });
       const raw = await r.text();
       let j: unknown;
@@ -44,12 +83,20 @@ export function DiscoverPage() {
       const resp = j as { results: DiscoverItem[]; filters?: DescribeFilters };
       setResults(resp.results ?? []);
       setFilters(resp.filters ?? null);
+      // When left on Auto, reflect the media type the backend inferred.
+      const inferred = resp.filters?.media_type;
+      if (mediaType === "auto" && (inferred === "movie" || inferred === "tv" || inferred === "both")) {
+        setMediaType(inferred);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Request failed");
     } finally {
       setBusy(false);
     }
   }
+
+  const visibleResults = (results ?? []).filter((item) => !hideWatched || !item.watched);
+  const watchedCount = (results ?? []).filter((item) => item.watched).length;
 
   const filterChips: string[] = [];
   if (filters) {
@@ -93,6 +140,7 @@ export function DiscoverPage() {
             value={mediaType}
             onChange={(e) => setMediaType(e.target.value as MediaTypeFilter)}
           >
+            <option value="auto">Auto</option>
             <option value="both">Movies & TV</option>
             <option value="movie">Movies only</option>
             <option value="tv">TV only</option>
@@ -116,45 +164,94 @@ export function DiscoverPage() {
 
       {!busy && results !== null && (
         <>
-          {filterChips.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {filterChips.map((chip) => (
-                <span
-                  key={chip}
-                  className="text-[0.7rem] font-semibold uppercase tracking-[0.06em] px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20"
-                >
-                  {chip}
-                </span>
-              ))}
-            </div>
-          )}
-          {results.length === 0 ? (
-            <p className="empty-state">No results found. Try a different description.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            {filterChips.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {filterChips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="text-[0.7rem] font-semibold uppercase tracking-[0.06em] px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            ) : <span />}
+            {watchedCount > 0 && (
+              <label className="flex items-center gap-2 text-sm text-muted cursor-pointer select-none shrink-0">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={hideWatched}
+                  onChange={(e) => setHideWatched(e.target.checked)}
+                />
+                Hide watched ({watchedCount})
+              </label>
+            )}
+          </div>
+          {visibleResults.length === 0 ? (
+            <p className="empty-state">
+              {results.length === 0 ? "No results found. Try a different description." : "All results are already watched."}
+            </p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {results.map((item) => (
-                <MediaCard
-                  key={`${item.id}-${item.media_type}`}
-                  id={item.id}
-                  title={item.title ?? "Unknown"}
-                  mediaType={item.media_type}
-                  posterPath={item.poster_path}
-                  overview={item.overview}
-                  watched={item.watched}
-                  similarLink
-                  watchlistOn={item.media_type ? isOnWatchlist(item.id, item.media_type) : undefined}
-                  watchlistLoading={item.media_type ? isToggling(item.id, item.media_type) : undefined}
-                  onWatchlistToggle={
-                    item.media_type
-                      ? () => void toggle({ id: item.id, title: item.title ?? "", mediaType: item.media_type!, posterPath: item.poster_path, overview: item.overview, releaseDate: item.release_date })
-                      : undefined
-                  }
-                />
-              ))}
+              {visibleResults.map((item) => {
+                const wl = item.media_type ? willLike[cardKey(item)] : undefined;
+                return (
+                  <MediaCard
+                    key={`${item.id}-${item.media_type}`}
+                    id={item.id}
+                    title={item.title ?? "Unknown"}
+                    mediaType={item.media_type}
+                    posterPath={item.poster_path}
+                    overview={item.overview}
+                    watched={item.watched}
+                    similarLink
+                    footer={
+                      item.media_type && !item.watched ? (
+                        <WillLikeFooter state={wl} onCheck={() => void checkWillLike(item)} />
+                      ) : undefined
+                    }
+                    watchlistOn={item.media_type ? isOnWatchlist(item.id, item.media_type) : undefined}
+                    watchlistLoading={item.media_type ? isToggling(item.id, item.media_type) : undefined}
+                    onWatchlistToggle={
+                      item.media_type
+                        ? () => void toggle({ id: item.id, title: item.title ?? "", mediaType: item.media_type!, posterPath: item.poster_path, overview: item.overview, releaseDate: item.release_date })
+                        : undefined
+                    }
+                  />
+                );
+              })}
             </div>
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function WillLikeFooter({ state, onCheck }: { state?: WillLikeState; onCheck: () => void }) {
+  if (!state) {
+    return (
+      <button
+        type="button"
+        onClick={onCheck}
+        className="self-stretch text-center px-2 py-1 text-xs rounded-lg font-semibold bg-white/[0.04] text-muted border border-border hover:text-text hover:border-white/25 transition-all cursor-pointer font-sans"
+      >
+        Will I like it?
+      </button>
+    );
+  }
+  if (state.status === "loading") {
+    return <p className="text-xs text-muted text-center py-1">Checking your taste…</p>;
+  }
+  if (state.status === "error") {
+    return <p className="text-xs text-danger py-1">{state.message}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <VerdictBadge willLike={state.data.will_like} score={state.data.score} />
+      <AiBlurb>{state.data.explanation}</AiBlurb>
     </div>
   );
 }

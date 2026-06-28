@@ -216,6 +216,20 @@ class HistoryItem(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class UpcomingEpisode(BaseModel):
+    tmdb_id: int
+    show_title: Optional[str] = None
+    poster_path: Optional[str] = None
+    season: Optional[int] = None
+    episode: Optional[int] = None
+    episode_title: Optional[str] = None
+    first_aired: Optional[str] = None
+
+
+class UpcomingResponse(BaseModel):
+    episodes: List[UpcomingEpisode]
+
+
 class WatchlistItem(BaseModel):
     tmdb_id: int
     media_type: str

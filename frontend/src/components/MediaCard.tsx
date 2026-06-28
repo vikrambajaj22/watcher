@@ -110,14 +110,18 @@ export function MediaCard({
             {String(overview).length > 280 ? "…" : ""}
           </p>
         )}
-        {footer ?? null}
-        {similarLink && (
-          <Link
-            className={`mt-auto self-stretch text-center ${compact ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"} rounded-lg font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 hover:no-underline transition-all`}
-            to={`/similar?id=${id}&type=${encodeURIComponent(mt)}`}
-          >
-            Find Similar
-          </Link>
+        {(footer || similarLink) && (
+          <div className="mt-auto flex flex-col gap-1.5 pt-1.5">
+            {footer ?? null}
+            {similarLink && (
+              <Link
+                className={`self-stretch text-center ${compact ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"} rounded-lg font-semibold bg-accent/10 text-accent border border-accent/25 hover:bg-accent/15 hover:border-accent/40 hover:no-underline transition-all`}
+                to={`/similar?id=${id}&type=${encodeURIComponent(mt)}`}
+              >
+                Find Similar
+              </Link>
+            )}
+          </div>
         )}
       </div>
     </article>

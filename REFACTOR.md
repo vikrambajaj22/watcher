@@ -429,19 +429,21 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
 
    **Build order**: Trakt sync + local cache + endpoints → WatchlistPage → `useWatchlist` context + MediaCard badges → history auto-clear → chat tools → home widget
 
-13. **In-Progress Shows**
+13. **Currently Watching Page** ✅
 
-   TV shows that have been started but not completed, derived from Trakt watch history — no extra list or manual tracking needed.
+   A dedicated `/watching` page for shows in progress plus an upcoming-episode calendar — no extra list or manual tracking needed.
 
-   **Definition**: a show where at least one episode has been watched but the series is not fully watched (i.e. watched episode count < total aired episodes).
+   **Definition**: in progress = a TV show with at least one episode watched but `0 ≤ completion_ratio < 1` (data already stored during Trakt sync).
 
    **Implementation**
-   - Backend: `GET /history/in-progress` — filters watch history to TV shows with `watch_count > 0` and `aired_episodes > watched_episodes` (data already stored during Trakt sync)
-   - Frontend: "In Progress" filter tab on the History page, alongside existing filters
+   - Backend: `GET /history/in-progress` (`dao/history.py::get_in_progress`) — in-progress TV shows, most recently watched first
+   - Backend: `GET /calendar/upcoming?days=14` (`app/calendar_sync.py`) — fetches Trakt `/calendars/my/shows`, enriches posters from history, TTL-cached 1h; schemas `UpcomingEpisode`/`UpcomingResponse`
+   - Frontend: `WatchingPage` (route `/watching`, nav "Watching") — **Up Next** in-progress `MediaCard` grid (with next-episode badge) + **Upcoming Calendar** grouped by air date
+   - The History page's client-side `incomplete` status filter still exists but is superseded by this page
 
    **States (no overlap)**
    - Watchlist — want to watch (Trakt custom list, not yet started)
-   - In Progress — started, not finished (derived from history)
+   - Currently Watching — started, not finished (derived from history)
    - Watched — fully complete (existing history)
 
 15. **Code Quality**
