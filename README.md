@@ -10,10 +10,12 @@ Watcher is a personal media discovery application that generates tailored recomm
 
 - 🔐 **Trakt OAuth** — sign in with your Trakt account; account switch clears all cached state automatically
 - 📺 **Watch history sync** — full Trakt history with runtime data, genres, and poster metadata
+- ▶️ **Currently Watching** — dedicated `/watching` page for in-progress TV shows (started but `completion_ratio < 1`, derived from history) plus an upcoming-episode **calendar** from Trakt's `/calendars/my/shows`; "Up Next" grid sorted by most recently watched and paginated, with a next-episode badge per show
 - 🔖 **Watchlist** — synced bidirectionally with Trakt custom lists (`TRAKT_MOVIE_LIST_ID` / `TRAKT_TV_LIST_ID`); add/remove from any results page via bookmark toggle; genre filter tags; home page counter widget; items already in history auto-cleared on sync
 - ✨ **LLM recommendations** — taste planner + three-source TMDB candidate fetch (genre discover, similar/recommendations, keyword discover) merged via RRF; picker reasons from your taste profile; optional genre filter (names → TMDB genre IDs, hard-filters the candidate pool)
 - 🧠 **Taste Profile** — LLM-generated snapshot: signature, summary, top genres, recurring themes, avoid list; cached 1h and shared across features
-- 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; genre tags shown inline; open in TMDB links
+- 🗂️ **Watch History UI** — filter by genre and watch year (both dropdowns derived from history data); sort by latest/earliest watched, release year, title, or engagement; genre tags shown inline
+- 🔗 **Branded outbound links** — shared `ExternalMediaLink` badge pinned to each poster: **Trakt** (canonical slug URL, falling back to a TMDB-id search redirect) on Trakt-state pages (Watching, History, Watchlist); **TMDB** on discovery pages (Recommendations, Similar, Will I Like, Discover, Actor)
 - 🔍 **Discover by description** — natural language → LLM extracts structured filters (genres, cast, keywords, year range) → TMDB Discover; optional media-type selector (Movies/TV/Both) overrides LLM inference; excludes already-watched titles
 - 👤 **Actor Search** — find every title in your history featuring a specific actor or director, with character roles
 - 💬 **Chat** — conversational agent backed by a LangGraph `StateGraph` (agent ↔ ToolNode loop with a conditional self-correction `verify` node); routing lives in self-describing tool docstrings, not a prescriptive prompt; the user's taste profile is injected into context every turn (TTL-cached) so the agent personalises and picks from the watchlist itself without an extra lookup; 14 tools: recommendations (optional genre filter), similar (incl. cross-type movie↔TV), similar-in-history, will-like, description search, cast lookup, title details, taste profile, person lookup, actor history, watch history, watchlist read/add/remove (the similar tools share `compute_similar` with the `/similar` route — no duplicated logic); streams tool status + response via SSE; intermediate lookups shown as collapsible summaries, final results as compact cards; renders markdown in responses; answers follow-up questions about returned titles (e.g. "which of these have actors I'd recognise?") and re-tries once if its answer misses the question; models configurable via `CHAT_MODEL` / `CHAT_VERIFY_MODEL`; works on mobile (HTTPS-free UUID fallback, fixed sticky input)
@@ -156,6 +158,8 @@ The `/recommend/tmdb/{media_type}` endpoint:
 
 - `GET /history` — fetch user's watch history (supports pagination, filtering)
   - Query params: `limit`, `offset`, `media_type`, etc.
+- `GET /history/in-progress` — TV shows started but not finished (`0 ≤ completion_ratio < 1`), most recently watched first
+- `GET /calendar/upcoming?days=14` — upcoming episodes for the user's shows from Trakt's calendar, poster-enriched from history; TTL-cached 1h
 
 ### Watchlist
 

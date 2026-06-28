@@ -195,13 +195,7 @@ export function RecommendPage() {
               const id = Number(raw);
               const idOk = Number.isFinite(id) && id > 0;
               return (
-                <div key={`${rec.id}-${rec.title}-${index}`} className="relative">
-                  <span
-                    className="absolute top-2 left-2 z-[1] min-w-[1.6rem] h-[1.6rem] px-1.5 flex items-center justify-center bg-bg/85 border border-border rounded-lg text-xs font-bold shadow-md shadow-black/30"
-                    aria-hidden
-                  >
-                    {index + 1}
-                  </span>
+                <div key={`${rec.id}-${rec.title}-${index}`}>
                   <MediaCard
                     id={idOk ? id : 0}
                     title={rec.title}

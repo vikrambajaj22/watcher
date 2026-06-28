@@ -238,6 +238,7 @@ class WatchlistItem(BaseModel):
     overview: Optional[str] = None
     release_date: Optional[str] = None
     genres: Optional[List[str]] = None
+    trakt_slug: Optional[str] = None
     synced_at: Optional[str] = None
 
 

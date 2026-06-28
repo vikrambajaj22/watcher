@@ -205,6 +205,8 @@ export function WatchlistPage() {
               posterPath={item.poster_path}
               overview={item.overview}
               similarLink
+              linkTo="trakt"
+              traktSlug={item.trakt_slug}
               watchlistOn={true}
               watchlistLoading={isToggling(item.tmdb_id, item.media_type)}
               onWatchlistToggle={() =>

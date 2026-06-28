@@ -438,8 +438,15 @@ The `/mcp/*` routes and the internal `mcp_*` naming are misleading: this code us
    **Implementation**
    - Backend: `GET /history/in-progress` (`dao/history.py::get_in_progress`) — in-progress TV shows, most recently watched first
    - Backend: `GET /calendar/upcoming?days=14` (`app/calendar_sync.py`) — fetches Trakt `/calendars/my/shows`, enriches posters from history, TTL-cached 1h; schemas `UpcomingEpisode`/`UpcomingResponse`
-   - Frontend: `WatchingPage` (route `/watching`, nav "Watching") — **Up Next** in-progress `MediaCard` grid (with next-episode badge) + **Upcoming Calendar** grouped by air date
+   - Frontend: `WatchingPage` (route `/watching`, nav "Watching") — **Up Next** in-progress `MediaCard` grid (sorted by most recently watched, paginated 12/page, next-episode badge per show) + **Upcoming Calendar** grouped by air date
    - The History page's client-side `incomplete` status filter still exists but is superseded by this page
+   - Nav: removed the Home tab (desktop + mobile); the logo now links home
+
+   **Outbound links** — `ExternalMediaLink` (`frontend/src/components/ExternalMediaLink.tsx`)
+   - Shared branded badge pinned to each poster's top-left; replaces the old inline "Open in TMDB" icon everywhere (`MediaCard`, History, Similar, Will I Like)
+   - `linkTo="trakt"` on Trakt-state pages (Watching, History, Watchlist) → canonical `trakt.tv/{shows|movies}/{slug}`; falls back to the `search/tmdb/{id}?id_type=` redirect when no slug; `linkTo="tmdb"` (default) on discovery pages
+   - Trakt slug source: `ids.slug` is already stored on history docs; `watchlist_sync` now persists `trakt_slug` too (existing watchlist rows need one re-sync to populate it)
+   - Recommendations: dropped the rank-number overlay (redundant with display order, freed the corner for the badge)
 
    **States (no overlap)**
    - Watchlist — want to watch (Trakt custom list, not yet started)

@@ -80,8 +80,15 @@ def pull_watchlist() -> dict:
                     continue
                 tmdb_id = int(tmdb_id)
                 incoming_ids.add(tmdb_id)
+                trakt_slug = (data.get("ids") or {}).get("slug")
                 enriched = _enrich(tmdb_id, media_type)
-                doc = {"tmdb_id": tmdb_id, "media_type": media_type, "synced_at": now, **enriched}
+                doc = {
+                    "tmdb_id": tmdb_id,
+                    "media_type": media_type,
+                    "synced_at": now,
+                    "trakt_slug": trakt_slug,
+                    **enriched,
+                }
                 new_docs.append(doc)
                 if tmdb_id not in existing_ids:
                     added += 1

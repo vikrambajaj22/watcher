@@ -2,7 +2,7 @@
 
 Single-user SPA — the supported Watcher UI. Dev server proxies API calls to FastAPI on port **8080**.
 
-Routes: `/` (home), `/history`, `/recommend`, `/will-like`, `/similar`, `/admin` (shown as **Maintenance** in the nav). `/similar` and `/will-like` use a typeahead search backed by `GET /search` — no manual TMDB ID input.
+Routes: `/` (home, reached via the logo — no Home nav item), `/history`, `/watching` (currently watching + upcoming calendar), `/watchlist`, `/taste`, `/recommend`, `/will-like`, `/similar`, `/discover`, `/actor`, `/chat`, `/admin` (shown as **Maintenance** in the nav). `/similar` and `/will-like` use a typeahead search backed by `GET /search` — no manual TMDB ID input.
 
 ## Setup
 

@@ -5,6 +5,7 @@ import { ErrorBox } from "../components/ErrorBox";
 import { apiFetch } from "../api/client";
 import { type SearchHit, type WillLikeResponse } from "../api/watcher";
 import { AiBlurb } from "../components/AiBlurb";
+import { ExternalMediaLink } from "../components/ExternalMediaLink";
 import { SearchTypeahead } from "../components/SearchTypeahead";
 import { VerdictBadge } from "../components/VerdictBadge";
 import { posterUrl, placeholderPoster } from "../lib/poster";
@@ -89,13 +90,18 @@ export function WillLikePage() {
 
       {!busy && result && (
         <article className="flex flex-wrap items-start gap-4 sm:gap-5 p-4 sm:p-5 glass rounded-2xl">
-          <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
+          <div className="w-[64px] sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30 relative">
             <img
               src={posterUrl(result.item.poster_path, "w185") ?? placeholderPoster()}
               alt=""
               loading="lazy"
               className="w-full aspect-[2/3] object-contain block"
             />
+            {itemId != null && itemId > 0 && (
+              <div className="absolute top-1 left-1 z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+                <ExternalMediaLink id={itemId} mediaType={itemMt} />
+              </div>
+            )}
           </div>
 
           <div className="flex-1 min-w-0 flex items-start gap-4 sm:gap-5">
@@ -109,21 +115,8 @@ export function WillLikePage() {
               >
                 {result.already_watched ? "Watched" : isTv ? "TV" : "Film"}
               </span>
-              <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-0.5 flex items-center gap-1.5">
+              <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-0.5">
                 {displayTitle}
-                {itemId != null && itemId > 0 && (
-                  <a
-                    className="inline-flex items-center text-muted hover:text-text hover:no-underline transition-colors shrink-0"
-                    href={`https://www.themoviedb.org/${itemMt}/${itemId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Open in TMDB"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                    </svg>
-                  </a>
-                )}
               </h2>
             </div>
 

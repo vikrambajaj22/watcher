@@ -2,6 +2,7 @@ import { useState } from "react";
 import { apiFetch } from "../api/client";
 import type { SimilarResult } from "../api/watcher";
 import { AiBlurb } from "./AiBlurb";
+import { ExternalMediaLink } from "./ExternalMediaLink";
 import { VerdictBadge } from "./VerdictBadge";
 import { placeholderPoster, posterUrl } from "../lib/poster";
 import { useWatchlist } from "../contexts/WatchlistContext";
@@ -19,10 +20,6 @@ export function SimilarResultRow({ item, hideWillLike, hideWatchlist }: { item: 
   const src = posterUrl(item.poster_path ?? null, "w185") ?? placeholderPoster();
   const mtRaw = (item.media_type || "movie").toLowerCase();
   const isTv = mtRaw === "tv";
-  const tmdbUrl =
-    item.id && item.media_type
-      ? `https://www.themoviedb.org/${mtRaw}/${item.id}`
-      : null;
 
   async function checkWillLike() {
     if (!item.id || !item.media_type) return;
@@ -67,8 +64,13 @@ export function SimilarResultRow({ item, hideWillLike, hideWatchlist }: { item: 
 
   return (
     <article className="flex items-start gap-4 sm:gap-5 p-4 sm:p-5 glass glass-hover rounded-2xl flex-wrap">
-      <div className="w-16 sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30">
+      <div className="w-16 sm:w-[76px] shrink-0 rounded-lg overflow-hidden bg-bg shadow-md shadow-black/30 relative">
         <img src={src} alt="" loading="lazy" className="w-full aspect-[2/3] object-contain block" />
+        {item.id > 0 && (
+          <div className="absolute top-1 left-1 z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+            <ExternalMediaLink id={item.id} mediaType={isTv ? "tv" : "movie"} />
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-w-0 flex items-start gap-4 sm:gap-5">
@@ -80,21 +82,8 @@ export function SimilarResultRow({ item, hideWillLike, hideWatchlist }: { item: 
           >
             {isTv ? "TV" : "Film"}
           </span>
-          <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-0.5 line-clamp-2 flex items-center gap-1.5">
+          <h3 className="text-base font-semibold leading-snug tracking-[-0.02em] mb-0.5 line-clamp-2">
             {title}
-            {tmdbUrl && (
-              <a
-                className="inline-flex items-center text-muted hover:text-text hover:no-underline transition-colors shrink-0"
-                href={tmdbUrl}
-                target="_blank"
-                rel="noreferrer"
-                title="Open in TMDB"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                </svg>
-              </a>
-            )}
           </h3>
           {item.release_date && (
             <p className="text-xs text-muted mb-1 m-0">{item.release_date.slice(0, 4)}</p>

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { AiBlurb } from "./AiBlurb";
+import { ExternalMediaLink } from "./ExternalMediaLink";
 import { placeholderPoster, posterUrl } from "../lib/poster";
 
 type Props = {
@@ -17,6 +18,8 @@ type Props = {
   watchlistOn?: boolean;
   watchlistLoading?: boolean;
   onWatchlistToggle?: () => void;
+  linkTo?: "tmdb" | "trakt";
+  traktSlug?: string | null;
 };
 
 export function MediaCard({
@@ -33,6 +36,8 @@ export function MediaCard({
   watchlistOn,
   watchlistLoading,
   onWatchlistToggle,
+  linkTo = "tmdb",
+  traktSlug,
 }: Props) {
   const src = posterUrl(posterPath ?? null, compact ? "w185" : "w342") ?? placeholderPoster();
   const mt = (mediaType || "movie").toLowerCase();
@@ -42,6 +47,11 @@ export function MediaCard({
     <article className="glass glass-hover rounded-xl overflow-hidden flex flex-col h-full">
       <div className="aspect-[2/3] bg-bg relative">
         <img className="w-full h-full object-contain block" src={src} alt="" loading="lazy" />
+        {id > 0 && (
+          <div className="absolute top-1.5 left-1.5 z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+            <ExternalMediaLink id={id} mediaType={mt} linkTo={linkTo} traktSlug={traktSlug} />
+          </div>
+        )}
         {onWatchlistToggle && (
           <button
             type="button"
@@ -87,21 +97,8 @@ export function MediaCard({
             )}
           </div>
         )}
-        <h3 className={`${compact ? "text-xs" : "text-base"} font-semibold leading-snug tracking-[-0.02em] m-0 flex items-center gap-1`}>
+        <h3 className={`${compact ? "text-xs" : "text-base"} font-semibold leading-snug tracking-[-0.02em] m-0`}>
           <span className="line-clamp-2">{title}</span>
-          {id > 0 && (
-            <a
-              className="inline-flex items-center shrink-0 text-muted hover:text-text hover:no-underline transition-colors"
-              href={`https://www.themoviedb.org/${mt}/${id}`}
-              target="_blank"
-              rel="noreferrer"
-              title="Open in TMDB"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              </svg>
-            </a>
-          )}
         </h3>
         {subtitle && <AiBlurb>{subtitle}</AiBlurb>}
         {!compact && overview && String(overview).trim() && (

@@ -128,6 +128,8 @@ export function WatchingPage() {
                       posterPath={row.poster_path as string | undefined}
                       subtitle={`${watched} / ${total ?? "—"} episodes · ${pct}%`}
                       similarLink
+                      linkTo="trakt"
+                      traktSlug={(row.ids as { slug?: string } | undefined)?.slug}
                       footer={
                         next?.first_aired ? (
                           <span className="text-xs text-accent">

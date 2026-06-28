@@ -227,6 +227,7 @@ export type WatchlistItem = {
   overview?: string | null;
   release_date?: string | null;
   genres?: string[] | null;
+  trakt_slug?: string | null;
   synced_at?: string | null;
 };
 
