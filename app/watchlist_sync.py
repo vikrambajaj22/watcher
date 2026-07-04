@@ -86,6 +86,7 @@ def pull_watchlist() -> dict:
                     "tmdb_id": tmdb_id,
                     "media_type": media_type,
                     "synced_at": now,
+                    "listed_at": entry.get("listed_at"),
                     "trakt_slug": trakt_slug,
                     **enriched,
                 }
@@ -133,10 +134,12 @@ def add_to_watchlist(
             "release_date": release_date,
         }
 
+    now = datetime.now(timezone.utc).isoformat()
     doc = {
         "tmdb_id": tmdb_id,
         "media_type": media_type,
-        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "synced_at": now,
+        "listed_at": now,
         **enriched,
     }
     upsert_watchlist_item(doc)

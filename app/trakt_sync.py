@@ -14,6 +14,35 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Trakt paginates /sync/watched (default 100/page) as of 2026-07-03. Fetch all pages.
+TRAKT_PAGE_LIMIT = 100
+
+
+def _fetch_trakt_paginated(url, params=None):
+    """Fetch all pages of a paginated Trakt endpoint, following X-Pagination headers.
+
+    Returns (items, ok): the concatenated list and whether the first request succeeded.
+    """
+    items = []
+    page = 1
+    while True:
+        query = {"page": page, "limit": TRAKT_PAGE_LIMIT, **(params or {})}
+        resp = requests.get(url, headers=settings.trakt_headers, params=query)
+        if resp.status_code != 200:
+            if page == 1:
+                logger.warning("Failed to fetch %s: %s", url, resp.status_code)
+                return [], False
+            logger.warning(
+                "Failed to fetch page %s of %s: %s", page, url, resp.status_code
+            )
+            break
+        items.extend(resp.json() or [])
+        page_count = int(resp.headers.get("X-Pagination-Page-Count") or 1)
+        if page >= page_count:
+            break
+        page += 1
+    return items, True
+
 
 def _ensure_valid_token():
     """Refresh Trakt token if it's expired or about to expire."""
@@ -55,15 +84,10 @@ def sync_trakt_history():
     unique = set()
     # --- Movies: use /sync/watched/movies for full watched list ---
     try:
-        resp_movies = requests.get(
-            settings.TRAKT_WATCHED_MOVIES_API_URL,
-            headers=settings.trakt_headers,
+        movies_data, ok = _fetch_trakt_paginated(
+            settings.TRAKT_WATCHED_MOVIES_API_URL
         )
-        logger.info(
-            "Syncing Trakt watched movies: %s", resp_movies.status_code
-        )
-        if resp_movies.status_code == 200:
-            movies_data = resp_movies.json() or []
+        if ok:
             logger.info("Fetched %s watched movies from Trakt", len(movies_data))
             for item in movies_data:
                 movie = item.get("movie") or {}
@@ -92,24 +116,17 @@ def sync_trakt_history():
                         movie_entry["earliest"] = watched_at
                     if not movie_entry["latest"] or watched_at > movie_entry["latest"]:
                         movie_entry["latest"] = watched_at
-        else:
-            logger.warning(
-                "Failed to fetch Trakt watched movies: %s", resp_movies.status_code
-            )
     except Exception as e:
         logger.error("Error fetching Trakt watched movies: %s", repr(e), exc_info=True)
 
     # --- Shows: use /sync/watched/shows for full watched list + per-episode plays ---
+    # extended=progress is required for per-season/episode data (new Trakt default omits it).
     try:
-        resp_shows = requests.get(
+        shows_data, ok = _fetch_trakt_paginated(
             settings.TRAKT_WATCHED_SHOWS_API_URL,
-            headers=settings.trakt_headers,
+            params={"extended": "progress"},
         )
-        logger.info(
-            "Syncing Trakt watched shows: %s", resp_shows.status_code
-        )
-        if resp_shows.status_code == 200:
-            shows_data = resp_shows.json() or []
+        if ok:
             logger.info("Fetched %s watched shows from Trakt", len(shows_data))
             for item in shows_data:
                 show = item.get("show") or {}
@@ -170,10 +187,6 @@ def sync_trakt_history():
                 if latest:
                     if not show_entry["latest"] or latest > show_entry["latest"]:
                         show_entry["latest"] = latest
-        else:
-            logger.warning(
-                "Failed to fetch Trakt watched shows: %s", resp_shows.status_code
-            )
     except Exception as e:
         logger.error("Error fetching Trakt watched shows: %s", repr(e), exc_info=True)
 

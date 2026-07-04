@@ -8,7 +8,10 @@ logger = get_logger(__name__)
 
 def get_watchlist(media_type: str | None = None) -> list[dict]:
     query = {"media_type": media_type} if media_type else {}
-    return list(watchlist_collection.find(query, {"_id": 0}).sort("synced_at", -1))
+    items = list(watchlist_collection.find(query, {"_id": 0}))
+    # Sort by Trakt added date; fall back to sync time for records synced before listed_at existed.
+    items.sort(key=lambda i: i.get("listed_at") or i.get("synced_at") or "", reverse=True)
+    return items
 
 
 def upsert_watchlist_item(item: dict) -> None:

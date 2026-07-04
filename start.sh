@@ -17,6 +17,13 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+if [ ! -d .venv ]; then
+    echo "Error: .venv not found! Create it with: python -m venv .venv"
+    exit 1
+fi
+# shellcheck disable=SC1091
+source .venv/bin/activate
+
 set -a
 # shellcheck disable=SC1091
 source .env
