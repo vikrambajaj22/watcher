@@ -46,7 +46,7 @@ def _fetch_trakt_paginated(url, params=None):
 
 def _ensure_valid_token():
     """Refresh Trakt token if it's expired or about to expire."""
-    token_file = ".env.trakt_token"
+    token_file = settings.TRAKT_TOKEN_FILE
     if not os.path.exists(token_file):
         logger.warning("Token file not found. Sync will fail.")
         return

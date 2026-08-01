@@ -87,6 +87,7 @@ def refresh_token():
             "refresh_token": refresh_token,
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI,
             "grant_type": "refresh_token",
         },
         headers=HEADERS,
