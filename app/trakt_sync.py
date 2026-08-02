@@ -435,6 +435,11 @@ def sync_trakt_history():
         "movie": set(seen_movies.keys()),
         "tv": set(seen_shows.keys()),
     }
+    logger.info(
+        "Checking watchlist cleanup for %d movie id(s) and %d show id(s).",
+        len(watched_by_type.get("movie", set())),
+        len(watched_by_type.get("tv", set())),
+    )
     local_cleared = clear_watchlist_items_in_history(watched_by_type)
     trakt_cleared = remove_watchlist_items_from_trakt(watched_by_type)
     cleared = local_cleared + trakt_cleared
@@ -445,4 +450,6 @@ def sync_trakt_history():
             local_cleared,
             trakt_cleared,
         )
+    else:
+        logger.info("No watchlist items needed cleanup during this sync.")
     return {"watchlist_cleared": cleared}

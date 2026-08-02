@@ -147,16 +147,28 @@ def add_to_watchlist(
 
 
 def remove_from_watchlist(tmdb_id: int, media_type: str) -> None:
-    """Remove item from Trakt custom list and local cache."""
+    """Remove an item from the Trakt watchlist and local cache."""
+    remove_many_from_watchlist([tmdb_id], media_type)
+
+
+def remove_many_from_watchlist(tmdb_ids: list[int], media_type: str) -> int:
+    """Remove multiple items from a Trakt watchlist in one request and update the local cache."""
+    if not tmdb_ids:
+        return 0
+
     slug = settings.TRAKT_MOVIE_LIST_ID if media_type == "movie" else settings.TRAKT_TV_LIST_ID
     trakt_key = "movies" if media_type == "movie" else "shows"
 
     resp = requests.post(
         f"{_list_items_url(slug)}/remove",
-        json={trakt_key: [{"ids": {"tmdb": tmdb_id}}]},
+        json={trakt_key: [{"ids": {"tmdb": tmdb_id}} for tmdb_id in tmdb_ids]},
         headers=settings.trakt_headers,
     )
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"Trakt remove failed: {resp.status_code} {resp.text[:200]}")
 
-    remove_watchlist_item(tmdb_id, media_type)
+    removed = 0
+    for tmdb_id in tmdb_ids:
+        if remove_watchlist_item(tmdb_id, media_type):
+            removed += 1
+    return removed

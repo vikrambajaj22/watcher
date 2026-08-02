@@ -69,28 +69,27 @@ def clear_watchlist_items_in_history(watched_by_type: dict[str, set[int]]) -> in
 
 
 def remove_watchlist_items_from_trakt(watched_by_type: dict[str, set[int]]) -> int:
-    """Remove watched items from the corresponding Trakt watchlist using both TMDB id and media type."""
+    """Remove watched items from the corresponding Trakt watchlists in a batch."""
     if not watched_by_type:
         return 0
 
-    from app.watchlist_sync import remove_from_watchlist
+    from app.watchlist_sync import remove_many_from_watchlist
 
     removed = 0
     for media_type, ids in watched_by_type.items():
+        tmdb_ids: list[int] = []
         for raw_tmdb_id in sorted(ids or set()):
             try:
-                tmdb_id = int(raw_tmdb_id)
+                tmdb_ids.append(int(raw_tmdb_id))
             except (TypeError, ValueError):
                 logger.warning("Skipping invalid TMDB id %r for Trakt removal", raw_tmdb_id)
-                continue
+        if tmdb_ids:
             try:
-                remove_from_watchlist(tmdb_id, media_type)
-                removed += 1
+                removed += remove_many_from_watchlist(tmdb_ids, media_type)
             except Exception as exc:
                 logger.warning(
-                    "Could not remove watched %s %s from Trakt watchlist: %s",
+                    "Could not batch-remove watched %s items from Trakt watchlist: %s",
                     media_type,
-                    tmdb_id,
                     repr(exc),
                 )
     return removed
