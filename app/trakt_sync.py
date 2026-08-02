@@ -8,7 +8,10 @@ import requests
 from app.auth.trakt_auth import refresh_token
 from app.config.settings import settings
 from app.dao.history import get_watch_history, store_watch_history
-from app.dao.watchlist import clear_watchlist_items_in_history
+from app.dao.watchlist import (
+    clear_watchlist_items_in_history,
+    remove_watchlist_items_from_trakt,
+)
 from app.tmdb_client import get_metadata
 from app.utils.logger import get_logger
 
@@ -92,8 +95,13 @@ def sync_trakt_history():
             for item in movies_data:
                 movie = item.get("movie") or {}
                 ids = movie.get("ids") or {}
-                tmdb_movie_id = ids.get("tmdb")
-                if not tmdb_movie_id:
+                raw_tmdb_movie_id = ids.get("tmdb")
+                if raw_tmdb_movie_id is None:
+                    continue
+                try:
+                    tmdb_movie_id = int(raw_tmdb_movie_id)
+                except (TypeError, ValueError):
+                    logger.warning("Skipping movie with invalid TMDB id: %r", raw_tmdb_movie_id)
                     continue
                 unique.add(("movie", tmdb_movie_id))
                 watched_at = item.get("last_watched_at")
@@ -131,8 +139,13 @@ def sync_trakt_history():
             for item in shows_data:
                 show = item.get("show") or {}
                 ids = show.get("ids") or {}
-                tmdb_show_id = ids.get("tmdb")
-                if not tmdb_show_id:
+                raw_tmdb_show_id = ids.get("tmdb")
+                if raw_tmdb_show_id is None:
+                    continue
+                try:
+                    tmdb_show_id = int(raw_tmdb_show_id)
+                except (TypeError, ValueError):
+                    logger.warning("Skipping show with invalid TMDB id: %r", raw_tmdb_show_id)
                     continue
                 unique.add(("tv", tmdb_show_id))
 
@@ -142,6 +155,7 @@ def sync_trakt_history():
                 earliest = None
                 latest = None
                 seasons = item.get("seasons") or []
+                saw_watch_activity = bool(item.get("last_watched_at")) or int(item.get("plays") or 0) > 0
                 for season in seasons:
                     season_number = season.get("number")
                     if season_number is None:
@@ -163,8 +177,8 @@ def sync_trakt_history():
                             if not latest or ep_last > latest:
                                 latest = ep_last
 
-                if not episodes_map:
-                    # no usable episode data; skip
+                if not episodes_map and not saw_watch_activity:
+                    # no usable episode data and no item-level watch activity; skip
                     continue
 
                 show_entry = seen_shows.setdefault(
@@ -417,10 +431,18 @@ def sync_trakt_history():
     else:
         logger.info("Watch history unchanged, not updating database.")
 
-    cleared = clear_watchlist_items_in_history({
+    watched_by_type = {
         "movie": set(seen_movies.keys()),
         "tv": set(seen_shows.keys()),
-    })
+    }
+    local_cleared = clear_watchlist_items_in_history(watched_by_type)
+    trakt_cleared = remove_watchlist_items_from_trakt(watched_by_type)
+    cleared = local_cleared + trakt_cleared
     if cleared:
-        logger.info("Removed %d watchlist item(s) now in watch history.", cleared)
+        logger.info(
+            "Removed %d watchlist item(s) now in watch history (%d local, %d from Trakt).",
+            cleared,
+            local_cleared,
+            trakt_cleared,
+        )
     return {"watchlist_cleared": cleared}

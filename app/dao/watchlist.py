@@ -54,9 +54,43 @@ def clear_watchlist_items_in_history(watched_by_type: dict[str, set[int]]) -> in
     """Remove watchlist items that now appear in watch history."""
     removed = 0
     for media_type, ids in watched_by_type.items():
-        if ids:
-            result = watchlist_collection.delete_many(
-                {"media_type": media_type, "tmdb_id": {"$in": list(ids)}}
+        for raw_tmdb_id in ids or set():
+            try:
+                tmdb_id = int(raw_tmdb_id)
+            except (TypeError, ValueError):
+                logger.warning("Skipping invalid TMDB id %r for local removal", raw_tmdb_id)
+                continue
+            result = watchlist_collection.delete_one(
+                {"media_type": media_type, "tmdb_id": tmdb_id}
             )
-            removed += result.deleted_count
+            if result.deleted_count:
+                removed += 1
+    return removed
+
+
+def remove_watchlist_items_from_trakt(watched_by_type: dict[str, set[int]]) -> int:
+    """Remove watched items from the corresponding Trakt watchlist using both TMDB id and media type."""
+    if not watched_by_type:
+        return 0
+
+    from app.watchlist_sync import remove_from_watchlist
+
+    removed = 0
+    for media_type, ids in watched_by_type.items():
+        for raw_tmdb_id in sorted(ids or set()):
+            try:
+                tmdb_id = int(raw_tmdb_id)
+            except (TypeError, ValueError):
+                logger.warning("Skipping invalid TMDB id %r for Trakt removal", raw_tmdb_id)
+                continue
+            try:
+                remove_from_watchlist(tmdb_id, media_type)
+                removed += 1
+            except Exception as exc:
+                logger.warning(
+                    "Could not remove watched %s %s from Trakt watchlist: %s",
+                    media_type,
+                    tmdb_id,
+                    repr(exc),
+                )
     return removed
